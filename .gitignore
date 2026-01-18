@@ -1,0 +1,28 @@
+# Build artifacts
+/target/
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node.js (for orbital-web)
+node_modules/
+
+# WebAssembly build outputs (generated, kept in pkg/)
+*.wasm.map
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*

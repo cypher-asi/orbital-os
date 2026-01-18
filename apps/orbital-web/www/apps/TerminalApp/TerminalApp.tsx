@@ -24,9 +24,9 @@ interface AxiomStats {
 
 // Color palette for processes
 const COLORS = [
-  '#4ade80', '#60a5fa', '#f472b6', '#facc15',
-  '#a78bfa', '#fb923c', '#2dd4bf', '#f87171',
-  '#818cf8', '#34d399', '#fbbf24', '#f97316',
+  '#01f4cb', '#60a5fa', '#f472b6', '#facc15',
+  '#a78bfa', '#fb923c', '#01f4cb', '#f87171',
+  '#818cf8', '#01f4cb', '#fbbf24', '#f97316',
 ];
 
 function formatBytes(bytes: number): string {

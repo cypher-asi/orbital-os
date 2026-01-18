@@ -443,7 +443,7 @@ impl WindowManager {
                 return Some((window.id, WindowRegion::ResizeSE));
             }
 
-            // Title bar (before edge handles, so dragging works on the title bar)
+            // Title bar (before edge handles - React resize handles handle the edges directly)
             // Use a minimum screen-space height for the title bar hit area when zoomed out
             // This ensures the title bar is always at least 24px on screen for easy clicking
             let min_title_bar_screen_height = 24.0;
@@ -458,7 +458,7 @@ impl WindowManager {
                 return Some((window.id, WindowRegion::TitleBar));
             }
 
-            // Edge resize handles (N won't trigger here because title bar caught it above)
+            // Edge resize handles (fallback - React handles typically intercept these first)
             if in_top {
                 return Some((window.id, WindowRegion::ResizeN));
             }

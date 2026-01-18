@@ -8,7 +8,7 @@
 /* Dashboard Panel */
 .dashboard {
   width: 280px;
-  background: #12121e;
+  background: #111111;
   border-right: 1px solid #333;
   overflow-y: auto;
   flex-shrink: 0;
@@ -19,17 +19,17 @@
 }
 
 .panelHeader {
-  background: #1a1a2e;
+  background: #1a1a1a;
   padding: 10px 12px;
   font-weight: 600;
-  color: #4ade80;
+  color: #a0a0a0;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .badge {
-  background: #2a2a3a;
+  background: #2a2a2a;
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 10px;
@@ -46,7 +46,7 @@
   display: flex;
   align-items: center;
   padding: 6px 0;
-  border-bottom: 1px solid #1a1a2e;
+  border-bottom: 1px solid #1a1a1a;
   gap: 6px;
 }
 
@@ -68,7 +68,7 @@
 }
 
 .processMem {
-  color: #60a5fa;
+  color: #888;
   width: 50px;
   text-align: right;
   font-size: 11px;
@@ -83,8 +83,8 @@
 }
 
 .stateRunning {
-  background: #14532d;
-  color: #4ade80;
+  background: #0a3d36;
+  color: #01f4cb;
 }
 
 .stateBlocked {
@@ -122,7 +122,7 @@
 }
 
 .quickBtn {
-  background: #1a1a2e;
+  background: #1a1a1a;
   border: 1px solid #333;
   color: #888;
   padding: 5px 8px;
@@ -134,15 +134,15 @@
 }
 
 .quickBtn:hover {
-  background: #222238;
+  background: #2a2a2a;
   color: #eee;
-  border-color: #4ade80;
+  border-color: #666;
 }
 
 /* Memory Bar */
 .memBar {
   height: 16px;
-  background: #1a1a2e;
+  background: #1a1a1a;
   border-radius: 4px;
   overflow: hidden;
   display: flex;
@@ -172,7 +172,7 @@
 
 .terminal {
   flex: 1;
-  background: #0f0f1a;
+  background: #0d0d0d;
   padding: 12px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -187,7 +187,7 @@
 }
 
 .inputEcho {
-  color: #60a5fa;
+  color: #888;
 }
 
 .errorText {
@@ -195,21 +195,21 @@
 }
 
 .successText {
-  color: #4ade80;
+  color: #01f4cb;
 }
 
 /* Input Area */
 .inputArea {
   display: flex;
   align-items: center;
-  background: #1a1a2e;
+  background: #1a1a1a;
   border-top: 1px solid #333;
   padding: 10px 12px;
   flex-shrink: 0;
 }
 
 .prompt {
-  color: #4ade80;
+  color: #808080;
   font-weight: 600;
   margin-right: 8px;
   user-select: none;
@@ -223,6 +223,12 @@
   font-family: inherit;
   font-size: 13px;
   outline: none;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .input::placeholder {

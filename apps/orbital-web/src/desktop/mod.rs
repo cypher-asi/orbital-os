@@ -24,6 +24,8 @@ mod types;
 mod windows;
 mod workspaces;
 
+use std::cell::Cell;
+
 pub use input::{DragState, InputResult, InputRouter};
 pub use types::{Rect, Size, Vec2, FRAME_STYLE};
 pub use windows::{Window, WindowConfig, WindowId, WindowManager, WindowRegion, WindowState};
@@ -48,20 +50,24 @@ pub struct DesktopEngine {
 }
 
 /// Viewport for infinite canvas navigation
-#[derive(Clone, Debug)]
+///
+/// Uses `Cell` for interior mutability on animated state (center, animation)
+/// to avoid wasm-bindgen RefCell borrow conflicts when read methods are called
+/// concurrently with write methods from JavaScript event handlers.
+#[derive(Debug)]
 pub struct Viewport {
-    /// Center position on infinite canvas
-    pub center: Vec2,
+    /// Center position on infinite canvas (Cell for interior mutability during animation)
+    center: Cell<Vec2>,
     /// Zoom level (1.0 = 100%, 0.5 = zoomed out, 2.0 = zoomed in)
     pub zoom: f32,
     /// Screen size in pixels
     pub screen_size: Size,
     /// Animation state for smooth panning
-    animation: Option<ViewportAnimation>,
+    animation: Cell<Option<ViewportAnimation>>,
 }
 
 /// Animation state for viewport transitions
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct ViewportAnimation {
     /// Starting position
     start: Vec2,
@@ -76,10 +82,10 @@ struct ViewportAnimation {
 impl Default for Viewport {
     fn default() -> Self {
         Self {
-            center: Vec2::ZERO,
+            center: Cell::new(Vec2::ZERO),
             zoom: 1.0,
             screen_size: Size::new(1920.0, 1080.0),
-            animation: None,
+            animation: Cell::new(None),
         }
     }
 }
@@ -88,23 +94,35 @@ impl Viewport {
     /// Create a new viewport with the given screen size
     pub fn new(screen_width: f32, screen_height: f32) -> Self {
         Self {
-            center: Vec2::ZERO,
+            center: Cell::new(Vec2::ZERO),
             zoom: 1.0,
             screen_size: Size::new(screen_width, screen_height),
-            animation: None,
+            animation: Cell::new(None),
         }
+    }
+
+    /// Get the current center position (updates animation if active)
+    pub fn center(&self) -> Vec2 {
+        // Update animation before returning center
+        self.update_animation();
+        self.center.get()
+    }
+
+    /// Set the center position directly
+    pub fn set_center(&self, center: Vec2) {
+        self.center.set(center);
     }
 
     /// Convert screen coordinates to canvas coordinates
     pub fn screen_to_canvas(&self, screen: Vec2) -> Vec2 {
         let half_screen = self.screen_size.as_vec2() * 0.5;
         let offset = screen - half_screen;
-        self.center + offset / self.zoom
+        self.center() + offset / self.zoom
     }
 
     /// Convert canvas coordinates to screen coordinates
     pub fn canvas_to_screen(&self, canvas: Vec2) -> Vec2 {
-        let offset = canvas - self.center;
+        let offset = canvas - self.center();
         let half_screen = self.screen_size.as_vec2() * 0.5;
         offset * self.zoom + half_screen
     }
@@ -112,8 +130,8 @@ impl Viewport {
     /// Pan the viewport by the given delta (in screen pixels)
     pub fn pan(&mut self, dx: f32, dy: f32) {
         // Panning moves the viewport center in the opposite direction
-        self.center.x -= dx / self.zoom;
-        self.center.y -= dy / self.zoom;
+        let c = self.center.get();
+        self.center.set(Vec2::new(c.x - dx / self.zoom, c.y - dy / self.zoom));
     }
 
     /// Zoom the viewport around an anchor point (in screen coordinates)
@@ -129,38 +147,39 @@ impl Viewport {
         // Adjust center so anchor point stays at same screen position
         let half_screen = self.screen_size.as_vec2() * 0.5;
         let anchor_offset = anchor_screen - half_screen;
-        self.center = anchor_canvas - anchor_offset / self.zoom;
+        self.center.set(anchor_canvas - anchor_offset / self.zoom);
     }
 
     /// Get the visible rectangle on the canvas
     pub fn visible_rect(&self) -> Rect {
+        let center = self.center();
         let half_size = self.screen_size.as_vec2() / self.zoom * 0.5;
         Rect::new(
-            self.center.x - half_size.x,
-            self.center.y - half_size.y,
+            center.x - half_size.x,
+            center.y - half_size.y,
             self.screen_size.width / self.zoom,
             self.screen_size.height / self.zoom,
         )
     }
 
     /// Animate viewport to center on a position
-    pub fn animate_to(&mut self, target: Vec2, duration_ms: f32) {
+    pub fn animate_to(&self, target: Vec2, duration_ms: f32) {
         // Get current time from JavaScript
         let now = js_sys::Date::now();
         
-        self.animation = Some(ViewportAnimation {
-            start: self.center,
+        self.animation.set(Some(ViewportAnimation {
+            start: self.center.get(),
             target,
             start_time: now,
             duration: duration_ms,
-        });
+        }));
     }
     
-    /// Update animation state. Call this every frame.
+    /// Update animation state (called automatically by center()).
     /// Returns true if an animation is in progress.
-    pub fn update_animation(&mut self) -> bool {
-        let anim = match &self.animation {
-            Some(a) => a.clone(),
+    fn update_animation(&self) -> bool {
+        let anim = match self.animation.get() {
+            Some(a) => a,
             None => return false,
         };
         
@@ -172,15 +191,16 @@ impl Viewport {
         let eased = 1.0 - (1.0 - t).powi(3);
         
         // Interpolate position
-        self.center = Vec2::new(
+        let new_center = Vec2::new(
             anim.start.x + (anim.target.x - anim.start.x) * eased,
             anim.start.y + (anim.target.y - anim.start.y) * eased,
         );
+        self.center.set(new_center);
         
         // Animation complete?
         if t >= 1.0 {
-            self.center = anim.target;
-            self.animation = None;
+            self.center.set(anim.target);
+            self.animation.set(None);
             return false;
         }
         
@@ -189,12 +209,12 @@ impl Viewport {
     
     /// Check if an animation is in progress
     pub fn is_animating(&self) -> bool {
-        self.animation.is_some()
+        self.animation.get().is_some()
     }
     
     /// Cancel any in-progress animation
-    pub fn cancel_animation(&mut self) {
-        self.animation = None;
+    pub fn cancel_animation(&self) {
+        self.animation.set(None);
     }
 }
 
@@ -224,7 +244,7 @@ impl DesktopEngine {
 
         // Center viewport on the first workspace
         if let Some(workspace) = self.workspaces.get(workspace_id) {
-            self.viewport.center = workspace.bounds.center();
+            self.viewport.set_center(workspace.bounds.center());
         }
     }
 
@@ -246,10 +266,11 @@ impl DesktopEngine {
     /// Get all visible windows with their screen-space rectangles
     /// Returns JSON-serializable data for React positioning
     /// Only returns windows belonging to the active workspace
-    pub fn get_window_screen_rects(&mut self) -> Vec<WindowScreenRect> {
-        // Update any in-progress viewport animation
-        self.viewport.update_animation();
-        
+    ///
+    /// Note: Takes &self (not &mut self) to avoid wasm-bindgen RefCell borrow
+    /// conflicts when called concurrently with pointer event handlers.
+    pub fn get_window_screen_rects(&self) -> Vec<WindowScreenRect> {
+        // Animation is updated automatically when accessing viewport.center()
         let visible = self.viewport.visible_rect();
         let active_workspace = self.workspaces.active_workspace();
         let mut rects = Vec::new();
@@ -358,6 +379,33 @@ impl DesktopEngine {
         self.windows.restore(id);
     }
 
+    /// Start a resize drag operation from a specific direction
+    /// Called directly by React resize handles to bypass hit testing
+    pub fn start_resize_drag(&mut self, id: WindowId, direction: &str, screen_x: f32, screen_y: f32) {
+        let handle = match direction {
+            "n" => WindowRegion::ResizeN,
+            "s" => WindowRegion::ResizeS,
+            "e" => WindowRegion::ResizeE,
+            "w" => WindowRegion::ResizeW,
+            "ne" => WindowRegion::ResizeNE,
+            "nw" => WindowRegion::ResizeNW,
+            "se" => WindowRegion::ResizeSE,
+            "sw" => WindowRegion::ResizeSW,
+            _ => return,
+        };
+
+        if let Some(window) = self.windows.get(id) {
+            let canvas_pos = self.viewport.screen_to_canvas(Vec2::new(screen_x, screen_y));
+            self.input.start_window_resize(
+                id,
+                handle,
+                window.position,
+                window.size,
+                canvas_pos,
+            );
+        }
+    }
+
     /// Switch to a workspace by index
     pub fn switch_workspace(&mut self, index: usize) {
         if self.workspaces.switch_to(index) {
@@ -389,7 +437,7 @@ impl DesktopEngine {
         let win_h = 600.0_f32.min(max_h);
         
         // Position window centered in the visible viewport
-        let center = self.viewport.center;
+        let center = self.viewport.center();
         let pos_x = center.x - win_w / 2.0;
         let pos_y = center.y - win_h / 2.0;
 
@@ -415,23 +463,17 @@ impl DesktopEngine {
         let screen_pos = Vec2::new(x, y);
         let canvas_pos = self.viewport.screen_to_canvas(screen_pos);
 
-        // Debug: log click info
-        web_sys::console::log_1(&format!(
-            "pointer_down: screen=({:.1}, {:.1}) canvas=({:.1}, {:.1}) zoom={:.2} center=({:.1}, {:.1})",
-            x, y, canvas_pos.x, canvas_pos.y, self.viewport.zoom, self.viewport.center.x, self.viewport.center.y
-        ).into());
-
         // Middle mouse button starts canvas pan
         if button == 1 {
             self.viewport.cancel_animation(); // Cancel any auto-pan animation
-            self.input.start_pan(screen_pos, self.viewport.center);
+            self.input.start_pan(screen_pos, self.viewport.center());
             return InputResult::Handled;
         }
 
         // Ctrl or Shift + primary button also pans (even over windows)
         if button == 0 && (ctrl || shift) {
             self.viewport.cancel_animation(); // Cancel any auto-pan animation
-            self.input.start_pan(screen_pos, self.viewport.center);
+            self.input.start_pan(screen_pos, self.viewport.center());
             return InputResult::Handled;
         }
 
@@ -440,21 +482,7 @@ impl DesktopEngine {
             let active_windows = &self.workspaces.active_workspace().windows;
             let zoom = self.viewport.zoom;
             
-            // Debug: log window positions (both canvas and computed screen)
-            for &wid in active_windows {
-                if let Some(w) = self.windows.get(wid) {
-                    let screen_pos = self.viewport.canvas_to_screen(w.position);
-                    let screen_w = w.size.width * zoom;
-                    let screen_h = w.size.height * zoom;
-                    web_sys::console::log_1(&format!(
-                        "  window {}: canvas=({:.1}, {:.1}) screen=({:.1}, {:.1}) size={:.0}x{:.0}",
-                        wid, w.position.x, w.position.y, screen_pos.x, screen_pos.y, screen_w, screen_h
-                    ).into());
-                }
-            }
-            
             if let Some((window_id, region)) = self.windows.region_at_filtered(canvas_pos, Some(active_windows), zoom) {
-                web_sys::console::log_1(&format!("  -> hit window {} region {:?}", window_id, region).into());
                 match region {
                     WindowRegion::CloseButton => {
                         self.close_window(window_id);
@@ -508,8 +536,6 @@ impl DesktopEngine {
                         return InputResult::Handled;
                     }
                 }
-            } else {
-                web_sys::console::log_1(&"  -> no window hit".into());
             }
         }
 
@@ -525,7 +551,7 @@ impl DesktopEngine {
             match drag_state {
                 DragState::PanCanvas { start, start_center } => {
                     let delta = screen_pos - *start;
-                    self.viewport.center = *start_center - delta / self.viewport.zoom;
+                    self.viewport.set_center(*start_center - delta / self.viewport.zoom);
                     return InputResult::Handled;
                 }
                 DragState::MoveWindow { window_id, offset } => {
@@ -563,17 +589,15 @@ impl DesktopEngine {
         InputResult::Unhandled
     }
 
-    /// Handle wheel event
-    pub fn handle_wheel(&mut self, dx: f32, dy: f32, x: f32, y: f32, ctrl: bool) -> InputResult {
+    /// Handle wheel event - Ctrl+scroll zooms the desktop
+    pub fn handle_wheel(&mut self, _dx: f32, dy: f32, x: f32, y: f32, ctrl: bool) -> InputResult {
         if ctrl {
             // Ctrl+scroll = zoom
             let factor = if dy < 0.0 { 1.1 } else { 0.9 };
             self.zoom_at(factor, x, y);
             InputResult::Handled
         } else {
-            // Regular scroll = pan
-            self.pan(-dx, -dy);
-            InputResult::Handled
+            InputResult::Unhandled
         }
     }
 }
@@ -626,8 +650,9 @@ mod tests {
         viewport.zoom_at(2.0, 960.0, 540.0);
         assert!((viewport.zoom - 2.0).abs() < 0.001);
         // Center should not move when zooming at center
-        assert!((viewport.center.x - 0.0).abs() < 0.001);
-        assert!((viewport.center.y - 0.0).abs() < 0.001);
+        let c = viewport.center();
+        assert!((c.x - 0.0).abs() < 0.001);
+        assert!((c.y - 0.0).abs() < 0.001);
     }
 
     #[test]

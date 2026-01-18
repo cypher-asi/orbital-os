@@ -183,13 +183,13 @@ pub struct FrameStyle {
 
 /// Default frame style
 pub const FRAME_STYLE: FrameStyle = FrameStyle {
-    title_bar_height: 32.0,
-    border_radius: 8.0,
+    title_bar_height: 20.0,
+    border_radius: 0.0,
     border_width: 1.0,
     shadow_blur: 20.0,
     shadow_offset_y: 4.0,
     resize_handle_size: 8.0,
-    button_size: 12.0,
+    button_size: 16.0,
     button_spacing: 8.0,
     button_margin: 10.0,
 };

@@ -10,6 +10,13 @@ interface DesktopProps {
   supervisor: Supervisor;
 }
 
+interface SelectionBox {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 // Inner component that uses the Supervisor context
 function DesktopInner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +48,7 @@ function DesktopInner() {
 export function Desktop({ supervisor }: DesktopProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [initialized, setInitialized] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
 
   // Initialize desktop engine
   useEffect(() => {
@@ -70,19 +78,18 @@ export function Desktop({ supervisor }: DesktopProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, [supervisor, initialized]);
 
-  // Prevent browser zoom on Ctrl+scroll (needs non-passive listener)
+  // Prevent browser zoom on Ctrl+scroll at window level (capture phase to intercept early)
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
     const handleNativeWheel = (e: WheelEvent) => {
+      // Prevent browser zoom when Ctrl is held (with or without Shift)
       if (e.ctrlKey) {
         e.preventDefault();
       }
     };
 
-    container.addEventListener('wheel', handleNativeWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleNativeWheel);
+    // Use window-level listener with capture to intercept before browser can process
+    window.addEventListener('wheel', handleNativeWheel, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', handleNativeWheel, { capture: true });
   }, []);
 
   // Use capture phase for panning so it intercepts before windows
@@ -118,6 +125,23 @@ export function Desktop({ supervisor }: DesktopProps) {
       if (result.type === 'handled') {
         e.preventDefault();
       }
+
+      // Start selection box on left-click directly on desktop background
+      // (not on windows, not with modifiers, and only if Rust didn't handle it)
+      if (
+        e.button === 0 &&
+        !e.ctrlKey &&
+        !e.shiftKey &&
+        result.type !== 'handled' &&
+        e.target === containerRef.current
+      ) {
+        setSelectionBox({
+          startX: e.clientX,
+          startY: e.clientY,
+          currentX: e.clientX,
+          currentY: e.clientY,
+        });
+      }
     },
     [supervisor]
   );
@@ -125,31 +149,53 @@ export function Desktop({ supervisor }: DesktopProps) {
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       supervisor.desktop_pointer_move(e.clientX, e.clientY);
+
+      // Update selection box if active
+      if (selectionBox) {
+        setSelectionBox((prev) =>
+          prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
+        );
+      }
     },
-    [supervisor]
+    [supervisor, selectionBox]
   );
 
   const handlePointerUp = useCallback(() => {
     supervisor.desktop_pointer_up();
+    setSelectionBox(null);
   }, [supervisor]);
 
   // Release drag state when pointer leaves the desktop (e.g., goes off-screen)
   const handlePointerLeave = useCallback(() => {
     supervisor.desktop_pointer_up();
+    setSelectionBox(null);
   }, [supervisor]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      supervisor.desktop_wheel(
-        e.deltaX,
-        e.deltaY,
-        e.clientX,
-        e.clientY,
-        e.ctrlKey
-      );
+      // Only zoom desktop canvas when Ctrl is held
+      if (e.ctrlKey) {
+        supervisor.desktop_wheel(
+          e.deltaX,
+          e.deltaY,
+          e.clientX,
+          e.clientY,
+          e.ctrlKey
+        );
+      }
     },
     [supervisor]
   );
+
+  // Compute selection box rectangle (handle drag in any direction)
+  const selectionRect = selectionBox
+    ? {
+        left: Math.min(selectionBox.startX, selectionBox.currentX),
+        top: Math.min(selectionBox.startY, selectionBox.currentY),
+        width: Math.abs(selectionBox.currentX - selectionBox.startX),
+        height: Math.abs(selectionBox.currentY - selectionBox.startY),
+      }
+    : null;
 
   return (
     <SupervisorProvider value={supervisor}>
@@ -163,6 +209,19 @@ export function Desktop({ supervisor }: DesktopProps) {
         onWheel={handleWheel}
       >
         {initialized && <DesktopInner />}
+
+        {/* Selection bounding box */}
+        {selectionRect && selectionRect.width > 2 && selectionRect.height > 2 && (
+          <div
+            className={styles.selectionBox}
+            style={{
+              left: selectionRect.left,
+              top: selectionRect.top,
+              width: selectionRect.width,
+              height: selectionRect.height,
+            }}
+          />
+        )}
       </div>
     </SupervisorProvider>
   );

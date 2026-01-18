@@ -5,21 +5,56 @@
   background: #0f0f1a;
   border: 1px solid #333;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
+  overflow: visible;
   pointer-events: auto;
 }
 
 .window.focused {
-  border-color: #4ade80;
-  box-shadow: 0 8px 32px rgba(74, 222, 128, 0.15);
+  border-color: #888;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Sci-fi trapezoid tab above window */
+.titleTab {
+  position: absolute;
+  top: -20px;
+  left: 12px;
+  height: 21px;
+  padding: 0 28px;
+  background: #3a3a3a;
+  clip-path: polygon(0 100%, 20px 0, calc(100% - 20px) 0, 100% 100%);
+  display: flex;
+  align-items: center;
+  cursor: default;
+  user-select: none;
+  z-index: 1;
+}
+
+.focused .titleTab {
+  background: #4a4a4a;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.focused .title {
+  color: #ccc;
 }
 
 .titleBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  background: #1a1a2e;
+  justify-content: flex-end;
+  padding: 0 10px;
+  background: #3a3a3a;
   border-bottom: 1px solid #333;
   flex-shrink: 0;
   cursor: default;
@@ -27,20 +62,7 @@
 }
 
 .focused .titleBar {
-  background: #222238;
-}
-
-.title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #888;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.focused .title {
-  color: #e0e0e0;
+  background: #4a4a4a;
 }
 
 .buttons {
@@ -49,34 +71,38 @@
 }
 
 .btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid #555;
+  background: transparent;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: transparent;
-  transition: color 0.15s;
+  color: #666;
+  transition: all 0.15s;
 }
 
 .btn:hover {
-  color: #000;
+  color: #fff;
+  border-color: #888;
+  background: #333;
 }
 
 .minimize {
-  background: #facc15;
 }
 
 .maximize {
-  background: #4ade80;
 }
 
 .close {
-  background: #f87171;
+}
+
+.close:hover {
+  background: #555;
 }
 
 .content {

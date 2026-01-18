@@ -2859,8 +2859,10 @@ impl Supervisor {
     }
 
     /// Get window screen rects as JSON for React positioning
+    /// Note: Takes &self (not &mut self) to avoid wasm-bindgen RefCell borrow
+    /// conflicts when called concurrently with pointer event handlers.
     #[wasm_bindgen]
-    pub fn get_window_screen_rects_json(&mut self) -> String {
+    pub fn get_window_screen_rects_json(&self) -> String {
         let rects = self.desktop.get_window_screen_rects();
         let json_rects: Vec<serde_json::Value> = rects
             .into_iter()
@@ -3051,6 +3053,13 @@ impl Supervisor {
         serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
     }
 
+    /// Start a window resize drag operation directly
+    /// Called by React resize handles to bypass hit testing
+    #[wasm_bindgen]
+    pub fn start_window_resize(&mut self, window_id: u64, direction: &str, x: f32, y: f32) {
+        self.desktop.start_resize_drag(window_id, direction, x, y);
+    }
+
     /// Handle wheel event - returns JSON with result
     #[wasm_bindgen]
     pub fn desktop_wheel(&mut self, dx: f32, dy: f32, x: f32, y: f32, ctrl: bool) -> String {
@@ -3068,8 +3077,9 @@ impl Supervisor {
     /// Get viewport state as JSON
     #[wasm_bindgen]
     pub fn get_viewport_json(&self) -> String {
+        let center = self.desktop.viewport.center();
         serde_json::to_string(&serde_json::json!({
-            "center": { "x": self.desktop.viewport.center.x, "y": self.desktop.viewport.center.y },
+            "center": { "x": center.x, "y": center.y },
             "zoom": self.desktop.viewport.zoom,
             "screenSize": {
                 "width": self.desktop.viewport.screen_size.width,

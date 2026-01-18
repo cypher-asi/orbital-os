@@ -44,7 +44,7 @@
 }
 
 .beginIcon {
-  color: #4ade80;
+  color: #01f4cb;
   font-size: 16px;
 }
 
@@ -86,7 +86,7 @@
 .windowItem.focused {
   background: rgba(74, 222, 128, 0.15);
   color: #e0e0e0;
-  border-bottom: 2px solid #4ade80;
+  border-bottom: 2px solid #01f4cb;
 }
 
 .windowItem.minimized {
@@ -134,8 +134,8 @@
 
 .workspaceBtn.active {
   background: rgba(74, 222, 128, 0.2);
-  border-color: #4ade80;
-  color: #4ade80;
+  border-color: #01f4cb;
+  color: #01f4cb;
 }
 
 .workspaceAdd {
@@ -154,6 +154,6 @@
 }
 
 .workspaceAdd:hover {
-  border-color: #4ade80;
-  color: #4ade80;
+  border-color: #01f4cb;
+  color: #01f4cb;
 }

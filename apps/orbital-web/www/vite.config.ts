@@ -7,6 +7,8 @@ export default defineConfig({
   root: '.',
   base: '/',
   publicDir: 'public',
+  // Include WASM files as assets
+  assetsInclude: ['**/*.wasm'],
   build: {
     outDir: 'dist',
     sourcemap: true,
@@ -18,6 +20,14 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
+    // Ensure proper MIME types for WASM
+    fs: {
+      strict: false,
+    },
+  },
+  optimizeDeps: {
+    // Exclude wasm-bindgen generated files from optimization
+    exclude: ['./pkg/orbital_web.js'],
   },
   resolve: {
     alias: {

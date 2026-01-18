@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    http::{HeaderValue, Request, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
     response::Response,
     routing::get_service,
     Router,
@@ -31,7 +31,7 @@ async fn main() {
         .fallback_service(get_service(serve_dir).handle_error(|_| async {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
         }))
-        .layer(axum::middleware::from_fn(add_security_headers));
+        .layer(axum::middleware::from_fn(add_headers));
 
     println!("╔═══════════════════════════════════════════════════╗");
     println!("║           Orbital OS Development Server           ║");
@@ -45,11 +45,14 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-/// Add security headers required for SharedArrayBuffer and cross-origin isolation
-async fn add_security_headers(
+/// Add security headers and fix MIME types
+async fn add_headers(
     request: Request<Body>,
     next: axum::middleware::Next,
 ) -> Response<Body> {
+    // Get the request path for MIME type detection
+    let path = request.uri().path().to_string();
+    
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
@@ -62,6 +65,34 @@ async fn add_security_headers(
         "Cross-Origin-Embedder-Policy",
         HeaderValue::from_static("require-corp"),
     );
+
+    // Fix MIME types for module scripts
+    if path.ends_with(".js") || path.ends_with(".mjs") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/javascript; charset=utf-8"),
+        );
+    } else if path.ends_with(".wasm") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/wasm"),
+        );
+    } else if path.ends_with(".css") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/css; charset=utf-8"),
+        );
+    } else if path.ends_with(".html") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+    } else if path.ends_with(".json") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+    }
 
     response
 }

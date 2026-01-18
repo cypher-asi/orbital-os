@@ -193,7 +193,7 @@ export const DARK_THEME: ThemeColors = {
   titleBarActive: '#2a2a4e',
   titleText: '#e0e0e0',
   shadow: 'rgba(0,0,0,0.5)',
-  accent: '#4ade80',
+  accent: '#01f4cb',
   textPrimary: '#e0e0e0',
   textSecondary: '#888',
 };
