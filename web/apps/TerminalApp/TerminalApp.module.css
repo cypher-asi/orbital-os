@@ -1,0 +1,189 @@
+.terminalApp {
+  display: flex;
+  height: 100%;
+  position: relative;
+}
+
+/* Drawer content wrapper */
+.drawerContent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Collapsible group styling */
+.collapsibleGroup {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panelContent {
+  padding: 4px 0;
+}
+
+/* Process List */
+.processItem {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  gap: 8px;
+}
+
+.processItem:last-child {
+  border-bottom: none;
+}
+
+.processPid {
+  width: 24px;
+  flex-shrink: 0;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.processName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.processMem {
+  width: 55px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.processState {
+  width: 50px;
+  text-align: center;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stateRunning {
+  background: #0a3d36;
+  color: #01f4cb;
+}
+
+.stateBlocked {
+  background: #713f12;
+  color: #facc15;
+}
+
+.stateZombie {
+  background: #7f1d1d;
+  color: #f87171;
+}
+
+/* Quick Actions */
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Memory Bar */
+.memBar {
+  height: 16px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.memSegment {
+  height: 100%;
+  transition: width 0.3s;
+}
+
+/* Axiom Stats */
+.axiomStats {
+  font-size: 11px;
+  color: #666;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Terminal Panel */
+.terminalPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+.terminal {
+  flex: 1;
+  background: transparent;
+  padding: 12px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c0c0c0;
+}
+
+.outputText {
+  color: #c0c0c0;
+}
+
+.inputEcho {
+  color: #888;
+}
+
+.errorText {
+  color: #f87171;
+}
+
+.successText {
+  color: #01f4cb;
+}
+
+/* Input Line (inline with output) */
+.inputLine {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+
+.prompt {
+  color: #01f4cb;
+  font-weight: 600;
+  margin-right: 4px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+

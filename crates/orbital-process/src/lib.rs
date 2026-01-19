@@ -361,25 +361,43 @@ pub struct Permissions {
 impl Permissions {
     /// Full permissions
     pub fn full() -> Self {
-        Self { read: true, write: true, grant: true }
+        Self {
+            read: true,
+            write: true,
+            grant: true,
+        }
     }
 
     /// Read-only
     pub fn read_only() -> Self {
-        Self { read: true, write: false, grant: false }
+        Self {
+            read: true,
+            write: false,
+            grant: false,
+        }
     }
 
     /// Write-only
     pub fn write_only() -> Self {
-        Self { read: false, write: true, grant: false }
+        Self {
+            read: false,
+            write: true,
+            grant: false,
+        }
     }
 
     /// Pack into a single byte
     pub fn to_byte(&self) -> u8 {
         let mut b = 0u8;
-        if self.read { b |= 0x01; }
-        if self.write { b |= 0x02; }
-        if self.grant { b |= 0x04; }
+        if self.read {
+            b |= 0x01;
+        }
+        if self.write {
+            b |= 0x02;
+        }
+        if self.grant {
+            b |= 0x04;
+        }
         b
     }
 
@@ -406,12 +424,7 @@ impl Permissions {
 #[cfg(target_arch = "wasm32")]
 pub fn cap_grant(from_slot: u32, to_pid: u32, perms: Permissions) -> Result<u32, u32> {
     unsafe {
-        let result = orbital_syscall(
-            SYS_CAP_GRANT,
-            from_slot,
-            to_pid,
-            perms.to_byte() as u32,
-        );
+        let result = orbital_syscall(SYS_CAP_GRANT, from_slot, to_pid, perms.to_byte() as u32);
         if result & 0x80000000 == 0 {
             Ok(result)
         } else {
@@ -500,8 +513,8 @@ pub fn cap_inspect(slot: u32) -> Option<CapInfo> {
         let object_type = buffer[0];
         let perms = buffer[1];
         let object_id = u64::from_le_bytes([
-            buffer[8], buffer[9], buffer[10], buffer[11],
-            buffer[12], buffer[13], buffer[14], buffer[15],
+            buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14],
+            buffer[15],
         ]);
         Some(CapInfo {
             slot,
@@ -533,12 +546,7 @@ pub fn cap_inspect(_slot: u32) -> Option<CapInfo> {
 #[cfg(target_arch = "wasm32")]
 pub fn cap_derive(slot: u32, new_perms: Permissions) -> Result<u32, u32> {
     unsafe {
-        let result = orbital_syscall(
-            SYS_CAP_DERIVE,
-            slot,
-            new_perms.to_byte() as u32,
-            0,
-        );
+        let result = orbital_syscall(SYS_CAP_DERIVE, slot, new_perms.to_byte() as u32, 0);
         if result & 0x80000000 == 0 {
             Ok(result)
         } else {
@@ -575,9 +583,7 @@ pub fn send_with_caps(
         orbital_send_bytes(data.as_ptr(), data.len() as u32);
         // Pack cap_slots into bytes and send
         if !cap_slots.is_empty() {
-            let cap_bytes: Vec<u8> = cap_slots.iter()
-                .flat_map(|s| s.to_le_bytes())
-                .collect();
+            let cap_bytes: Vec<u8> = cap_slots.iter().flat_map(|s| s.to_le_bytes()).collect();
             orbital_send_bytes(cap_bytes.as_ptr(), cap_bytes.len() as u32);
         }
         let result = orbital_syscall(
@@ -618,7 +624,7 @@ pub fn send_with_caps(
 pub fn call(endpoint_slot: u32, tag: u32, data: &[u8]) -> Result<ReceivedMessage, u32> {
     // Simple implementation: send then poll for reply
     send(endpoint_slot, tag, data)?;
-    
+
     // Poll for reply (would block in a real implementation)
     loop {
         if let Some(msg) = receive(endpoint_slot) {

@@ -10,17 +10,19 @@
 extern crate alloc;
 
 #[cfg(target_arch = "wasm32")]
-use alloc::vec::Vec;
-#[cfg(target_arch = "wasm32")]
 use alloc::vec;
+#[cfg(target_arch = "wasm32")]
+use alloc::vec::Vec;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::vec::Vec;
 #[cfg(not(target_arch = "wasm32"))]
 use std::vec;
+#[cfg(not(target_arch = "wasm32"))]
+use std::vec::Vec;
 
 use orbital_process::{self as syscall, ReceivedMessage};
-use orbital_test_procs::{CMD_ALLOC, CMD_EXIT, CMD_FREE, CMD_FREE_ALL, CMD_QUERY, MSG_MEMORY_STATUS, MemoryStatus};
+use orbital_test_procs::{
+    MemoryStatus, CMD_ALLOC, CMD_EXIT, CMD_FREE, CMD_FREE_ALL, CMD_QUERY, MSG_MEMORY_STATUS,
+};
 
 // Command endpoint slot (assigned by supervisor)
 const CMD_ENDPOINT: u32 = 0;
@@ -50,11 +52,14 @@ fn handle_command(msg: ReceivedMessage, mut total_allocated: usize) -> usize {
         CMD_ALLOC => {
             // Allocate requested bytes
             if msg.data.len() >= 4 {
-                let size = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]) as usize;
+                let size = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]])
+                    as usize;
                 let chunk = vec![0xABu8; size]; // Fill with pattern
                 total_allocated += size;
 
-                unsafe { ALLOCATIONS.push(chunk); }
+                unsafe {
+                    ALLOCATIONS.push(chunk);
+                }
 
                 report_memory_status(total_allocated);
             }
@@ -69,7 +74,9 @@ fn handle_command(msg: ReceivedMessage, mut total_allocated: usize) -> usize {
         }
 
         CMD_FREE_ALL => {
-            unsafe { ALLOCATIONS.clear(); }
+            unsafe {
+                ALLOCATIONS.clear();
+            }
             total_allocated = 0;
             report_memory_status(total_allocated);
         }

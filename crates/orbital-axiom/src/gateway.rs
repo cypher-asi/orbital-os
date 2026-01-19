@@ -74,7 +74,9 @@ impl AxiomGateway {
         F: FnMut(u32, [u32; 4]) -> (i64, Vec<CommitType>),
     {
         // 1. Log syscall request
-        let request_id = self.syslog.log_request(sender, syscall_num, args, timestamp);
+        let request_id = self
+            .syslog
+            .log_request(sender, syscall_num, args, timestamp);
 
         // 2. Execute kernel operation
         let (result, commit_types) = kernel_fn(syscall_num, args);
@@ -86,7 +88,8 @@ impl AxiomGateway {
             .collect();
 
         // 4. Log syscall response
-        self.syslog.log_response(sender, request_id, result, timestamp);
+        self.syslog
+            .log_response(sender, request_id, result, timestamp);
 
         (result, commit_ids)
     }
@@ -169,7 +172,8 @@ mod tests {
     fn test_gateway_syscall_no_commits() {
         let mut gateway = AxiomGateway::new(0);
 
-        let (result, commits) = gateway.syscall(1, 0x01, [0, 0, 0, 0], 1000, |_, _| (42, Vec::new()));
+        let (result, commits) =
+            gateway.syscall(1, 0x01, [0, 0, 0, 0], 1000, |_, _| (42, Vec::new()));
 
         assert_eq!(result, 42);
         assert!(commits.is_empty());
@@ -207,7 +211,13 @@ mod tests {
 
         for i in 1..=5 {
             gateway.syscall(1, 0x11, [i, 0, 0, 0], i as u64 * 1000, |_, _| {
-                (0, alloc::vec![CommitType::EndpointCreated { id: i as u64, owner: 1 }])
+                (
+                    0,
+                    alloc::vec![CommitType::EndpointCreated {
+                        id: i as u64,
+                        owner: 1
+                    }],
+                )
             });
         }
 
@@ -221,7 +231,10 @@ mod tests {
         let mut gateway = AxiomGateway::new(1000);
 
         gateway.syscall(1, 0x01, [0, 0, 0, 0], 2000, |_, _| {
-            (0, alloc::vec![CommitType::EndpointCreated { id: 1, owner: 1 }])
+            (
+                0,
+                alloc::vec![CommitType::EndpointCreated { id: 1, owner: 1 }],
+            )
         });
 
         let state = gateway.state_summary();
@@ -235,10 +248,8 @@ mod tests {
     fn test_gateway_internal_commit() {
         let mut gateway = AxiomGateway::new(0);
 
-        let commit_id = gateway.append_internal_commit(
-            CommitType::ProcessExited { pid: 1, code: 0 },
-            1000,
-        );
+        let commit_id =
+            gateway.append_internal_commit(CommitType::ProcessExited { pid: 1, code: 0 }, 1000);
 
         assert_ne!(commit_id, [0u8; 32]);
         assert_eq!(gateway.syslog().len(), 0); // No syscall logged

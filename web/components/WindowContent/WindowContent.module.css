@@ -1,0 +1,115 @@
+/* Window-specific layout - visual styling handled by Panel */
+.window {
+  /* Panel handles: background, border, box-shadow, border-radius */
+  
+  /* GPU-accelerated positioning via transform instead of left/top */
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform, width, height;
+  
+  /* Isolation for layout optimization - NOT paint (would clip border-future pseudo-elements) */
+  contain: layout style;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+  flex: 1;
+}
+
+.titleFocused {
+  color: #ccc;
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background: transparent;
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.buttons {
+  display: flex;
+  gap: 4px;
+  position: relative;
+  z-index: 11; /* Above resize handles (z-index: 10) so they don't show resize cursor */
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  /* Full isolation for window content - enables aggressive browser optimizations */
+  contain: strict;
+}
+
+/* Resize handles - invisible but show cursor on hover */
+.resizeHandle {
+  position: absolute;
+  z-index: 10;
+}
+
+/* Edge handles - leave space for larger corner handles (12px) */
+.resizeN {
+  top: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeS {
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeE {
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+.resizeW {
+  top: 12px;
+  left: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+/* Corner handles */
+.resizeNE {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resizeNW {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSE {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSW {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}

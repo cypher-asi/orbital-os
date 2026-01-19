@@ -14,20 +14,20 @@
 #![no_std]
 extern crate alloc;
 
-pub mod types;
-pub mod syslog;
 pub mod commitlog;
 pub mod gateway;
 pub mod replay;
+pub mod syslog;
+pub mod types;
 
 // Re-export main types
-pub use types::*;
-pub use syslog::{SysLog, SysEvent, SysEventType};
-pub use commitlog::{CommitLog, Commit, CommitType};
+pub use commitlog::{Commit, CommitLog, CommitType};
 pub use gateway::AxiomGateway;
 pub use replay::{
-    apply_commit, replay, replay_and_verify, Replayable, ReplayError, ReplayResult, StateHasher,
+    apply_commit, replay, replay_and_verify, ReplayError, ReplayResult, Replayable, StateHasher,
 };
+pub use syslog::{SysEvent, SysEventType, SysLog};
+pub use types::*;
 
 #[cfg(test)]
 mod tests {
@@ -66,7 +66,10 @@ mod tests {
         let mut gateway = AxiomGateway::new(0);
 
         gateway.syscall(1, 0x35, [0, 0, 0, 0], 1000, |_, _| {
-            (0, alloc::vec![CommitType::EndpointCreated { id: 1, owner: 1 }])
+            (
+                0,
+                alloc::vec![CommitType::EndpointCreated { id: 1, owner: 1 }],
+            )
         });
 
         assert_eq!(gateway.commitlog().current_seq(), 1);
@@ -80,7 +83,10 @@ mod tests {
         // Add several commits
         for i in 1..=5 {
             gateway.syscall(1, 0x11, [0, 0, 0, 0], i * 1000, |_, _| {
-                (0, alloc::vec![CommitType::EndpointCreated { id: i, owner: 1 }])
+                (
+                    0,
+                    alloc::vec![CommitType::EndpointCreated { id: i, owner: 1 }],
+                )
             });
         }
 
@@ -92,7 +98,9 @@ mod tests {
         let mut gateway = AxiomGateway::new(0);
 
         for i in 0..5 {
-            gateway.syscall(1, 0x01, [i, 0, 0, 0], i as u64 * 1000, |_, _| (0, alloc::vec![]));
+            gateway.syscall(1, 0x01, [i, 0, 0, 0], i as u64 * 1000, |_, _| {
+                (0, alloc::vec![])
+            });
         }
 
         let events = gateway.syslog().events();

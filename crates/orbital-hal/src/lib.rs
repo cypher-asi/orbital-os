@@ -139,7 +139,7 @@ pub trait HAL: Send + Sync + 'static {
     fn poll_messages(&self) -> Vec<(Self::ProcessHandle, Vec<u8>)>;
 
     /// Register a callback for when messages arrive from processes
-    /// 
+    ///
     /// This is optional - implementations can use polling instead
     fn set_message_callback(&self, _callback: Option<MessageCallback<Self::ProcessHandle>>) {
         // Default: no-op, use polling

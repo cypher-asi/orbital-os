@@ -116,12 +116,12 @@ impl Init {
     fn run(&mut self) {
         self.log("Orbital OS Init Process starting (PID 1)");
         self.log("Service registry initialized");
-        
+
         // Boot sequence: spawn core services
         self.boot_sequence();
-        
+
         self.log("Entering service loop...");
-        
+
         // Main loop: handle service messages
         loop {
             if let Some(msg) = syscall::receive(self.endpoint_slot) {
@@ -134,12 +134,12 @@ impl Init {
     /// Boot sequence - spawn core services
     fn boot_sequence(&mut self) {
         self.log("Starting boot sequence...");
-        
+
         // Request supervisor to spawn terminal
         // This uses a special debug message that the supervisor intercepts
         self.log("Requesting terminal spawn...");
         syscall::debug("INIT:SPAWN:terminal");
-        
+
         self.boot_complete = true;
         self.log("Boot sequence complete");
     }
@@ -152,7 +152,10 @@ impl Init {
             MSG_SERVICE_READY => self.handle_ready(msg),
             MSG_SPAWN_SERVICE => self.handle_spawn_request(msg),
             _ => {
-                self.log(&format!("Unknown message tag: 0x{:x} from PID {}", msg.tag, msg.from_pid));
+                self.log(&format!(
+                    "Unknown message tag: 0x{:x} from PID {}",
+                    msg.tag, msg.from_pid
+                ));
             }
         }
     }
@@ -236,7 +239,9 @@ impl Init {
 
         self.log(&format!(
             "Lookup '{}' from PID {}: found={}",
-            name, msg.from_pid, found != 0
+            name,
+            msg.from_pid,
+            found != 0
         ));
 
         // Send response back
@@ -244,9 +249,7 @@ impl Init {
         // a direct endpoint to the requester
         let response_msg = format!(
             "INIT:LOOKUP_RESPONSE:{}:{}:{}",
-            msg.from_pid,
-            found,
-            endpoint_id
+            msg.from_pid, found, endpoint_id
         );
         syscall::debug(&response_msg);
     }
@@ -262,9 +265,12 @@ impl Init {
                 break;
             }
         }
-        
+
         match found_name {
-            Some(name) => self.log(&format!("Service '{}' (PID {}) is ready", name, msg.from_pid)),
+            Some(name) => self.log(&format!(
+                "Service '{}' (PID {}) is ready",
+                name, msg.from_pid
+            )),
             None => self.log(&format!("Ready signal from unknown PID {}", msg.from_pid)),
         }
     }
@@ -291,7 +297,10 @@ impl Init {
             }
         };
 
-        self.log(&format!("Spawn request for '{}' from PID {}", name, msg.from_pid));
+        self.log(&format!(
+            "Spawn request for '{}' from PID {}",
+            name, msg.from_pid
+        ));
 
         // Request supervisor to spawn
         syscall::debug(&format!("INIT:SPAWN:{}", name));

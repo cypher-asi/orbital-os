@@ -421,11 +421,7 @@ mod tests {
         assert_eq!(log.current_seq(), 1);
         assert_ne!(id1, [0u8; 32]);
 
-        let id2 = log.append(
-            CommitType::EndpointCreated { id: 1, owner: 1 },
-            None,
-            2000,
-        );
+        let id2 = log.append(CommitType::EndpointCreated { id: 1, owner: 1 }, None, 2000);
 
         assert_eq!(log.len(), 3);
         assert_eq!(log.current_seq(), 2);
@@ -456,7 +452,11 @@ mod tests {
         let mut log = CommitLog::new(0);
 
         for i in 1..=5 {
-            log.append(CommitType::EndpointCreated { id: i, owner: 1 }, None, i * 1000);
+            log.append(
+                CommitType::EndpointCreated { id: i, owner: 1 },
+                None,
+                i * 1000,
+            );
         }
 
         // Range [1, 4) should get commits 1, 2, 3
@@ -471,7 +471,11 @@ mod tests {
         let mut log = CommitLog::new(0);
 
         for i in 1..=10 {
-            log.append(CommitType::EndpointCreated { id: i, owner: 1 }, None, i * 1000);
+            log.append(
+                CommitType::EndpointCreated { id: i, owner: 1 },
+                None,
+                i * 1000,
+            );
         }
 
         let recent = log.get_recent(3);

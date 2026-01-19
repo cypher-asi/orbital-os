@@ -9,7 +9,9 @@
 extern crate alloc;
 
 use orbital_process::{self as syscall};
-use orbital_test_procs::{CMD_EXIT, CMD_QUERY, CMD_RESET, MSG_DATA, MSG_RECEIVER_STATS, ReceiverStats};
+use orbital_test_procs::{
+    ReceiverStats, CMD_EXIT, CMD_QUERY, CMD_RESET, MSG_DATA, MSG_RECEIVER_STATS,
+};
 
 // Command endpoint slot
 const CMD_ENDPOINT: u32 = 0;
@@ -31,7 +33,12 @@ pub extern "C" fn _start() {
         if let Some(cmd) = syscall::receive(CMD_ENDPOINT) {
             match cmd.tag {
                 CMD_QUERY => {
-                    report_stats(received_count, received_bytes, first_msg_time, last_msg_time);
+                    report_stats(
+                        received_count,
+                        received_bytes,
+                        first_msg_time,
+                        last_msg_time,
+                    );
                 }
                 CMD_RESET => {
                     received_count = 0;

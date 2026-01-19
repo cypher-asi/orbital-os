@@ -93,7 +93,7 @@ pub extern "C" fn orbital_syscall(syscall_num: u32, arg0: u32, arg1: u32, arg2: 
         loop {
             // wait returns: 0 = woken by notify, 1 = value changed, 2 = timeout
             let _ = memory_atomic_wait32(base.add(OFFSET_STATUS), STATUS_PENDING, -1);
-            
+
             // Check if status changed from PENDING
             let status = atomic_load(base.add(OFFSET_STATUS));
             if status != STATUS_PENDING {
@@ -151,7 +151,11 @@ pub unsafe extern "C" fn orbital_recv_bytes(ptr: *mut u8, max_len: u32) -> u32 {
 
     // Read data length
     let data_len = atomic_load(MAILBOX_BASE.add(OFFSET_DATA_LEN)) as u32;
-    let actual_len = if data_len > max_len { max_len } else { data_len };
+    let actual_len = if data_len > max_len {
+        max_len
+    } else {
+        data_len
+    };
 
     // Get pointer to data buffer (byte offset 28)
     let data_ptr = (MAILBOX_BASE as *const u8).add(28);

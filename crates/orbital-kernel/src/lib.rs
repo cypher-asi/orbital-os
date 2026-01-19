@@ -21,9 +21,8 @@ pub use orbital_hal::{HalError, HAL as HalTrait};
 
 // Re-export Axiom types
 pub use orbital_axiom::{
-    AxiomGateway, CommitLog, CommitType, SysLog, SysEvent, SysEventType,
-    CommitId, Commit, Replayable, ReplayError, ReplayResult, StateHasher,
-    apply_commit, replay, replay_and_verify,
+    apply_commit, replay, replay_and_verify, AxiomGateway, Commit, CommitId, CommitLog, CommitType,
+    ReplayError, ReplayResult, Replayable, StateHasher, SysEvent, SysEventType, SysLog,
 };
 
 /// Process identifier
@@ -481,9 +480,8 @@ pub enum Syscall {
     GetTime,
     /// Yield CPU (SYS_YIELD 0x02)
     Yield,
-    
+
     // === Capability syscalls ===
-    
     /// Grant capability to another process (SYS_CAP_GRANT 0x30)
     CapGrant {
         from_slot: CapSlot,
@@ -501,9 +499,8 @@ pub enum Syscall {
         slot: CapSlot,
         new_permissions: Permissions,
     },
-    
+
     // === Enhanced IPC syscalls ===
-    
     /// Send with capability transfer (SYS_SEND_CAP 0x44)
     SendWithCaps {
         endpoint_slot: CapSlot,
@@ -664,13 +661,17 @@ impl<H: HAL> Kernel<H> {
     /// Returns the event ID for correlation with the response.
     pub fn log_syscall_request(&mut self, pid: ProcessId, syscall_num: u32, args: [u32; 4]) -> u64 {
         let timestamp = self.uptime_nanos();
-        self.axiom_gateway.syslog_mut().log_request(pid.0, syscall_num, args, timestamp)
+        self.axiom_gateway
+            .syslog_mut()
+            .log_request(pid.0, syscall_num, args, timestamp)
     }
 
     /// Log a syscall response to the SysLog.
     pub fn log_syscall_response(&mut self, pid: ProcessId, request_id: u64, result: i64) {
         let timestamp = self.uptime_nanos();
-        self.axiom_gateway.syslog_mut().log_response(pid.0, request_id, result, timestamp);
+        self.axiom_gateway
+            .syslog_mut()
+            .log_response(pid.0, request_id, result, timestamp);
     }
 
     /// Get uptime in nanoseconds
@@ -724,8 +725,11 @@ impl<H: HAL> Kernel<H> {
             now,
         );
 
-        self.hal
-            .debug_write(&alloc::format!("[kernel] Registered process: {} (PID {})", name, pid.0));
+        self.hal.debug_write(&alloc::format!(
+            "[kernel] Registered process: {} (PID {})",
+            name,
+            pid.0
+        ));
 
         pid
     }
@@ -734,8 +738,11 @@ impl<H: HAL> Kernel<H> {
     pub fn kill_process(&mut self, pid: ProcessId) {
         // Remove the process
         if let Some(proc) = self.processes.remove(&pid) {
-            self.hal
-                .debug_write(&alloc::format!("[kernel] Killed process: {} (PID {})", proc.name, pid.0));
+            self.hal.debug_write(&alloc::format!(
+                "[kernel] Killed process: {} (PID {})",
+                proc.name,
+                pid.0
+            ));
         }
 
         // Remove its capability space
@@ -755,7 +762,10 @@ impl<H: HAL> Kernel<H> {
     }
 
     /// Create an IPC endpoint owned by a process
-    pub fn create_endpoint(&mut self, owner: ProcessId) -> Result<(EndpointId, CapSlot), KernelError> {
+    pub fn create_endpoint(
+        &mut self,
+        owner: ProcessId,
+    ) -> Result<(EndpointId, CapSlot), KernelError> {
         if !self.processes.contains_key(&owner) {
             return Err(KernelError::ProcessNotFound);
         }
@@ -792,7 +802,10 @@ impl<H: HAL> Kernel<H> {
         // Log to CommitLog
         let timestamp = self.uptime_nanos();
         self.axiom_gateway.append_internal_commit(
-            CommitType::EndpointCreated { id: id.0, owner: owner.0 },
+            CommitType::EndpointCreated {
+                id: id.0,
+                owner: owner.0,
+            },
             timestamp,
         );
         self.axiom_gateway.append_internal_commit(
@@ -910,11 +923,7 @@ impl<H: HAL> Kernel<H> {
     /// - `Ok(())`: Capability revoked
     /// - `Err(KernelError::InvalidCapability)`: Slot empty
     /// - `Err(KernelError::PermissionDenied)`: No grant permission
-    pub fn revoke_capability(
-        &mut self,
-        pid: ProcessId,
-        slot: CapSlot,
-    ) -> Result<(), KernelError> {
+    pub fn revoke_capability(&mut self, pid: ProcessId, slot: CapSlot) -> Result<(), KernelError> {
         // Get capability space
         let cspace = self
             .cap_spaces
@@ -931,10 +940,8 @@ impl<H: HAL> Kernel<H> {
 
         // Log to CommitLog
         let timestamp = self.uptime_nanos();
-        self.axiom_gateway.append_internal_commit(
-            CommitType::CapRemoved { pid: pid.0, slot },
-            timestamp,
-        );
+        self.axiom_gateway
+            .append_internal_commit(CommitType::CapRemoved { pid: pid.0, slot }, timestamp);
 
         // Remove from CSpace
         self.cap_spaces
@@ -944,7 +951,9 @@ impl<H: HAL> Kernel<H> {
 
         self.hal.debug_write(&alloc::format!(
             "[kernel] PID {} revoked capability {} (slot {})",
-            pid.0, cap_id, slot
+            pid.0,
+            cap_id,
+            slot
         ));
 
         Ok(())
@@ -963,11 +972,7 @@ impl<H: HAL> Kernel<H> {
     /// - `Ok(())`: Capability deleted
     /// - `Err(KernelError::ProcessNotFound)`: Process does not exist
     /// - `Err(KernelError::InvalidCapability)`: Slot is empty
-    pub fn delete_capability(
-        &mut self,
-        pid: ProcessId,
-        slot: CapSlot,
-    ) -> Result<(), KernelError> {
+    pub fn delete_capability(&mut self, pid: ProcessId, slot: CapSlot) -> Result<(), KernelError> {
         // Get capability space
         let cspace = self
             .cap_spaces
@@ -980,10 +985,8 @@ impl<H: HAL> Kernel<H> {
 
         // Log to CommitLog
         let timestamp = self.uptime_nanos();
-        self.axiom_gateway.append_internal_commit(
-            CommitType::CapRemoved { pid: pid.0, slot },
-            timestamp,
-        );
+        self.axiom_gateway
+            .append_internal_commit(CommitType::CapRemoved { pid: pid.0, slot }, timestamp);
 
         // Remove from CSpace
         self.cap_spaces
@@ -993,7 +996,9 @@ impl<H: HAL> Kernel<H> {
 
         self.hal.debug_write(&alloc::format!(
             "[kernel] PID {} deleted capability {} (slot {})",
-            pid.0, cap_id, slot
+            pid.0,
+            cap_id,
+            slot
         ));
 
         Ok(())
@@ -1038,7 +1043,7 @@ impl<H: HAL> Kernel<H> {
         };
 
         endpoint.pending_messages.push_back(message);
-        
+
         // Update endpoint metrics
         endpoint.metrics.queue_depth = endpoint.pending_messages.len();
         endpoint.metrics.total_messages += 1;
@@ -1133,7 +1138,7 @@ impl<H: HAL> Kernel<H> {
             .cap_spaces
             .get(&from_pid)
             .ok_or(KernelError::ProcessNotFound)?;
-        
+
         for &slot in cap_slots {
             if sender_cspace.get(slot).is_none() {
                 return Err(KernelError::InvalidCapability);
@@ -1143,7 +1148,7 @@ impl<H: HAL> Kernel<H> {
         // Remove capabilities from sender and build transfer list
         let timestamp = self.uptime_nanos();
         let mut transferred_caps = Vec::with_capacity(cap_slots.len());
-        
+
         let sender_cspace = self
             .cap_spaces
             .get_mut(&from_pid)
@@ -1153,7 +1158,10 @@ impl<H: HAL> Kernel<H> {
             if let Some(cap) = sender_cspace.remove(slot) {
                 // Log capability removal from sender to CommitLog
                 self.axiom_gateway.append_internal_commit(
-                    CommitType::CapRemoved { pid: from_pid.0, slot },
+                    CommitType::CapRemoved {
+                        pid: from_pid.0,
+                        slot,
+                    },
                     timestamp,
                 );
                 transferred_caps.push(TransferredCap {
@@ -1179,7 +1187,7 @@ impl<H: HAL> Kernel<H> {
         };
 
         endpoint.pending_messages.push_back(message);
-        
+
         // Update endpoint metrics
         endpoint.metrics.queue_depth = endpoint.pending_messages.len();
         endpoint.metrics.total_messages += 1;
@@ -1242,7 +1250,7 @@ impl<H: HAL> Kernel<H> {
 
         // Install transferred capabilities into receiver's CSpace
         let mut installed_slots = Vec::with_capacity(message.transferred_caps.len());
-        
+
         if !message.transferred_caps.is_empty() {
             let receiver_cspace = self
                 .cap_spaces
@@ -1286,10 +1294,10 @@ impl<H: HAL> Kernel<H> {
             .ok_or(KernelError::EndpointNotFound)?;
 
         let message = endpoint.pending_messages.pop_front();
-        
+
         // Update endpoint queue depth
         endpoint.metrics.queue_depth = endpoint.pending_messages.len();
-        
+
         // Update receiver process metrics if we got a message
         if let Some(ref msg) = message {
             let now = self.uptime_nanos();
@@ -1311,7 +1319,7 @@ impl<H: HAL> Kernel<H> {
             proc.metrics.syscall_count += 1;
             proc.metrics.last_active_ns = now;
         }
-        
+
         match syscall {
             Syscall::Debug { msg } => {
                 self.hal
@@ -1364,7 +1372,10 @@ impl<H: HAL> Kernel<H> {
                 // Log process exit to CommitLog
                 let timestamp = self.uptime_nanos();
                 self.axiom_gateway.append_internal_commit(
-                    CommitType::ProcessExited { pid: from_pid.0, code },
+                    CommitType::ProcessExited {
+                        pid: from_pid.0,
+                        code,
+                    },
                     timestamp,
                 );
                 SyscallResult::Ok(code as u64)
@@ -1379,7 +1390,6 @@ impl<H: HAL> Kernel<H> {
             }
 
             // === Capability syscalls ===
-
             Syscall::CapGrant {
                 from_slot,
                 to_pid,
@@ -1399,17 +1409,18 @@ impl<H: HAL> Kernel<H> {
                 Err(e) => SyscallResult::Err(e),
             },
 
-            Syscall::CapInspect { slot } => {
-                match self.cap_spaces.get(&from_pid) {
-                    Some(cspace) => match cspace.get(slot) {
-                        Some(cap) => SyscallResult::CapInfo(CapInfo::from(cap)),
-                        None => SyscallResult::Err(KernelError::InvalidCapability),
-                    },
-                    None => SyscallResult::Err(KernelError::ProcessNotFound),
-                }
-            }
+            Syscall::CapInspect { slot } => match self.cap_spaces.get(&from_pid) {
+                Some(cspace) => match cspace.get(slot) {
+                    Some(cap) => SyscallResult::CapInfo(CapInfo::from(cap)),
+                    None => SyscallResult::Err(KernelError::InvalidCapability),
+                },
+                None => SyscallResult::Err(KernelError::ProcessNotFound),
+            },
 
-            Syscall::CapDerive { slot, new_permissions } => {
+            Syscall::CapDerive {
+                slot,
+                new_permissions,
+            } => {
                 // Derive creates a new capability in the same process's CSpace
                 // with attenuated permissions
                 match self.derive_capability(from_pid, slot, new_permissions) {
@@ -1419,7 +1430,6 @@ impl<H: HAL> Kernel<H> {
             }
 
             // === Enhanced IPC syscalls ===
-
             Syscall::SendWithCaps {
                 endpoint_slot,
                 tag,
@@ -1562,30 +1572,47 @@ impl<H: HAL> Kernel<H> {
 
     /// Allocate memory to a process (simulated)
     pub fn allocate_memory(&mut self, pid: ProcessId, bytes: usize) -> Result<usize, KernelError> {
-        let proc = self.processes.get_mut(&pid).ok_or(KernelError::ProcessNotFound)?;
+        let proc = self
+            .processes
+            .get_mut(&pid)
+            .ok_or(KernelError::ProcessNotFound)?;
         proc.metrics.memory_size += bytes;
         self.hal.debug_write(&alloc::format!(
             "[kernel] PID {} allocated {} bytes (total: {} bytes)",
-            pid.0, bytes, proc.metrics.memory_size
+            pid.0,
+            bytes,
+            proc.metrics.memory_size
         ));
         Ok(proc.metrics.memory_size)
     }
 
     /// Free memory from a process (simulated)
     pub fn free_memory(&mut self, pid: ProcessId, bytes: usize) -> Result<usize, KernelError> {
-        let proc = self.processes.get_mut(&pid).ok_or(KernelError::ProcessNotFound)?;
+        let proc = self
+            .processes
+            .get_mut(&pid)
+            .ok_or(KernelError::ProcessNotFound)?;
         proc.metrics.memory_size = proc.metrics.memory_size.saturating_sub(bytes);
         self.hal.debug_write(&alloc::format!(
             "[kernel] PID {} freed {} bytes (total: {} bytes)",
-            pid.0, bytes, proc.metrics.memory_size
+            pid.0,
+            bytes,
+            proc.metrics.memory_size
         ));
         Ok(proc.metrics.memory_size)
     }
 
     /// Send a message to a process's first endpoint (for testing/supervisor use)
-    pub fn send_to_process(&mut self, from_pid: ProcessId, to_pid: ProcessId, tag: u32, data: Vec<u8>) -> Result<(), KernelError> {
+    pub fn send_to_process(
+        &mut self,
+        from_pid: ProcessId,
+        to_pid: ProcessId,
+        tag: u32,
+        data: Vec<u8>,
+    ) -> Result<(), KernelError> {
         // Find an endpoint owned by the target process
-        let endpoint_id = self.endpoints
+        let endpoint_id = self
+            .endpoints
             .iter()
             .find(|(_, ep)| ep.owner == to_pid)
             .map(|(id, _)| *id)
@@ -1594,7 +1621,10 @@ impl<H: HAL> Kernel<H> {
         let data_len = data.len();
 
         // Queue the message
-        let endpoint = self.endpoints.get_mut(&endpoint_id).ok_or(KernelError::EndpointNotFound)?;
+        let endpoint = self
+            .endpoints
+            .get_mut(&endpoint_id)
+            .ok_or(KernelError::EndpointNotFound)?;
         let message = Message {
             from: from_pid,
             tag,
@@ -1602,7 +1632,7 @@ impl<H: HAL> Kernel<H> {
             transferred_caps: vec![],
         };
         endpoint.pending_messages.push_back(message);
-        
+
         // Update endpoint metrics
         endpoint.metrics.queue_depth = endpoint.pending_messages.len();
         endpoint.metrics.total_messages += 1;
@@ -1638,7 +1668,10 @@ impl<H: HAL> Kernel<H> {
 
         self.hal.debug_write(&alloc::format!(
             "[kernel] Message sent from PID {} to PID {} (endpoint {}, tag 0x{:x})",
-            from_pid.0, to_pid.0, endpoint_id.0, tag
+            from_pid.0,
+            to_pid.0,
+            endpoint_id.0,
+            tag
         ));
 
         Ok(())
@@ -1656,7 +1689,10 @@ impl<H: HAL> Kernel<H> {
 
     /// Get total message count in all endpoint queues
     pub fn total_pending_messages(&self) -> usize {
-        self.endpoints.values().map(|e| e.pending_messages.len()).sum()
+        self.endpoints
+            .values()
+            .map(|e| e.pending_messages.len())
+            .sum()
     }
 
     /// Get system-wide metrics
@@ -1754,12 +1790,7 @@ impl<H: HAL> Replayable for Kernel<H> {
         Ok(())
     }
 
-    fn replay_create_process(
-        &mut self,
-        pid: u64,
-        _parent: u64,
-        name: String,
-    ) -> ReplayResult<()> {
+    fn replay_create_process(&mut self, pid: u64, _parent: u64, name: String) -> ReplayResult<()> {
         let process = Process {
             pid: ProcessId(pid),
             name,
@@ -1767,7 +1798,8 @@ impl<H: HAL> Replayable for Kernel<H> {
             metrics: ProcessMetrics::default(),
         };
         self.processes.insert(ProcessId(pid), process);
-        self.cap_spaces.insert(ProcessId(pid), CapabilitySpace::new());
+        self.cap_spaces
+            .insert(ProcessId(pid), CapabilitySpace::new());
 
         // Update next_pid if needed to avoid collisions
         if pid >= self.next_pid {
@@ -1973,7 +2005,7 @@ mod tests {
     fn test_kernel_creation() {
         let hal = MockHal::new();
         let kernel = Kernel::new(hal);
-        
+
         assert_eq!(kernel.list_processes().len(), 0);
         assert_eq!(kernel.list_endpoints().len(), 0);
     }
@@ -2013,7 +2045,9 @@ mod tests {
         let mut kernel = Kernel::new(hal);
 
         let pid = kernel.register_process("test");
-        let (eid, slot) = kernel.create_endpoint(pid).expect("endpoint creation should succeed");
+        let (eid, slot) = kernel
+            .create_endpoint(pid)
+            .expect("endpoint creation should succeed");
 
         assert_eq!(eid, EndpointId(1));
         assert_eq!(slot, 0);
@@ -2044,17 +2078,25 @@ mod tests {
         let (eid, owner_slot) = kernel.create_endpoint(pid1).unwrap();
 
         // Grant capability from pid1 to pid2 with reduced permissions
-        let recipient_slot = kernel.grant_capability(
-            pid1,
-            owner_slot,
-            pid2,
-            Permissions { read: true, write: true, grant: false }
-        ).expect("grant should succeed");
+        let recipient_slot = kernel
+            .grant_capability(
+                pid1,
+                owner_slot,
+                pid2,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .expect("grant should succeed");
 
         // Verify recipient got the capability
         let cap_space = kernel.get_cap_space(pid2).expect("cap space should exist");
-        let cap = cap_space.get(recipient_slot).expect("capability should exist");
-        
+        let cap = cap_space
+            .get(recipient_slot)
+            .expect("capability should exist");
+
         assert_eq!(cap.object_type, ObjectType::Endpoint);
         assert_eq!(cap.object_id, eid.0);
         assert!(cap.permissions.read);
@@ -2075,15 +2117,29 @@ mod tests {
         kernel.create_endpoint(pid1).unwrap();
 
         // Grant to pid2 without grant permission
-        let middleman_slot = kernel.grant_capability(
-            pid1, 0, pid2,
-            Permissions { read: true, write: true, grant: false }
-        ).unwrap();
+        let middleman_slot = kernel
+            .grant_capability(
+                pid1,
+                0,
+                pid2,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // pid2 should not be able to grant further (no grant permission)
         let result = kernel.grant_capability(
-            pid2, middleman_slot, pid3,
-            Permissions { read: true, write: false, grant: false }
+            pid2,
+            middleman_slot,
+            pid3,
+            Permissions {
+                read: true,
+                write: false,
+                grant: false,
+            },
         );
 
         assert!(matches!(result, Err(KernelError::PermissionDenied)));
@@ -2101,21 +2157,35 @@ mod tests {
         let (_, receiver_slot) = kernel.create_endpoint(receiver_pid).unwrap();
 
         // Grant send capability to sender (write-only)
-        let sender_slot = kernel.grant_capability(
-            receiver_pid, receiver_slot, sender_pid,
-            Permissions { read: false, write: true, grant: false }
-        ).unwrap();
+        let sender_slot = kernel
+            .grant_capability(
+                receiver_pid,
+                receiver_slot,
+                sender_pid,
+                Permissions {
+                    read: false,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Send message
         let data = b"hello world".to_vec();
-        kernel.ipc_send(sender_pid, sender_slot, 42, data.clone()).expect("send should succeed");
+        kernel
+            .ipc_send(sender_pid, sender_slot, 42, data.clone())
+            .expect("send should succeed");
 
         // Verify message is queued
-        let ep = kernel.get_endpoint(EndpointId(1)).expect("endpoint should exist");
+        let ep = kernel
+            .get_endpoint(EndpointId(1))
+            .expect("endpoint should exist");
         assert_eq!(ep.pending_messages.len(), 1);
 
         // Receive message
-        let msg = kernel.ipc_receive(receiver_pid, receiver_slot).expect("receive should succeed")
+        let msg = kernel
+            .ipc_receive(receiver_pid, receiver_slot)
+            .expect("receive should succeed")
             .expect("message should be present");
 
         assert_eq!(msg.from, sender_pid);
@@ -2123,7 +2193,9 @@ mod tests {
         assert_eq!(msg.data, b"hello world");
 
         // Queue should now be empty
-        let ep = kernel.get_endpoint(EndpointId(1)).expect("endpoint should exist");
+        let ep = kernel
+            .get_endpoint(EndpointId(1))
+            .expect("endpoint should exist");
         assert_eq!(ep.pending_messages.len(), 0);
     }
 
@@ -2155,10 +2227,18 @@ mod tests {
         kernel.create_endpoint(owner).unwrap();
 
         // Grant read-only capability
-        let reader_slot = kernel.grant_capability(
-            owner, 0, reader,
-            Permissions { read: true, write: false, grant: false }
-        ).unwrap();
+        let reader_slot = kernel
+            .grant_capability(
+                owner,
+                0,
+                reader,
+                Permissions {
+                    read: true,
+                    write: false,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Try to send with read-only capability - should fail
         let result = kernel.ipc_send(reader, reader_slot, 0, vec![]);
@@ -2175,14 +2255,24 @@ mod tests {
 
         // Create endpoint and grant capability
         kernel.create_endpoint(receiver).unwrap();
-        let sender_slot = kernel.grant_capability(
-            receiver, 0, sender,
-            Permissions { read: false, write: true, grant: false }
-        ).unwrap();
+        let sender_slot = kernel
+            .grant_capability(
+                receiver,
+                0,
+                sender,
+                Permissions {
+                    read: false,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Send several messages
         for i in 0..5 {
-            kernel.ipc_send(sender, sender_slot, i, vec![0u8; 100]).unwrap();
+            kernel
+                .ipc_send(sender, sender_slot, i, vec![0u8; 100])
+                .unwrap();
         }
 
         // Check sender metrics
@@ -2273,7 +2363,7 @@ mod tests {
         let mut kernel = Kernel::new(hal);
 
         let pid = kernel.register_process("owner");
-        
+
         // Create endpoint (owner gets full capability in slot 0)
         let (_eid, slot) = kernel.create_endpoint(pid).unwrap();
 
@@ -2282,7 +2372,9 @@ mod tests {
         assert!(cap_space.get(slot).is_some());
 
         // Revoke the capability
-        kernel.revoke_capability(pid, slot).expect("revoke should succeed");
+        kernel
+            .revoke_capability(pid, slot)
+            .expect("revoke should succeed");
 
         // Verify capability is gone
         let cap_space = kernel.get_cap_space(pid).unwrap();
@@ -2292,7 +2384,10 @@ mod tests {
         let commits = kernel.commitlog().commits();
         // Should have Genesis, ProcessCreated, EndpointCreated, CapInserted, CapRemoved
         assert!(commits.len() >= 5);
-        assert!(matches!(&commits[commits.len() - 1].commit_type, CommitType::CapRemoved { .. }));
+        assert!(matches!(
+            &commits[commits.len() - 1].commit_type,
+            CommitType::CapRemoved { .. }
+        ));
     }
 
     #[test]
@@ -2307,10 +2402,18 @@ mod tests {
         kernel.create_endpoint(owner).unwrap();
 
         // Grant to holder without grant permission
-        let holder_slot = kernel.grant_capability(
-            owner, 0, holder,
-            Permissions { read: true, write: true, grant: false }
-        ).unwrap();
+        let holder_slot = kernel
+            .grant_capability(
+                owner,
+                0,
+                holder,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Holder cannot revoke (no grant permission)
         let result = kernel.revoke_capability(holder, holder_slot);
@@ -2329,13 +2432,23 @@ mod tests {
         kernel.create_endpoint(owner).unwrap();
 
         // Grant to holder without grant permission
-        let holder_slot = kernel.grant_capability(
-            owner, 0, holder,
-            Permissions { read: true, write: true, grant: false }
-        ).unwrap();
+        let holder_slot = kernel
+            .grant_capability(
+                owner,
+                0,
+                holder,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Holder can delete their own capability (no grant permission required)
-        kernel.delete_capability(holder, holder_slot).expect("delete should succeed");
+        kernel
+            .delete_capability(holder, holder_slot)
+            .expect("delete should succeed");
 
         // Verify capability is gone
         let cap_space = kernel.get_cap_space(holder).unwrap();
@@ -2345,7 +2458,10 @@ mod tests {
         let commits = kernel.commitlog().commits();
         // Should have Genesis, ProcessCreated x2, EndpointCreated, CapInserted, CapGranted, CapRemoved
         assert!(commits.len() >= 7);
-        assert!(matches!(&commits[commits.len() - 1].commit_type, CommitType::CapRemoved { .. }));
+        assert!(matches!(
+            &commits[commits.len() - 1].commit_type,
+            CommitType::CapRemoved { .. }
+        ));
     }
 
     #[test]
@@ -2369,14 +2485,26 @@ mod tests {
         let receiver = kernel.register_process("receiver");
 
         kernel.create_endpoint(receiver).unwrap();
-        let sender_slot = kernel.grant_capability(
-            receiver, 0, sender,
-            Permissions { read: false, write: true, grant: false }
-        ).unwrap();
+        let sender_slot = kernel
+            .grant_capability(
+                receiver,
+                0,
+                sender,
+                Permissions {
+                    read: false,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Send messages
-        kernel.ipc_send(sender, sender_slot, 0x1234, vec![0u8; 64]).unwrap();
-        kernel.ipc_send(sender, sender_slot, 0x5678, vec![0u8; 128]).unwrap();
+        kernel
+            .ipc_send(sender, sender_slot, 0x1234, vec![0u8; 64])
+            .unwrap();
+        kernel
+            .ipc_send(sender, sender_slot, 0x5678, vec![0u8; 128])
+            .unwrap();
 
         // Check traffic log
         let traffic = kernel.get_recent_ipc_traffic(10);
@@ -2399,7 +2527,7 @@ mod tests {
         kernel.create_endpoint(ProcessId(2)).unwrap();
 
         let metrics = kernel.get_system_metrics();
-        
+
         assert_eq!(metrics.process_count, 2);
         assert_eq!(metrics.endpoint_count, 3);
         assert!(metrics.total_memory > 0);
@@ -2431,7 +2559,7 @@ mod tests {
             Some(ObjectType::Endpoint),
             0,
         );
-        
+
         assert!(result.is_ok());
         let cap = result.unwrap();
         assert_eq!(cap.object_id, 42);
@@ -2440,7 +2568,7 @@ mod tests {
     #[test]
     fn test_axiom_check_invalid_slot() {
         let cspace = CapabilitySpace::new();
-        
+
         let result = axiom_check(
             &cspace,
             999, // Invalid slot
@@ -2448,7 +2576,7 @@ mod tests {
             None,
             0,
         );
-        
+
         assert!(matches!(result, Err(AxiomError::InvalidSlot)));
     }
 
@@ -2472,7 +2600,7 @@ mod tests {
             Some(ObjectType::Process), // Wrong type
             0,
         );
-        
+
         assert!(matches!(result, Err(AxiomError::WrongType)));
     }
 
@@ -2490,14 +2618,8 @@ mod tests {
         let slot = cspace.insert(cap);
 
         // Require write
-        let result = axiom_check(
-            &cspace,
-            slot,
-            &Permissions::write_only(),
-            None,
-            0,
-        );
-        
+        let result = axiom_check(&cspace, slot, &Permissions::write_only(), None, 0);
+
         assert!(matches!(result, Err(AxiomError::InsufficientRights)));
     }
 
@@ -2515,14 +2637,8 @@ mod tests {
         let slot = cspace.insert(cap);
 
         // Check at time 2000 (after expiration)
-        let result = axiom_check(
-            &cspace,
-            slot,
-            &Permissions::read_only(),
-            None,
-            2000,
-        );
-        
+        let result = axiom_check(&cspace, slot, &Permissions::read_only(), None, 2000);
+
         assert!(matches!(result, Err(AxiomError::Expired)));
     }
 
@@ -2540,14 +2656,8 @@ mod tests {
         let slot = cspace.insert(cap);
 
         // Check at very large time
-        let result = axiom_check(
-            &cspace,
-            slot,
-            &Permissions::read_only(),
-            None,
-            u64::MAX,
-        );
-        
+        let result = axiom_check(&cspace, slot, &Permissions::read_only(), None, u64::MAX);
+
         assert!(result.is_ok());
     }
 
@@ -2568,29 +2678,37 @@ mod tests {
         let (_, alice_slot) = kernel.create_endpoint(alice).unwrap();
 
         // Alice grants to Bob with full permissions
-        let bob_slot = kernel.grant_capability(
-            alice, alice_slot, bob,
-            Permissions::full()
-        ).unwrap();
+        let bob_slot = kernel
+            .grant_capability(alice, alice_slot, bob, Permissions::full())
+            .unwrap();
 
         // Bob grants to Charlie with reduced permissions (no grant)
-        let charlie_slot = kernel.grant_capability(
-            bob, bob_slot, charlie,
-            Permissions { read: true, write: true, grant: false }
-        ).unwrap();
+        let charlie_slot = kernel
+            .grant_capability(
+                bob,
+                bob_slot,
+                charlie,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Verify Charlie's capability
-        let charlie_cap = kernel.get_cap_space(charlie).unwrap().get(charlie_slot).unwrap();
+        let charlie_cap = kernel
+            .get_cap_space(charlie)
+            .unwrap()
+            .get(charlie_slot)
+            .unwrap();
         assert!(charlie_cap.permissions.read);
         assert!(charlie_cap.permissions.write);
         assert!(!charlie_cap.permissions.grant);
 
         // Charlie cannot grant further (no grant permission)
         let dave = kernel.register_process("dave");
-        let result = kernel.grant_capability(
-            charlie, charlie_slot, dave,
-            Permissions::read_only()
-        );
+        let result = kernel.grant_capability(charlie, charlie_slot, dave, Permissions::read_only());
         assert!(matches!(result, Err(KernelError::PermissionDenied)));
     }
 
@@ -2607,25 +2725,31 @@ mod tests {
         let (_, receiver_ep) = kernel.create_endpoint(receiver).unwrap();
 
         // Receiver grants send capability to sender
-        let send_cap = kernel.grant_capability(
-            receiver, receiver_ep, sender,
-            Permissions::write_only()
-        ).unwrap();
+        let send_cap = kernel
+            .grant_capability(receiver, receiver_ep, sender, Permissions::write_only())
+            .unwrap();
 
         // Sender sends message with its own endpoint capability attached
-        kernel.ipc_send_with_caps(
-            sender,
-            send_cap,
-            0x1234,
-            b"hello with cap".to_vec(),
-            &[sender_ep],
-        ).expect("send with caps should succeed");
+        kernel
+            .ipc_send_with_caps(
+                sender,
+                send_cap,
+                0x1234,
+                b"hello with cap".to_vec(),
+                &[sender_ep],
+            )
+            .expect("send with caps should succeed");
 
         // Verify sender no longer has the endpoint capability
-        assert!(kernel.get_cap_space(sender).unwrap().get(sender_ep).is_none());
+        assert!(kernel
+            .get_cap_space(sender)
+            .unwrap()
+            .get(sender_ep)
+            .is_none());
 
         // Receiver receives message with transferred capability
-        let (msg, installed_slots) = kernel.ipc_receive_with_caps(receiver, receiver_ep)
+        let (msg, installed_slots) = kernel
+            .ipc_receive_with_caps(receiver, receiver_ep)
             .expect("receive should succeed")
             .expect("message should exist");
 
@@ -2634,7 +2758,8 @@ mod tests {
         assert_eq!(installed_slots.len(), 1);
 
         // Receiver now has the sender's endpoint capability
-        let received_cap = kernel.get_cap_space(receiver)
+        let received_cap = kernel
+            .get_cap_space(receiver)
             .unwrap()
             .get(installed_slots[0])
             .unwrap();
@@ -2650,17 +2775,20 @@ mod tests {
         let (_, slot) = kernel.create_endpoint(pid).unwrap();
 
         // Derive a read-only capability
-        let derived_slot = kernel.derive_capability(
-            pid, slot,
-            Permissions::read_only()
-        ).expect("derive should succeed");
+        let derived_slot = kernel
+            .derive_capability(pid, slot, Permissions::read_only())
+            .expect("derive should succeed");
 
         // Verify original still has full permissions
         let orig_cap = kernel.get_cap_space(pid).unwrap().get(slot).unwrap();
         assert!(orig_cap.permissions.grant);
 
         // Verify derived has reduced permissions
-        let derived_cap = kernel.get_cap_space(pid).unwrap().get(derived_slot).unwrap();
+        let derived_cap = kernel
+            .get_cap_space(pid)
+            .unwrap()
+            .get(derived_slot)
+            .unwrap();
         assert!(derived_cap.permissions.read);
         assert!(!derived_cap.permissions.write);
         assert!(!derived_cap.permissions.grant);
@@ -2681,10 +2809,18 @@ mod tests {
         let (_, alice_slot) = kernel.create_endpoint(alice).unwrap();
 
         // Grant to Bob (logs CapGranted)
-        let bob_slot = kernel.grant_capability(
-            alice, alice_slot, bob,
-            Permissions { read: true, write: true, grant: false }
-        ).unwrap();
+        let bob_slot = kernel
+            .grant_capability(
+                alice,
+                alice_slot,
+                bob,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Bob deletes their capability (logs CapRemoved)
         kernel.delete_capability(bob, bob_slot).unwrap();
@@ -2694,20 +2830,29 @@ mod tests {
 
         // Verify CommitLog contents
         let commits = kernel.commitlog().commits();
-        
+
         // Should have: Genesis, ProcessCreated x2, EndpointCreated, CapInserted, CapGranted, CapRemoved x2
         assert!(commits.len() >= 8);
-        
+
         // Verify first commit is Genesis
         assert!(matches!(&commits[0].commit_type, CommitType::Genesis));
-        
+
         // Verify process creation
-        assert!(matches!(&commits[1].commit_type, CommitType::ProcessCreated { .. }));
-        assert!(matches!(&commits[2].commit_type, CommitType::ProcessCreated { .. }));
-        
+        assert!(matches!(
+            &commits[1].commit_type,
+            CommitType::ProcessCreated { .. }
+        ));
+        assert!(matches!(
+            &commits[2].commit_type,
+            CommitType::ProcessCreated { .. }
+        ));
+
         // Verify endpoint creation
-        assert!(matches!(&commits[3].commit_type, CommitType::EndpointCreated { .. }));
-        
+        assert!(matches!(
+            &commits[3].commit_type,
+            CommitType::EndpointCreated { .. }
+        ));
+
         // Verify log integrity
         assert!(kernel.commitlog().verify_integrity());
     }
@@ -2744,14 +2889,21 @@ mod tests {
         let (_, slot) = kernel.create_endpoint(pid).unwrap();
 
         // Derive via syscall
-        let result = kernel.handle_syscall(pid, Syscall::CapDerive {
-            slot,
-            new_permissions: Permissions::read_only(),
-        });
+        let result = kernel.handle_syscall(
+            pid,
+            Syscall::CapDerive {
+                slot,
+                new_permissions: Permissions::read_only(),
+            },
+        );
 
         match result {
             SyscallResult::Ok(new_slot) => {
-                let cap = kernel.get_cap_space(pid).unwrap().get(new_slot as u32).unwrap();
+                let cap = kernel
+                    .get_cap_space(pid)
+                    .unwrap()
+                    .get(new_slot as u32)
+                    .unwrap();
                 assert!(cap.permissions.read);
                 assert!(!cap.permissions.write);
             }
@@ -2793,7 +2945,9 @@ mod tests {
 
         // Should have the process
         assert_eq!(replay_kernel.list_processes().len(), 1);
-        let proc = replay_kernel.get_process(pid).expect("process should exist");
+        let proc = replay_kernel
+            .get_process(pid)
+            .expect("process should exist");
         assert_eq!(proc.name, "init");
         assert_eq!(proc.state, ProcessState::Running);
     }
@@ -2830,7 +2984,9 @@ mod tests {
 
         // Should have the endpoint
         assert_eq!(replay_kernel.list_endpoints().len(), 1);
-        let ep = replay_kernel.get_endpoint(eid).expect("endpoint should exist");
+        let ep = replay_kernel
+            .get_endpoint(eid)
+            .expect("endpoint should exist");
         assert_eq!(ep.owner, pid);
     }
 
@@ -2844,13 +3000,18 @@ mod tests {
 
         // Create endpoint and grant capability
         let (_, owner_slot) = kernel.create_endpoint(owner).unwrap();
-        let recipient_slot = kernel.grant_capability(
-            owner,
-            owner_slot,
-            recipient,
-            Permissions { read: true, write: true, grant: false },
-        )
-        .unwrap();
+        let recipient_slot = kernel
+            .grant_capability(
+                owner,
+                owner_slot,
+                recipient,
+                Permissions {
+                    read: true,
+                    write: true,
+                    grant: false,
+                },
+            )
+            .unwrap();
 
         // Recipient deletes their capability
         kernel.delete_capability(recipient, recipient_slot).unwrap();
@@ -2879,7 +3040,9 @@ mod tests {
         let pid1 = kernel.register_process("init");
         let (_, slot) = kernel.create_endpoint(pid1).unwrap();
         let pid2 = kernel.register_process("terminal");
-        kernel.grant_capability(pid1, slot, pid2, Permissions::read_only()).unwrap();
+        kernel
+            .grant_capability(pid1, slot, pid2, Permissions::read_only())
+            .unwrap();
 
         // Get state hash and commits
         let hash1 = kernel.state_hash();
@@ -2908,10 +3071,16 @@ mod tests {
         let (ep1, slot1) = kernel.create_endpoint(alice).unwrap();
         let (ep2, slot2) = kernel.create_endpoint(bob).unwrap();
 
-        kernel.grant_capability(alice, slot1, bob, Permissions::full()).unwrap();
-        kernel.grant_capability(bob, slot2, charlie, Permissions::read_only()).unwrap();
+        kernel
+            .grant_capability(alice, slot1, bob, Permissions::full())
+            .unwrap();
+        kernel
+            .grant_capability(bob, slot2, charlie, Permissions::read_only())
+            .unwrap();
 
-        let derived_slot = kernel.derive_capability(alice, slot1, Permissions::write_only()).unwrap();
+        let derived_slot = kernel
+            .derive_capability(alice, slot1, Permissions::write_only())
+            .unwrap();
         kernel.delete_capability(alice, derived_slot).unwrap();
 
         let hash1 = kernel.state_hash();
@@ -2928,10 +3097,7 @@ mod tests {
 
         // All hashes must match the original
         for (i, hash) in hashes.iter().enumerate() {
-            assert_eq!(
-                *hash, hash1,
-                "Replay {} must produce identical hash", i
-            );
+            assert_eq!(*hash, hash1, "Replay {} must produce identical hash", i);
         }
     }
 
@@ -2950,7 +3116,9 @@ mod tests {
         replay(&mut replay_kernel, &commits).expect("replay should succeed");
 
         // Process should be zombie
-        let proc = replay_kernel.get_process(pid).expect("process should exist");
+        let proc = replay_kernel
+            .get_process(pid)
+            .expect("process should exist");
         assert_eq!(proc.state, ProcessState::Zombie);
     }
 

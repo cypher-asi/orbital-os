@@ -9,7 +9,7 @@ all: build
 # Build everything
 build: build-processes
 	@echo "Building supervisor WASM module..."
-	cd apps/orbital-web && wasm-pack build --target web --out-dir www/pkg
+	cd crates/orbital-web && wasm-pack build --target web --out-dir ../../web/pkg
 	@echo "Build complete!"
 
 # Build test process WASM binaries
@@ -18,15 +18,15 @@ build-processes:
 	cargo build -p orbital-init --target wasm32-unknown-unknown --release
 	cargo build -p orbital-terminal --target wasm32-unknown-unknown --release
 	cargo build -p orbital-test-procs --target wasm32-unknown-unknown --release
-	@echo "Copying WASM binaries to www/processes..."
-	mkdir -p apps/orbital-web/www/processes
-	cp target/wasm32-unknown-unknown/release/orbital_init.wasm apps/orbital-web/www/processes/init.wasm
-	cp target/wasm32-unknown-unknown/release/orbital_terminal.wasm apps/orbital-web/www/processes/terminal.wasm
-	cp target/wasm32-unknown-unknown/release/idle.wasm apps/orbital-web/www/processes/
-	cp target/wasm32-unknown-unknown/release/memhog.wasm apps/orbital-web/www/processes/
-	cp target/wasm32-unknown-unknown/release/sender.wasm apps/orbital-web/www/processes/
-	cp target/wasm32-unknown-unknown/release/receiver.wasm apps/orbital-web/www/processes/
-	cp target/wasm32-unknown-unknown/release/pingpong.wasm apps/orbital-web/www/processes/
+	@echo "Copying WASM binaries to web/processes..."
+	mkdir -p web/processes
+	cp target/wasm32-unknown-unknown/release/orbital_init.wasm web/processes/init.wasm
+	cp target/wasm32-unknown-unknown/release/orbital_terminal.wasm web/processes/terminal.wasm
+	cp target/wasm32-unknown-unknown/release/idle.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/memhog.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/sender.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/receiver.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/pingpong.wasm web/processes/
 	@echo "Process binaries ready!"
 
 # Build and run the dev server
@@ -41,8 +41,8 @@ server:
 clean:
 	@echo "Cleaning build artifacts..."
 	cargo clean
-	rm -rf apps/orbital-web/www/pkg
-	rm -rf apps/orbital-web/www/processes
+	rm -rf web/pkg
+	rm -rf web/processes
 	@echo "Clean complete!"
 
 # Run cargo check

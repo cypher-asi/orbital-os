@@ -185,11 +185,17 @@ mod tests {
         let events = log.events();
         assert!(matches!(
             events[0].event_type,
-            SysEventType::Request { syscall_num: 0x01, args: [10, 20, 30, 40] }
+            SysEventType::Request {
+                syscall_num: 0x01,
+                args: [10, 20, 30, 40]
+            }
         ));
         assert!(matches!(
             events[1].event_type,
-            SysEventType::Response { request_id: 0, result: 42 }
+            SysEventType::Response {
+                request_id: 0,
+                result: 42
+            }
         ));
     }
 

@@ -13,14 +13,14 @@
 extern crate alloc;
 
 #[cfg(target_arch = "wasm32")]
-use alloc::vec::Vec;
-#[cfg(target_arch = "wasm32")]
 use alloc::format;
+#[cfg(target_arch = "wasm32")]
+use alloc::vec::Vec;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::vec::Vec;
-#[cfg(not(target_arch = "wasm32"))]
 use std::format;
+#[cfg(not(target_arch = "wasm32"))]
+use std::vec::Vec;
 
 use orbital_process::{self as syscall};
 use orbital_test_procs::{CMD_EXIT, CMD_PING, CMD_PONG_MODE, MSG_PING, MSG_PONG};
@@ -34,7 +34,7 @@ const PEER_ENDPOINT: u32 = 1;
 #[no_mangle]
 pub extern "C" fn _start() {
     syscall::debug("pingpong: started, waiting for commands on slot 0");
-    
+
     loop {
         if let Some(msg) = syscall::receive(MY_ENDPOINT) {
             match msg.tag {
@@ -46,8 +46,11 @@ pub extern "C" fn _start() {
                     } else {
                         100 // default
                     };
-                    
-                    syscall::debug(&format!("pingpong: starting PING mode, {} iterations", iterations));
+
+                    syscall::debug(&format!(
+                        "pingpong: starting PING mode, {} iterations",
+                        iterations
+                    ));
                     run_ping_mode(iterations);
                 }
 
@@ -61,7 +64,7 @@ pub extern "C" fn _start() {
                     syscall::debug("pingpong: received EXIT command");
                     syscall::exit(0);
                 }
-                
+
                 _ => {
                     syscall::debug(&format!("pingpong: unknown command tag 0x{:x}", msg.tag));
                 }
@@ -75,20 +78,20 @@ pub extern "C" fn _start() {
 fn run_ping_mode(iterations: u32) {
     let mut latencies: Vec<u64> = Vec::with_capacity(iterations as usize);
     let mut timeouts = 0u32;
-    
+
     for i in 0..iterations {
         let start = syscall::get_time();
-        
+
         // Send ping to peer (slot 1)
         if syscall::send(PEER_ENDPOINT, MSG_PING, &[]).is_err() {
             syscall::debug(&format!("pingpong: failed to send ping {}", i));
             continue;
         }
-        
+
         // Wait for pong on our endpoint (slot 0) with timeout
         let mut received = false;
         let timeout_ns = 100_000_000; // 100ms timeout
-        
+
         loop {
             if let Some(pong) = syscall::receive(MY_ENDPOINT) {
                 if pong.tag == MSG_PONG {
@@ -101,23 +104,26 @@ fn run_ping_mode(iterations: u32) {
                     return;
                 }
             }
-            
+
             // Check timeout
             let now = syscall::get_time();
             if now - start > timeout_ns {
                 timeouts += 1;
                 break;
             }
-            
+
             syscall::yield_now();
         }
-        
+
         if !received && timeouts > 10 {
-            syscall::debug(&format!("pingpong: too many timeouts ({}), aborting", timeouts));
+            syscall::debug(&format!(
+                "pingpong: too many timeouts ({}), aborting",
+                timeouts
+            ));
             break;
         }
     }
-    
+
     // Report results
     report_latencies(&latencies, timeouts);
 }
@@ -125,7 +131,7 @@ fn run_ping_mode(iterations: u32) {
 /// Pong mode: Respond to pings
 fn run_pong_mode() {
     let mut pong_count = 0u64;
-    
+
     loop {
         if let Some(msg) = syscall::receive(MY_ENDPOINT) {
             match msg.tag {
@@ -148,7 +154,10 @@ fn run_pong_mode() {
 
 fn report_latencies(latencies: &[u64], timeouts: u32) {
     if latencies.is_empty() {
-        syscall::debug(&format!("pingpong: no successful pings (timeouts: {})", timeouts));
+        syscall::debug(&format!(
+            "pingpong: no successful pings (timeouts: {})",
+            timeouts
+        ));
         return;
     }
 
@@ -161,15 +170,35 @@ fn report_latencies(latencies: &[u64], timeouts: u32) {
     // Calculate median
     let mut sorted = latencies.to_vec();
     sorted.sort();
-    let median = if count > 0 { sorted[count as usize / 2] } else { 0 };
+    let median = if count > 0 {
+        sorted[count as usize / 2]
+    } else {
+        0
+    };
 
     // Report via debug syscall so it appears in console
     syscall::debug("========== PING-PONG RESULTS ==========");
     syscall::debug(&format!("  Iterations: {} (timeouts: {})", count, timeouts));
-    syscall::debug(&format!("  Min:    {:>10} ns ({:.3} µs)", min, min as f64 / 1000.0));
-    syscall::debug(&format!("  Max:    {:>10} ns ({:.3} µs)", max, max as f64 / 1000.0));
-    syscall::debug(&format!("  Avg:    {:>10} ns ({:.3} µs)", avg, avg as f64 / 1000.0));
-    syscall::debug(&format!("  Median: {:>10} ns ({:.3} µs)", median, median as f64 / 1000.0));
+    syscall::debug(&format!(
+        "  Min:    {:>10} ns ({:.3} µs)",
+        min,
+        min as f64 / 1000.0
+    ));
+    syscall::debug(&format!(
+        "  Max:    {:>10} ns ({:.3} µs)",
+        max,
+        max as f64 / 1000.0
+    ));
+    syscall::debug(&format!(
+        "  Avg:    {:>10} ns ({:.3} µs)",
+        avg,
+        avg as f64 / 1000.0
+    ));
+    syscall::debug(&format!(
+        "  Median: {:>10} ns ({:.3} µs)",
+        median,
+        median as f64 / 1000.0
+    ));
     syscall::debug("========================================");
 }
 

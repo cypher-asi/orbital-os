@@ -10,7 +10,7 @@ members = [
     "crates/orbital-terminal",
     "crates/orbital-test-procs",
     "crates/orbital-wasm-rt",
-    "apps/orbital-web",
+    "crates/orbital-web",
     "tools/dev-server",
 ]
 

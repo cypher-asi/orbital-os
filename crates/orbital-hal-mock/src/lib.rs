@@ -11,7 +11,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU64, Ordering};
-use orbital_hal::{HAL, HalError, NumericProcessHandle};
+use orbital_hal::{HalError, NumericProcessHandle, HAL};
 
 /// Mock HAL for unit testing
 ///
@@ -164,9 +164,11 @@ impl HAL for MockHal {
         };
 
         self.processes.borrow_mut().insert(pid, process);
-        self.debug_log
-            .borrow_mut()
-            .push(alloc::format!("[mock-hal] Spawned process '{}' with PID {}", name, pid));
+        self.debug_log.borrow_mut().push(alloc::format!(
+            "[mock-hal] Spawned process '{}' with PID {}",
+            name,
+            pid
+        ));
 
         Ok(handle)
     }
@@ -176,9 +178,10 @@ impl HAL for MockHal {
         if let Some(proc) = processes.get_mut(&handle.id()) {
             if proc.alive {
                 proc.alive = false;
-                self.debug_log
-                    .borrow_mut()
-                    .push(alloc::format!("[mock-hal] Killed process PID {}", handle.id()));
+                self.debug_log.borrow_mut().push(alloc::format!(
+                    "[mock-hal] Killed process PID {}",
+                    handle.id()
+                ));
                 Ok(())
             } else {
                 Err(HalError::ProcessNotFound)
@@ -221,8 +224,8 @@ impl HAL for MockHal {
 
     fn allocate(&self, size: usize, _align: usize) -> Result<*mut u8, HalError> {
         // In mock, we use the global allocator
-        let layout = core::alloc::Layout::from_size_align(size, 8)
-            .map_err(|_| HalError::InvalidArgument)?;
+        let layout =
+            core::alloc::Layout::from_size_align(size, 8).map_err(|_| HalError::InvalidArgument)?;
         let ptr = unsafe { alloc::alloc::alloc(layout) };
         if ptr.is_null() {
             Err(HalError::OutOfMemory)
@@ -372,7 +375,7 @@ mod tests {
         let mut buf2 = [0u8; 8];
 
         hal.random_bytes(&mut buf1).unwrap();
-        
+
         // Reset seed to get same sequence
         hal.set_random_seed(42);
         hal.random_bytes(&mut buf2).unwrap();

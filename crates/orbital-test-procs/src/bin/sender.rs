@@ -15,11 +15,13 @@ use alloc::vec;
 use std::vec;
 
 use orbital_process::{self as syscall};
-use orbital_test_procs::{CMD_EXIT, CMD_QUERY, CMD_RESET, CMD_SEND_BURST, MSG_DATA, MSG_SENDER_STATS, SenderStats};
+use orbital_test_procs::{
+    SenderStats, CMD_EXIT, CMD_QUERY, CMD_RESET, CMD_SEND_BURST, MSG_DATA, MSG_SENDER_STATS,
+};
 
 // Command endpoint slot
 const CMD_ENDPOINT: u32 = 0;
-// Report endpoint slot  
+// Report endpoint slot
 const REPORT_ENDPOINT: u32 = 1;
 
 /// Process entry point
@@ -35,9 +37,24 @@ pub extern "C" fn _start() {
                 CMD_SEND_BURST => {
                     // Parse: [count: u32, size: u32, target_slot: u32]
                     if msg.data.len() >= 12 {
-                        let count = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
-                        let size = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]) as usize;
-                        let target_slot = u32::from_le_bytes([msg.data[8], msg.data[9], msg.data[10], msg.data[11]]);
+                        let count = u32::from_le_bytes([
+                            msg.data[0],
+                            msg.data[1],
+                            msg.data[2],
+                            msg.data[3],
+                        ]);
+                        let size = u32::from_le_bytes([
+                            msg.data[4],
+                            msg.data[5],
+                            msg.data[6],
+                            msg.data[7],
+                        ]) as usize;
+                        let target_slot = u32::from_le_bytes([
+                            msg.data[8],
+                            msg.data[9],
+                            msg.data[10],
+                            msg.data[11],
+                        ]);
 
                         let payload = vec![0x42u8; size];
 
@@ -71,7 +88,11 @@ pub extern "C" fn _start() {
 
 fn report_stats(count: u64, bytes: u64, start: u64) {
     let elapsed = syscall::get_time() - start;
-    let msgs_per_sec = if elapsed > 0 { count * 1_000_000_000 / elapsed } else { 0 };
+    let msgs_per_sec = if elapsed > 0 {
+        count * 1_000_000_000 / elapsed
+    } else {
+        0
+    };
 
     let stats = SenderStats {
         messages_sent: count,

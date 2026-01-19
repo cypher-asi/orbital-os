@@ -1,0 +1,130 @@
+.taskbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+/* Button styles */
+.button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.buttonGlass {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.buttonIconOnly {
+  padding: 6px;
+  justify-content: center;
+}
+
+/* Begin Section */
+.beginSection {
+  position: relative;
+  margin-left: 8px;
+}
+
+/* Windows Section */
+.windowsSection {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  overflow-x: auto;
+}
+
+.windowItem {
+  max-width: 200px;
+}
+
+.windowItem.minimized {
+  opacity: 0.6;
+}
+
+.windowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Workspaces Section */
+.workspacesSection {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspaceBtn {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.workspaceAdd {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.workspaceAdd:hover {
+  color: #01f4cb !important;
+}
+
+.walletBtn {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.walletBtn:hover {
+  color: #01f4cb !important;
+}
+
+.neuralKeyWrapper {
+  position: relative;
+}
+
+.neuralKey {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.neuralKey:hover {
+  color: #01f4cb !important;
+}

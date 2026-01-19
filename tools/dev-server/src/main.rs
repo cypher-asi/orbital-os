@@ -22,10 +22,8 @@ async fn main() {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    // Serve static files from the www directory
-    let serve_dir = ServeDir::new("apps/orbital-web/www")
-        .precompressed_gzip()
-        .precompressed_br();
+    // Serve static files from the web directory
+    let serve_dir = ServeDir::new("web").precompressed_gzip().precompressed_br();
 
     let app = Router::new()
         .fallback_service(get_service(serve_dir).handle_error(|_| async {
@@ -46,13 +44,10 @@ async fn main() {
 }
 
 /// Add security headers and fix MIME types
-async fn add_headers(
-    request: Request<Body>,
-    next: axum::middleware::Next,
-) -> Response<Body> {
+async fn add_headers(request: Request<Body>, next: axum::middleware::Next) -> Response<Body> {
     // Get the request path for MIME type detection
     let path = request.uri().path().to_string();
-    
+
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 

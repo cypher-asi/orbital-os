@@ -23,7 +23,9 @@ use std::string::String;
 #[cfg(not(target_arch = "wasm32"))]
 use std::vec::Vec;
 
-use orbital_process::{self as syscall, MSG_CONSOLE_INPUT, MSG_REGISTER_SERVICE, INIT_ENDPOINT_SLOT};
+use orbital_process::{
+    self as syscall, INIT_ENDPOINT_SLOT, MSG_CONSOLE_INPUT, MSG_REGISTER_SERVICE,
+};
 
 // Well-known capability slots (assigned by supervisor at spawn)
 const CONSOLE_OUTPUT_SLOT: u32 = 0;
@@ -66,7 +68,7 @@ impl Terminal {
         // Use console input endpoint ID (placeholder - we'd need actual endpoint ID)
         data.extend_from_slice(&0u32.to_le_bytes()); // endpoint_id_low
         data.extend_from_slice(&0u32.to_le_bytes()); // endpoint_id_high
-        
+
         match syscall::send(INIT_ENDPOINT_SLOT, MSG_REGISTER_SERVICE, &data) {
             Ok(()) => syscall::debug("terminal: Registered with init"),
             Err(e) => syscall::debug(&format!("terminal: Failed to register with init: {}", e)),
@@ -77,7 +79,7 @@ impl Terminal {
     fn run(&mut self) {
         // Register with init service
         self.register_with_init();
-        
+
         self.println("Orbital OS Terminal");
         self.println("Type 'help' for available commands.");
         self.println("");
