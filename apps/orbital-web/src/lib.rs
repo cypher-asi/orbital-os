@@ -3,6 +3,7 @@
 //! This crate runs in the browser's main thread and acts as the kernel
 //! supervisor. It manages Web Workers (processes) and routes IPC messages.
 
+pub mod background;
 pub mod desktop;
 
 use std::collections::HashMap;
@@ -2916,7 +2917,15 @@ impl Supervisor {
     /// Focus a window
     #[wasm_bindgen]
     pub fn focus_window(&mut self, id: u64) {
+        web_sys::console::log_1(&format!("[WASM] focus_window called id={}", id).into());
         self.desktop.focus_window(id);
+    }
+
+    /// Pan the camera to center on a window
+    #[wasm_bindgen]
+    pub fn pan_to_window(&mut self, id: u64) {
+        web_sys::console::log_1(&format!("[WASM] pan_to_window called id={}", id).into());
+        self.desktop.pan_to_window(id);
     }
 
     /// Move a window
@@ -3019,17 +3028,152 @@ impl Supervisor {
                     "id": ws.id,
                     "name": ws.name,
                     "active": i == active,
-                    "windowCount": ws.windows.len()
+                    "windowCount": ws.windows.len(),
+                    "background": ws.background.id()
                 })
             })
             .collect();
         serde_json::to_string(&workspaces).unwrap_or_else(|_| "[]".to_string())
+    }
+    
+    /// Get workspace layout dimensions as JSON
+    /// Returns { width, height, gap } - used by background shader for workspace rendering
+    #[wasm_bindgen]
+    pub fn get_workspace_dimensions_json(&self) -> String {
+        let size = self.desktop.workspaces.workspace_size();
+        let gap = self.desktop.workspaces.workspace_gap();
+        serde_json::to_string(&serde_json::json!({
+            "width": size.width,
+            "height": size.height,
+            "gap": gap
+        }))
+        .unwrap_or_else(|_| r#"{"width":1920,"height":1080,"gap":100}"#.to_string())
+    }
+
+    /// Get the background of the active workspace
+    #[wasm_bindgen]
+    pub fn get_active_workspace_background(&self) -> String {
+        self.desktop.workspaces.active_background().id().to_string()
+    }
+
+    /// Set the background of a workspace by index
+    /// Returns true if successful
+    #[wasm_bindgen]
+    pub fn set_workspace_background(&mut self, index: u32, background_id: &str) -> bool {
+        if let Some(bg_type) = background::BackgroundType::from_id(background_id) {
+            self.desktop.workspaces.set_background(index as usize, bg_type);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the background of the active workspace
+    /// Returns true if successful
+    #[wasm_bindgen]
+    pub fn set_active_workspace_background(&mut self, background_id: &str) -> bool {
+        if let Some(bg_type) = background::BackgroundType::from_id(background_id) {
+            self.desktop.workspaces.set_active_background(bg_type);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Import workspace settings from JSON (for persistence restoration)
+    /// JSON format: [{ "id": 1, "name": "Workspace 1", "background": "grain" }, ...]
+    #[wasm_bindgen]
+    pub fn import_workspace_settings(&mut self, json: &str) -> bool {
+        match serde_json::from_str::<Vec<desktop::workspaces::PersistedWorkspace>>(json) {
+            Ok(persisted) => {
+                self.desktop.workspaces.import_from_persistence(&persisted);
+                log(&format!("[desktop] Imported {} workspace settings", persisted.len()));
+                true
+            }
+            Err(e) => {
+                log(&format!("[desktop] Failed to parse workspace settings: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Export workspace settings as JSON (for persistence)
+    /// Returns: [{ "id": 1, "name": "Workspace 1", "background": "grain" }, ...]
+    #[wasm_bindgen]
+    pub fn export_workspace_settings(&self) -> String {
+        let settings: Vec<serde_json::Value> = self
+            .desktop
+            .workspaces
+            .workspaces()
+            .iter()
+            .map(|ws| {
+                serde_json::json!({
+                    "id": ws.id,
+                    "name": ws.name,
+                    "background": ws.background.id()
+                })
+            })
+            .collect();
+        serde_json::to_string(&settings).unwrap_or_else(|_| "[]".to_string())
     }
 
     /// Get active workspace index
     #[wasm_bindgen]
     pub fn get_active_workspace(&self) -> u32 {
         self.desktop.workspaces.active_index() as u32
+    }
+    
+    /// Get the visual active workspace for rendering purposes.
+    /// During transitions, returns the source workspace during zoom-out/pan,
+    /// and the destination workspace during zoom-in.
+    #[wasm_bindgen]
+    pub fn get_visual_active_workspace(&self) -> u32 {
+        self.desktop.get_visual_active_workspace() as u32
+    }
+
+    /// Check if a workspace transition animation is in progress
+    #[wasm_bindgen]
+    pub fn is_workspace_transitioning(&self) -> bool {
+        self.desktop.is_transitioning()
+    }
+    
+    /// Check if any animation is active (transitions OR recent pan/zoom activity)
+    /// Used by frontend to determine render framerate (60fps when true, 15fps when false)
+    #[wasm_bindgen]
+    pub fn is_animating(&self) -> bool {
+        self.desktop.is_animating()
+    }
+    
+    /// Get the current view mode as a string
+    /// Returns: "workspace" or "void"
+    /// Note: Use is_animating() to check if viewport is still moving
+    #[wasm_bindgen]
+    pub fn get_view_mode(&self) -> String {
+        match self.desktop.get_view_mode() {
+            desktop::ViewMode::Workspace { .. } => "workspace".to_string(),
+            desktop::ViewMode::Void => "void".to_string(),
+            desktop::ViewMode::Transitioning { .. } => "transitioning".to_string(),
+        }
+    }
+    
+    /// Check if currently in the void (zoomed out to see all workspaces)
+    #[wasm_bindgen]
+    pub fn is_in_void(&self) -> bool {
+        self.desktop.is_in_void()
+    }
+    
+    /// Enter the void (zoom out to see all workspaces)
+    /// Only works when in workspace mode
+    #[wasm_bindgen]
+    pub fn enter_void(&mut self) {
+        self.desktop.enter_void();
+    }
+    
+    /// Exit the void into a specific workspace
+    /// Only works when in void mode
+    #[wasm_bindgen]
+    pub fn exit_void(&mut self, workspace_index: u32) {
+        self.desktop.exit_void(workspace_index as usize);
     }
 
     /// Handle pointer down event - returns JSON with result
@@ -3049,6 +3193,8 @@ impl Supervisor {
     /// Handle pointer up event - returns JSON with result
     #[wasm_bindgen]
     pub fn desktop_pointer_up(&mut self) -> String {
+        let is_dragging = self.desktop.input.is_dragging();
+        web_sys::console::log_1(&format!("[WASM] desktop_pointer_up called, is_dragging={}", is_dragging).into());
         let result = self.desktop.handle_pointer_up();
         serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
     }
@@ -3058,6 +3204,14 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn start_window_resize(&mut self, window_id: u64, direction: &str, x: f32, y: f32) {
         self.desktop.start_resize_drag(window_id, direction, x, y);
+    }
+
+    /// Start a window move drag operation directly
+    /// Called by React title bar to bypass hit testing
+    #[wasm_bindgen]
+    pub fn start_window_drag(&mut self, window_id: u64, x: f32, y: f32) {
+        web_sys::console::log_1(&format!("[WASM] start_window_drag id={} at ({:.0},{:.0})", window_id, x, y).into());
+        self.desktop.start_move_drag(window_id, x, y);
     }
 
     /// Handle wheel event - returns JSON with result
@@ -3077,13 +3231,120 @@ impl Supervisor {
     /// Get viewport state as JSON
     #[wasm_bindgen]
     pub fn get_viewport_json(&self) -> String {
-        let center = self.desktop.viewport.center();
         serde_json::to_string(&serde_json::json!({
-            "center": { "x": center.x, "y": center.y },
+            "center": { "x": self.desktop.viewport.center.x, "y": self.desktop.viewport.center.y },
             "zoom": self.desktop.viewport.zoom,
             "screenSize": {
                 "width": self.desktop.viewport.screen_size.width,
                 "height": self.desktop.viewport.screen_size.height
+            }
+        }))
+        .unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Tick the desktop transition state machine.
+    /// Call this each frame to update viewport during workspace transitions.
+    /// Returns true if a transition is active.
+    #[wasm_bindgen]
+    pub fn tick_desktop_transition(&mut self) -> bool {
+        self.desktop.tick_transition()
+    }
+    
+    /// Unified frame tick - updates all animation state and returns complete frame data.
+    /// 
+    /// This is the primary method for the render loop. It:
+    /// 1. Ticks the transition state machine (updates viewport atomically)
+    /// 2. Returns all data needed to render the frame
+    /// 
+    /// By combining tick + data retrieval, we guarantee the React layer sees
+    /// consistent state - no race conditions between viewport update and window rects.
+    /// 
+    /// Returns JSON:
+    /// ```json
+    /// {
+    ///   "viewport": { "center": { "x": f32, "y": f32 }, "zoom": f32 },
+    ///   "windows": [...],  // Window screen rects
+    ///   "animating": bool, // True if any animation is active
+    ///   "viewMode": "workspace" | "void",
+    ///   "workspaceInfo": { "count": n, "active": n, "backgrounds": [...] },
+    ///   "workspaceDimensions": { "width": f32, "height": f32, "gap": f32 }
+    /// }
+    /// ```
+    #[wasm_bindgen]
+    pub fn tick_frame(&mut self) -> String {
+        // 1. Tick transition first - this updates viewport state
+        let _transitioning = self.desktop.tick_transition();
+        
+        // 2. Get viewport state (now guaranteed to be updated)
+        let viewport = &self.desktop.viewport;
+        
+        // 3. Get window screen rects (using updated viewport)
+        let rects = self.desktop.get_window_screen_rects();
+        let windows: Vec<serde_json::Value> = rects
+            .into_iter()
+            .enumerate()
+            .map(|(z_order, r)| {
+                serde_json::json!({
+                    "id": r.id,
+                    "title": r.title,
+                    "appId": r.app_id,
+                    "state": match r.state {
+                        desktop::WindowState::Normal => "normal",
+                        desktop::WindowState::Minimized => "minimized",
+                        desktop::WindowState::Maximized => "maximized",
+                        desktop::WindowState::Fullscreen => "fullscreen",
+                    },
+                    "focused": r.focused,
+                    "zOrder": z_order,
+                    "screenRect": {
+                        "x": r.screen_rect.x,
+                        "y": r.screen_rect.y,
+                        "width": r.screen_rect.width,
+                        "height": r.screen_rect.height
+                    }
+                })
+            })
+            .collect();
+        
+        // 4. Get view mode
+        let view_mode = match self.desktop.get_view_mode() {
+            desktop::ViewMode::Workspace { .. } => "workspace",
+            desktop::ViewMode::Void => "void",
+            desktop::ViewMode::Transitioning { .. } => "transitioning",
+        };
+        
+        // 5. Get workspace info
+        let workspaces = self.desktop.workspaces.workspaces();
+        let workspace_backgrounds: Vec<String> = workspaces
+            .iter()
+            .map(|ws| ws.background.id().to_string())
+            .collect();
+        
+        // 6. Get workspace dimensions
+        let ws_size = self.desktop.workspaces.workspace_size();
+        let ws_gap = self.desktop.workspaces.workspace_gap();
+        
+        // 7. Build complete frame data
+        // Note: "animating" is for framerate (any activity like zoom/pan/drag)
+        //       "transitioning" is specifically for viewport animations (workspace switches)
+        serde_json::to_string(&serde_json::json!({
+            "viewport": {
+                "center": { "x": viewport.center.x, "y": viewport.center.y },
+                "zoom": viewport.zoom
+            },
+            "windows": windows,
+            "animating": self.desktop.is_animating(),
+            "transitioning": self.desktop.is_animating_viewport(),
+            "viewMode": view_mode,
+            "workspaceInfo": {
+                "count": workspaces.len(),
+                "active": self.desktop.get_visual_active_workspace(),
+                "backgrounds": workspace_backgrounds
+            },
+            "workspaceDimensions": {
+                "width": ws_size.width,
+                "height": ws_size.height,
+                "gap": ws_gap
             }
         }))
         .unwrap_or_else(|_| "{}".to_string())
@@ -3130,5 +3391,161 @@ fn truncate(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max.saturating_sub(3)])
+    }
+}
+
+// =============================================================================
+// Background Renderer - WebGPU desktop background with switchable shaders
+// =============================================================================
+
+/// WASM-bindgen wrapper for the background renderer
+#[wasm_bindgen]
+pub struct DesktopBackground {
+    renderer: Option<background::BackgroundRenderer>,
+}
+
+#[wasm_bindgen]
+impl DesktopBackground {
+    /// Create a new desktop background (uninitialized)
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self { renderer: None }
+    }
+
+    /// Initialize the background renderer with a canvas element
+    /// Returns a Promise that resolves when ready
+    #[wasm_bindgen]
+    pub async fn init(&mut self, canvas: web_sys::HtmlCanvasElement) -> Result<(), JsValue> {
+        log("[background] Initializing WebGPU background renderer...");
+        
+        match background::BackgroundRenderer::new(canvas).await {
+            Ok(renderer) => {
+                log("[background] WebGPU background renderer initialized successfully");
+                self.renderer = Some(renderer);
+                Ok(())
+            }
+            Err(e) => {
+                log(&format!("[background] Failed to initialize renderer: {}", e));
+                Err(JsValue::from_str(&e))
+            }
+        }
+    }
+
+    /// Check if the renderer is initialized
+    #[wasm_bindgen]
+    pub fn is_initialized(&self) -> bool {
+        self.renderer.is_some()
+    }
+
+    /// Resize the renderer
+    #[wasm_bindgen]
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.resize(width, height);
+        }
+    }
+
+    /// Render a frame
+    #[wasm_bindgen]
+    pub fn render(&mut self) -> Result<(), JsValue> {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.render().map_err(|e| JsValue::from_str(&e))
+        } else {
+            Err(JsValue::from_str("Renderer not initialized"))
+        }
+    }
+
+    /// Get all available background types as JSON
+    /// Returns: [{ "id": "grain", "name": "Film Grain" }, ...]
+    #[wasm_bindgen]
+    pub fn get_available_backgrounds(&self) -> String {
+        let backgrounds: Vec<serde_json::Value> = background::BackgroundType::all()
+            .iter()
+            .map(|bg| {
+                serde_json::json!({
+                    "id": format!("{:?}", bg).to_lowercase(),
+                    "name": bg.name()
+                })
+            })
+            .collect();
+        serde_json::to_string(&backgrounds).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Get the current background type ID
+    #[wasm_bindgen]
+    pub fn get_current_background(&self) -> String {
+        if let Some(renderer) = &self.renderer {
+            format!("{:?}", renderer.current_background()).to_lowercase()
+        } else {
+            "grain".to_string()
+        }
+    }
+
+    /// Set the background type by ID (e.g., "grain", "mist")
+    /// Returns true if successful, false if ID is invalid
+    #[wasm_bindgen]
+    pub fn set_background(&mut self, id: &str) -> bool {
+        let bg_type = match id.to_lowercase().as_str() {
+            "grain" => background::BackgroundType::Grain,
+            "mist" => background::BackgroundType::Mist,
+            _ => return false,
+        };
+
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_background(bg_type);
+            log(&format!("[background] Switched to: {}", bg_type.name()));
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Set viewport state for zoom effects
+    /// Called before render to update zoom level and camera position
+    #[wasm_bindgen]
+    pub fn set_viewport(&mut self, zoom: f32, center_x: f32, center_y: f32) {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_viewport(zoom, center_x, center_y);
+        }
+    }
+    
+    /// Set workspace info for multi-workspace rendering when zoomed out
+    /// backgrounds_json should be a JSON array of background type strings, e.g. ["grain", "mist"]
+    #[wasm_bindgen]
+    pub fn set_workspace_info(&mut self, count: usize, active: usize, backgrounds_json: &str) {
+        if let Some(renderer) = &mut self.renderer {
+            // Parse background types from JSON
+            let backgrounds: Vec<background::BackgroundType> = serde_json::from_str::<Vec<String>>(backgrounds_json)
+                .unwrap_or_default()
+                .iter()
+                .map(|s| background::BackgroundType::from_id(s).unwrap_or_default())
+                .collect();
+            
+            renderer.set_workspace_info(count, active, &backgrounds);
+        }
+    }
+    
+    /// Set whether we're transitioning between workspaces
+    /// Only during transitions can you see other workspaces
+    #[wasm_bindgen]
+    pub fn set_transitioning(&mut self, transitioning: bool) {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_transitioning(transitioning);
+        }
+    }
+    
+    /// Set workspace layout dimensions (must match Rust desktop engine)
+    /// Called when workspaces are created or screen is resized
+    #[wasm_bindgen]
+    pub fn set_workspace_dimensions(&mut self, width: f32, height: f32, gap: f32) {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_workspace_dimensions(width, height, gap);
+        }
+    }
+}
+
+impl Default for DesktopBackground {
+    fn default() -> Self {
+        Self::new()
     }
 }

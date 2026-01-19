@@ -4,11 +4,10 @@
   left: 0;
   right: 0;
   height: 48px;
-  background: rgba(26, 26, 46, 0.95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid #333;
+  background: transparent;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 8px;
   z-index: 1000;
   pointer-events: auto;
@@ -17,84 +16,28 @@
 /* Begin Section */
 .beginSection {
   position: relative;
-}
-
-.beginButton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: #e0e0e0;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.beginButton:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.beginButton.active {
-  background: rgba(74, 222, 128, 0.2);
-}
-
-.beginIcon {
-  color: #01f4cb;
-  font-size: 16px;
-}
-
-.beginText {
-  color: inherit;
+  margin-left: 8px;
 }
 
 /* Windows Section */
 .windowsSection {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 0 16px;
   overflow-x: auto;
 }
 
 .windowItem {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: none;
-  border-radius: 4px;
-  color: #888;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
   max-width: 200px;
-}
-
-.windowItem:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e0e0e0;
-}
-
-.windowItem.focused {
-  background: rgba(74, 222, 128, 0.15);
-  color: #e0e0e0;
-  border-bottom: 2px solid #01f4cb;
 }
 
 .windowItem.minimized {
   opacity: 0.6;
-}
-
-.windowIcon {
-  font-size: 14px;
 }
 
 .windowTitle {
@@ -111,49 +54,45 @@
 }
 
 .workspaceBtn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: #888;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.workspaceBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e0e0e0;
-}
-
-.workspaceBtn.active {
-  background: rgba(74, 222, 128, 0.2);
-  border-color: #01f4cb;
-  color: #01f4cb;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
 }
 
 .workspaceAdd {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px dashed #444;
-  border-radius: 4px;
-  color: #666;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.15s;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
 }
 
 .workspaceAdd:hover {
-  border-color: #01f4cb;
-  color: #01f4cb;
+  color: #01f4cb !important;
+}
+
+.walletBtn {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.walletBtn:hover {
+  color: #01f4cb !important;
+}
+
+.neuralKeyWrapper {
+  position: relative;
+}
+
+.neuralKey {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+.neuralKey:hover {
+  color: #01f4cb !important;
 }

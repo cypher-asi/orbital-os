@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSupervisor } from '../../hooks/useSupervisor';
+import { Drawer } from '@cypher-asi/zui';
 import styles from './TerminalApp.module.css';
 
 interface TerminalAppProps {
@@ -44,6 +45,7 @@ export function TerminalApp({ windowId }: TerminalAppProps) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [axiomStats, setAxiomStats] = useState<AxiomStats | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Set up console callback
   useEffect(() => {
@@ -99,7 +101,7 @@ export function TerminalApp({ windowId }: TerminalAppProps) {
       setHistoryIndex(-1);
     }
 
-    setOutput((prev) => [...prev, { text: `> ${line}\n`, className: styles.inputEcho }]);
+    setOutput((prev) => [...prev, { text: `z::> ${line}\n`, className: styles.inputEcho }]);
     supervisor.send_input(line);
   }, [supervisor]);
 
@@ -135,97 +137,21 @@ export function TerminalApp({ windowId }: TerminalAppProps) {
 
   const spawnProcess = (type: string) => {
     if (supervisor) {
-      setOutput((prev) => [...prev, { text: `> spawn ${type}\n`, className: styles.inputEcho }]);
+      setOutput((prev) => [...prev, { text: `z::> spawn ${type}\n`, className: styles.inputEcho }]);
       supervisor.send_input(`spawn ${type}`);
     }
   };
 
   const killProcess = (pid: number) => {
     if (supervisor) {
-      setOutput((prev) => [...prev, { text: `> kill ${pid}\n`, className: styles.inputEcho }]);
+      setOutput((prev) => [...prev, { text: `z::> kill ${pid}\n`, className: styles.inputEcho }]);
       supervisor.send_input(`kill ${pid}`);
     }
   };
 
   return (
     <div className={styles.terminalApp}>
-      {/* Dashboard panel on left */}
-      <div className={styles.dashboard}>
-        {/* Processes */}
-        <div className={styles.panel}>
-          <div className={styles.panelHeader}>
-            Processes <span className={styles.badge}>{processes.length}</span>
-          </div>
-          <div className={styles.panelContent}>
-            {processes.map((p, i) => (
-              <div key={p.pid} className={styles.processItem}>
-                <span className={styles.processPid}>{p.pid}</span>
-                <span className={styles.processName} style={{ color: COLORS[i % COLORS.length] }}>
-                  {p.name}
-                </span>
-                <span className={styles.processMem}>{formatBytes(p.memory)}</span>
-                <span className={`${styles.processState} ${styles[`state${p.state}`]}`}>
-                  {p.state}
-                </span>
-                {p.pid > 2 && (
-                  <button className={styles.btnKill} onClick={() => killProcess(p.pid)}>
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-            <div className={styles.quickActions}>
-              <button className={styles.quickBtn} onClick={() => spawnProcess('memhog')}>
-                + memhog
-              </button>
-              <button className={styles.quickBtn} onClick={() => spawnProcess('idle')}>
-                + idle
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Memory */}
-        <div className={styles.panel}>
-          <div className={styles.panelHeader}>
-            Memory <span className={styles.badge}>{formatBytes(processes.reduce((s, p) => s + p.memory, 0))}</span>
-          </div>
-          <div className={styles.panelContent}>
-            <div className={styles.memBar}>
-              {processes.map((p, i) => {
-                const total = processes.reduce((s, proc) => s + proc.memory, 0) || 1;
-                const pct = (p.memory / total) * 100;
-                return (
-                  <div
-                    key={p.pid}
-                    className={styles.memSegment}
-                    style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }}
-                    title={`${p.name}: ${formatBytes(p.memory)}`}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Axiom */}
-        {axiomStats && (
-          <div className={styles.panel}>
-            <div className={styles.panelHeader}>
-              Axiom <span className={styles.badge}>{axiomStats.commits} commits</span>
-            </div>
-            <div className={styles.panelContent}>
-              <div className={styles.axiomStats}>
-                <div>Storage: {axiomStats.storage_ready ? '✓ Ready' : 'Not initialized'}</div>
-                <div>Events: {axiomStats.events}</div>
-                <div>Persisted: {axiomStats.persisted} | Pending: {axiomStats.pending}</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Terminal panel on right */}
+      {/* Terminal panel - main content */}
       <div className={styles.terminalPanel}>
         <div ref={terminalRef} className={styles.terminal} onClick={() => inputRef.current?.focus()}>
           {output.map((line, i) => (
@@ -233,20 +159,109 @@ export function TerminalApp({ windowId }: TerminalAppProps) {
               {line.text}
             </span>
           ))}
-        </div>
-        <div className={styles.inputArea}>
-          <span className={styles.prompt}>orbital&gt;</span>
-          <input
-            ref={inputRef}
-            type="text"
-            className={styles.input}
-            placeholder="Type 'help' for commands"
-            autoComplete="off"
-            spellCheck={false}
-            onKeyDown={handleKeyDown}
-          />
+          <span className={styles.inputLine}>
+            <span className={styles.prompt}>z::&gt;</span>
+            <input
+              ref={inputRef}
+              type="text"
+              className={styles.input}
+              autoComplete="off"
+              spellCheck={false}
+              onKeyDown={handleKeyDown}
+            />
+          </span>
         </div>
       </div>
+
+      {/* Dashboard drawer on right */}
+      <Drawer
+        side="right"
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onOpen={() => setDrawerOpen(true)}
+        title="Dashboard"
+        defaultSize={280}
+        minSize={240}
+        maxSize={400}
+        storageKey="terminal-dashboard-size"
+        showToggle={true}
+        transparent
+      >
+        <div className={styles.dashboard}>
+          {/* Processes */}
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              Processes <span className={styles.badge}>{processes.length}</span>
+            </div>
+            <div className={styles.panelContent}>
+              {processes.map((p, i) => (
+                <div key={p.pid} className={styles.processItem}>
+                  <span className={styles.processPid}>{p.pid}</span>
+                  <span className={styles.processName} style={{ color: COLORS[i % COLORS.length] }}>
+                    {p.name}
+                  </span>
+                  <span className={styles.processMem}>{formatBytes(p.memory)}</span>
+                  <span className={`${styles.processState} ${styles[`state${p.state}`]}`}>
+                    {p.state}
+                  </span>
+                  {p.pid > 2 && (
+                    <button className={styles.btnKill} onClick={() => killProcess(p.pid)}>
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className={styles.quickActions}>
+                <button className={styles.quickBtn} onClick={() => spawnProcess('memhog')}>
+                  + memhog
+                </button>
+                <button className={styles.quickBtn} onClick={() => spawnProcess('idle')}>
+                  + idle
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Memory */}
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              Memory <span className={styles.badge}>{formatBytes(processes.reduce((s, p) => s + p.memory, 0))}</span>
+            </div>
+            <div className={styles.panelContent}>
+              <div className={styles.memBar}>
+                {processes.map((p, i) => {
+                  const total = processes.reduce((s, proc) => s + proc.memory, 0) || 1;
+                  const pct = (p.memory / total) * 100;
+                  return (
+                    <div
+                      key={p.pid}
+                      className={styles.memSegment}
+                      style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }}
+                      title={`${p.name}: ${formatBytes(p.memory)}`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Axiom */}
+          {axiomStats && (
+            <div className={styles.panel}>
+              <div className={styles.panelHeader}>
+                Axiom <span className={styles.badge}>{axiomStats.commits} commits</span>
+              </div>
+              <div className={styles.panelContent}>
+                <div className={styles.axiomStats}>
+                  <div>Storage: {axiomStats.storage_ready ? '✓ Ready' : 'Not initialized'}</div>
+                  <div>Events: {axiomStats.events}</div>
+                  <div>Persisted: {axiomStats.persisted} | Pending: {axiomStats.pending}</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Drawer>
     </div>
   );
 }

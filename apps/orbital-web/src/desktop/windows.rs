@@ -382,6 +382,10 @@ impl WindowManager {
             // Skip windows not in the filter (if filter is provided)
             if let Some(visible_ids) = filter {
                 if !visible_ids.contains(&window.id) {
+                    web_sys::console::log_1(&format!(
+                        "[hit-test] SKIP id={} (not in filter)",
+                        window.id
+                    ).into());
                     continue;
                 }
             }
@@ -391,6 +395,14 @@ impl WindowManager {
             }
 
             let rect = window.rect();
+            web_sys::console::log_1(&format!(
+                "[hit-test] CHECK id={} z={} rect=({:.0},{:.0},{:.0},{:.0}) pos=({:.0},{:.0}) contains={}",
+                window.id, window.z_order,
+                rect.x, rect.y, rect.width, rect.height,
+                pos.x, pos.y,
+                rect.contains(pos)
+            ).into());
+            
             if !rect.contains(pos) {
                 continue;
             }

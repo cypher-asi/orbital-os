@@ -3,23 +3,22 @@
   height: 100%;
   font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
   font-size: 12px;
+  position: relative;
 }
 
-/* Dashboard Panel */
+/* Dashboard Panel (inside drawer) */
 .dashboard {
-  width: 280px;
-  background: #111111;
-  border-right: 1px solid #333;
+  height: 100%;
+  background: transparent;
   overflow-y: auto;
-  flex-shrink: 0;
 }
 
 .panel {
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #1a1a1a;
 }
 
 .panelHeader {
-  background: #1a1a1a;
+  background: transparent;
   padding: 10px 12px;
   font-weight: 600;
   color: #a0a0a0;
@@ -123,7 +122,7 @@
 
 .quickBtn {
   background: #1a1a1a;
-  border: 1px solid #333;
+  border: 1px solid #1a1a1a;
   color: #888;
   padding: 5px 8px;
   font-size: 11px;
@@ -172,7 +171,7 @@
 
 .terminal {
   flex: 1;
-  background: #0d0d0d;
+  background: transparent;
   padding: 12px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -198,21 +197,19 @@
   color: #01f4cb;
 }
 
-/* Input Area */
-.inputArea {
-  display: flex;
+/* Input Line (inline with output) */
+.inputLine {
+  display: inline-flex;
   align-items: center;
-  background: #1a1a1a;
-  border-top: 1px solid #333;
-  padding: 10px 12px;
-  flex-shrink: 0;
+  width: 100%;
 }
 
 .prompt {
-  color: #808080;
+  color: #01f4cb;
   font-weight: 600;
-  margin-right: 8px;
+  margin-right: 4px;
   user-select: none;
+  white-space: nowrap;
 }
 
 .input {
@@ -223,6 +220,9 @@
   font-family: inherit;
   font-size: 13px;
   outline: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .input:focus,
@@ -231,13 +231,3 @@
   box-shadow: none;
 }
 
-.input::placeholder {
-  color: #555;
-}
-
-/* Responsive */
-@media (max-width: 600px) {
-  .dashboard {
-    display: none;
-  }
-}

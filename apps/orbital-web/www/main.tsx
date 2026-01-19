@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Desktop } from './components/Desktop/Desktop';
 import { Supervisor } from './hooks/useSupervisor';
+import '@cypher-asi/zui/styles';
 import './styles/global.css';
 
 // Loading state management

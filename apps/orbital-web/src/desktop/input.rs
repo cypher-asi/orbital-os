@@ -212,20 +212,21 @@ mod tests {
         let mut engine = DesktopEngine::new();
         engine.init(1920.0, 1080.0);
 
-        // Create a window at viewport center
+        // Create a window centered on canvas (so it's visible)
+        // Window at canvas (-400, -300) to (400, 300), centered at origin
         let _window_id = engine.create_window(WindowConfig {
             title: "Test".to_string(),
-            position: Some(Vec2::new(860.0, 440.0)),
+            position: Some(Vec2::new(-400.0, -300.0)),
             size: Size::new(800.0, 600.0),
             app_id: "test".to_string(),
             ..Default::default()
         });
 
-        // Click on title bar - window at canvas (860, 440), title bar ~16px down
-        // canvas_to_screen: (860, 456) -> screen center is (960, 540)
-        // offset = (860 - 960, 456 - 540) = (-100, -84)
-        // screen = (-100 + 960, -84 + 540) = (860, 456)
-        let result = engine.handle_pointer_down(860.0, 456.0, 0, false, false);
+        // Click on title bar center - window title bar is at canvas (-400, -300)
+        // Title bar center at canvas (0, -289) approximately
+        // canvas_to_screen: offset = (0, -289), half_screen = (960, 540)
+        // screen = (0, -289) * 1.0 + (960, 540) = (960, 251)
+        let result = engine.handle_pointer_down(960.0, 251.0, 0, false, false);
         assert!(matches!(result, InputResult::Handled));
     }
 
@@ -234,10 +235,11 @@ mod tests {
         let mut engine = DesktopEngine::new();
         engine.init(1920.0, 1080.0);
 
-        // Create a window at origin of canvas
+        // Create a window centered on canvas
+        // Window at canvas (-400, -300) to (400, 300)
         let window_id = engine.create_window(WindowConfig {
             title: "Test".to_string(),
-            position: Some(Vec2::new(0.0, 0.0)),
+            position: Some(Vec2::new(-400.0, -300.0)),
             size: Size::new(800.0, 600.0),
             app_id: "test".to_string(),
             ..Default::default()
@@ -245,10 +247,10 @@ mod tests {
 
         assert!(engine.windows.get(window_id).is_some());
 
-        // Close button at canvas (778, 10)
-        // Viewport center is at (960, 540)
-        // screen = (778 - 960, 10 - 540) + (960, 540) = (778, 10)
-        let result = engine.handle_pointer_down(778.0, 10.0, 0, false, false);
+        // Close button at canvas: x = -400 + 800 - 10 - 22 = 368, y = -300 + 11 = -289
+        // canvas_to_screen(368 + 11, -289) = (379, -289) + (960, 540) = (1339, 251)
+        // Close button center is at canvas (368 + 11, -300 + 11) = (379, -289)
+        let result = engine.handle_pointer_down(1339.0, 251.0, 0, false, false);
 
         assert!(matches!(result, InputResult::Handled));
         assert!(engine.windows.get(window_id).is_none());

@@ -1,14 +1,16 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, ForwardedRef } from 'react';
+import { forwardRef } from 'react';
 import type { WindowInfo } from '../../hooks/useWindows';
 import { useWindowActions } from '../../hooks/useWindows';
 import { useSupervisor } from '../../hooks/useSupervisor';
+import { WindowButton } from '@cypher-asi/zui';
+import { Panel } from '../Panel';
 import styles from './WindowContent.module.css';
 
 // Frame style constants (must match Rust FRAME_STYLE)
 const FRAME_STYLE = {
-  titleBarHeight: 20,
-  borderRadius: 0,
-  resizeHandleSize: 8,
+  titleBarHeight: 22,
+  resizeHandleSize: 6,
   cornerHandleSize: 12, // Larger corners for easier diagonal targeting
 };
 
@@ -17,18 +19,24 @@ interface WindowContentProps {
   children: ReactNode;
 }
 
-export function WindowContent({ window: win, children }: WindowContentProps) {
+// Use forwardRef so parent can update position directly via DOM
+export const WindowContent = forwardRef(function WindowContent(
+  { window: win, children }: WindowContentProps,
+  ref: ForwardedRef<HTMLDivElement>
+) {
   const { focusWindow, minimizeWindow, maximizeWindow, closeWindow } = useWindowActions();
   const supervisor = useSupervisor();
 
-  // Position the entire window frame (title bar + content)
+  // Initial position using GPU-accelerated transform instead of left/top
+  // Subsequent position updates happen directly via DOM, bypassing React
   const style: React.CSSProperties = {
-    left: win.screenRect.x,
-    top: win.screenRect.y,
+    display: 'flex',
+    flexDirection: 'column',
+    transform: `translate3d(${win.screenRect.x}px, ${win.screenRect.y}px, 0)`,
     width: win.screenRect.width,
     height: win.screenRect.height,
-    zIndex: win.zOrder + 1, // +1 so windows are above desktop background
-    borderRadius: FRAME_STYLE.borderRadius,
+    zIndex: win.zOrder + 10, // +10 so windows are above selection marquee (z-index: 2)
+    pointerEvents: 'auto',
   };
 
   const handleWindowClick = () => {
@@ -64,9 +72,20 @@ export function WindowContent({ window: win, children }: WindowContentProps) {
     supervisor?.start_window_resize(BigInt(win.id), direction, e.clientX, e.clientY);
   };
 
+  // Handle drag start - directly calls Rust to start move drag
+  const handleDragStart = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!win.focused) {
+      focusWindow(win.id);
+    }
+    supervisor?.start_window_drag(BigInt(win.id), e.clientX, e.clientY);
+  };
+
   return (
-    <div
-      className={`${styles.window} ${win.focused ? styles.focused : ''}`}
+    <Panel
+      ref={ref}
+      className={styles.window}
+      focused={win.focused}
       style={style}
       data-window-id={win.id}
       onPointerDown={handleWindowClick}
@@ -82,35 +101,13 @@ export function WindowContent({ window: win, children }: WindowContentProps) {
       <div className={`${styles.resizeHandle} ${styles.resizeSE}`} style={{ width: cornerSize, height: cornerSize }} onPointerDown={handleResizeStart('se')} />
       <div className={`${styles.resizeHandle} ${styles.resizeSW}`} style={{ width: cornerSize, height: cornerSize }} onPointerDown={handleResizeStart('sw')} />
 
-      {/* Sci-fi trapezoid title tab */}
-      <div className={styles.titleTab}>
-        <span className={styles.title}>{win.title}</span>
-      </div>
-
-      {/* Title bar with buttons only */}
-      <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }}>
-        <div className={styles.buttons}>
-          <button 
-            className={`${styles.btn} ${styles.minimize}`} 
-            aria-label="Minimize"
-            onClick={handleMinimize}
-          >
-            −
-          </button>
-          <button 
-            className={`${styles.btn} ${styles.maximize}`} 
-            aria-label="Maximize"
-            onClick={handleMaximize}
-          >
-            □
-          </button>
-          <button 
-            className={`${styles.btn} ${styles.close}`} 
-            aria-label="Close"
-            onClick={handleClose}
-          >
-            ×
-          </button>
+      {/* Title bar with title and buttons */}
+      <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
+        <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title}</span>
+        <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
+          <WindowButton action="minimize" size="sm" rounded="none" onClick={handleMinimize} />
+          <WindowButton action="maximize" size="sm" rounded="none" onClick={handleMaximize} />
+          <WindowButton action="close" size="sm" rounded="none" onClick={handleClose} />
         </div>
       </div>
       
@@ -133,6 +130,6 @@ export function WindowContent({ window: win, children }: WindowContentProps) {
       >
         {children}
       </div>
-    </div>
+    </Panel>
   );
-}
+});

@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSupervisor } from './useSupervisor';
 
-// Window info from Rust
+// =============================================================================
+// Window Types
+// =============================================================================
+
+// Window info with screen-space rect (for React positioning)
+// Note: This is returned by Rust's tick_frame() in the unified render loop.
+// Components that need screen rects should receive them as props from Desktop.tsx,
+// NOT by polling independently (which causes animation jank).
 export interface WindowInfo {
   id: number;
   title: string;
@@ -17,7 +24,7 @@ export interface WindowInfo {
   };
 }
 
-// Full window data from Rust
+// Basic window data (for taskbar, window lists - not animation-critical)
 export interface WindowData {
   id: number;
   title: string;
@@ -29,37 +36,13 @@ export interface WindowData {
   focused: boolean;
 }
 
-// Hook to get window screen rects (for positioning React overlays)
-export function useWindowScreenRects(): WindowInfo[] {
-  const supervisor = useSupervisor();
-  const [windows, setWindows] = useState<WindowInfo[]>([]);
-
-  useEffect(() => {
-    if (!supervisor) return;
-
-    const update = () => {
-      try {
-        const json = supervisor.get_window_screen_rects_json();
-        const parsed = JSON.parse(json) as WindowInfo[];
-        setWindows(parsed);
-      } catch (e) {
-        console.error('Failed to parse window rects:', e);
-      }
-    };
-
-    // Update every animation frame
-    let animationId: number;
-    const animate = () => {
-      update();
-      animationId = requestAnimationFrame(animate);
-    };
-    animate();
-
-    return () => cancelAnimationFrame(animationId);
-  }, [supervisor]);
-
-  return windows;
-}
+// =============================================================================
+// DEPRECATED: useWindowScreenRects
+// =============================================================================
+// This hook has been removed. Window screen rects are now provided by the
+// unified render loop in Desktop.tsx via Rust's tick_frame() method.
+// This ensures windows and background are always in sync during animations.
+// =============================================================================
 
 // Hook to get all windows data
 export function useWindows(): WindowData[] {
@@ -135,6 +118,13 @@ export function useWindowActions() {
     [supervisor]
   );
 
+  const panToWindow = useCallback(
+    (id: number) => {
+      supervisor?.pan_to_window(BigInt(id));
+    },
+    [supervisor]
+  );
+
   const minimizeWindow = useCallback(
     (id: number) => {
       supervisor?.minimize_window(BigInt(id));
@@ -168,6 +158,7 @@ export function useWindowActions() {
     createWindow,
     closeWindow,
     focusWindow,
+    panToWindow,
     minimizeWindow,
     maximizeWindow,
     restoreWindow,

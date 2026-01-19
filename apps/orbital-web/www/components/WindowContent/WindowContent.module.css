@@ -1,37 +1,15 @@
+/* Window-specific layout - visual styling handled by Panel */
 .window {
+  /* Panel handles: background, border, box-shadow, border-radius */
+  
+  /* GPU-accelerated positioning via transform instead of left/top */
   position: absolute;
-  display: flex;
-  flex-direction: column;
-  background: #0f0f1a;
-  border: 1px solid #333;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  overflow: visible;
-  pointer-events: auto;
-}
-
-.window.focused {
-  border-color: #888;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-/* Sci-fi trapezoid tab above window */
-.titleTab {
-  position: absolute;
-  top: -20px;
-  left: 12px;
-  height: 21px;
-  padding: 0 28px;
-  background: #3a3a3a;
-  clip-path: polygon(0 100%, 20px 0, calc(100% - 20px) 0, 100% 100%);
-  display: flex;
-  align-items: center;
-  cursor: default;
-  user-select: none;
-  z-index: 1;
-}
-
-.focused .titleTab {
-  background: #4a4a4a;
+  left: 0;
+  top: 0;
+  will-change: transform, width, height;
+  
+  /* Isolation for paint optimization - browser can skip re-painting other elements */
+  contain: layout style paint;
 }
 
 .title {
@@ -43,72 +21,37 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: uppercase;
+  flex: 1;
 }
 
-.focused .title {
+.titleFocused {
   color: #ccc;
 }
 
 .titleBar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 0 10px;
-  background: #3a3a3a;
-  border-bottom: 1px solid #333;
+  background: transparent;
   flex-shrink: 0;
   cursor: default;
   user-select: none;
 }
 
-.focused .titleBar {
-  background: #4a4a4a;
-}
-
 .buttons {
   display: flex;
-  gap: 8px;
-}
-
-.btn {
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
-  border: 1px solid #555;
-  background: transparent;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  transition: all 0.15s;
-}
-
-.btn:hover {
-  color: #fff;
-  border-color: #888;
-  background: #333;
-}
-
-.minimize {
-}
-
-.maximize {
-}
-
-.close {
-}
-
-.close:hover {
-  background: #555;
+  gap: 2px;
+  position: relative;
+  z-index: 11; /* Above resize handles (z-index: 10) so they don't show resize cursor */
 }
 
 .content {
   flex: 1;
   overflow: hidden;
   position: relative;
+  /* Full isolation for window content - enables aggressive browser optimizations */
+  contain: strict;
 }
 
 /* Resize handles - invisible but show cursor on hover */

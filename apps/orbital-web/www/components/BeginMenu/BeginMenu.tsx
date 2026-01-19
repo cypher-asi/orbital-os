@@ -1,16 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { useWindowActions } from '../../hooks/useWindows';
 import { useSupervisor } from '../../hooks/useSupervisor';
+import { Menu } from '@cypher-asi/zui';
+import { TerminalSquare, Settings, Folder, Power } from 'lucide-react';
 import styles from './BeginMenu.module.css';
 
 interface BeginMenuProps {
   onClose: () => void;
 }
 
-const AVAILABLE_APPS = [
-  { id: 'terminal', icon: '▸', name: 'Terminal', description: 'Command line & system monitor' },
-  { id: 'settings', icon: '⚙', name: 'Settings', description: 'System configuration' },
-  { id: 'files', icon: '📁', name: 'Files', description: 'File explorer' },
+const MENU_ITEMS = [
+  { id: 'terminal', label: 'Terminal', icon: <TerminalSquare size={14} /> },
+  { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
+  { id: 'files', label: 'Files', icon: <Folder size={14} /> },
+  { id: 'shutdown', label: 'Shutdown', icon: <Power size={14} /> },
 ];
 
 export function BeginMenu({ onClose }: BeginMenuProps) {
@@ -32,49 +35,28 @@ export function BeginMenu({ onClose }: BeginMenuProps) {
     };
   }, [onClose]);
 
-  const handleLaunchApp = (appId: string) => {
-    launchApp(appId);
-    onClose();
-  };
-
-  const handleShutdown = () => {
-    // In browser context, we just close the menu
-    // Could add confirmation dialog
-    onClose();
-    if (supervisor) {
-      supervisor.send_input('shutdown');
+  const handleSelect = (id: string) => {
+    if (id === 'shutdown') {
+      onClose();
+      if (supervisor) {
+        supervisor.send_input('shutdown');
+      }
+    } else {
+      launchApp(id);
+      onClose();
     }
   };
 
   return (
-    <div ref={menuRef} className={styles.menu}>
-      <div className={styles.header}>
-        <span className={styles.logo}>◆</span>
-        <span className={styles.title}>Orbital OS</span>
-      </div>
-
-      <div className={styles.apps}>
-        {AVAILABLE_APPS.map((app) => (
-          <button
-            key={app.id}
-            className={styles.appItem}
-            onClick={() => handleLaunchApp(app.id)}
-          >
-            <span className={styles.appIcon}>{app.icon}</span>
-            <div className={styles.appText}>
-              <span className={styles.appName}>{app.name}</span>
-              <span className={styles.appDesc}>{app.description}</span>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.footer}>
-        <button className={styles.shutdownBtn} onClick={handleShutdown}>
-          <span className={styles.shutdownIcon}>⏻</span>
-          <span>Shutdown</span>
-        </button>
-      </div>
+    <div ref={menuRef} className={styles.menuWrapper}>
+      <Menu
+        title="ZERO OS"
+        items={MENU_ITEMS}
+        onSelect={handleSelect}
+        variant="glass"
+        border="future"
+        width={200}
+      />
     </div>
   );
 }

@@ -42,6 +42,8 @@ web-sys = { version = "0.3", features = [
     "Worker",
     "MessageEvent",
     "ErrorEvent",
+    "HtmlCanvasElement",
+    "Document",
 ] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

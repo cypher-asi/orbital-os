@@ -1,0 +1,51 @@
+.panel {
+  position: relative;
+  overflow: visible;
+}
+
+/* Background variants (matches Menu component from @cypher-asi/zui) */
+.solid {
+  background-color: var(--color-bg, #09090b);
+}
+
+.transparent {
+  background-color: transparent;
+}
+
+.glass {
+  background-color: rgba(9, 9, 11, 0.15);
+  backdrop-filter: blur(12px);
+}
+
+/* Border variants */
+.borderNone {
+  border: none;
+}
+
+.borderSolid {
+  border: 1px solid var(--color-border, #17171a);
+}
+
+/* .border-future uses global class from @cypher-asi/zui/styles/borders.css */
+
+/* Border radius variants */
+.radiusNone {
+  border-radius: 0;
+}
+
+.radiusSm {
+  border-radius: var(--radius-sm, 4px);
+}
+
+.radiusMd {
+  border-radius: var(--radius-md, 6px);
+}
+
+.radiusLg {
+  border-radius: var(--radius-lg, 8px);
+}
+
+/* Focus state modifier - no visual change, handled by window management */
+.focused {
+  /* Reserved for focus-specific styling if needed */
+}

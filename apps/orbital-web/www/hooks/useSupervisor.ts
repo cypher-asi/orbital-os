@@ -12,6 +12,7 @@ export interface Supervisor {
   create_window(title: string, x: number, y: number, w: number, h: number, app_id: string): bigint;
   close_window(id: bigint): void;
   focus_window(id: bigint): void;
+  pan_to_window(id: bigint): void;
   move_window(id: bigint, x: number, y: number): void;
   resize_window(id: bigint, w: number, h: number): void;
   minimize_window(id: bigint): void;
@@ -22,13 +23,33 @@ export interface Supervisor {
   create_workspace(name: string): number;
   switch_workspace(index: number): void;
   get_workspaces_json(): string;
+  get_workspace_dimensions_json(): string;
   get_active_workspace(): number;
+  get_active_workspace_background(): string;
+  is_workspace_transitioning(): boolean;
+  get_view_mode(): string;
+  is_in_void(): boolean;
+  enter_void(): void;
+  exit_void(workspace_index: number): void;
+  set_workspace_background(index: number, background_id: string): boolean;
+  set_active_workspace_background(background_id: string): boolean;
+  import_workspace_settings(json: string): boolean;
+  export_workspace_settings(): string;
+  start_window_resize(window_id: bigint, direction: string, x: number, y: number): void;
+  start_window_drag(window_id: bigint, x: number, y: number): void;
   desktop_pointer_down(x: number, y: number, button: number, ctrl: boolean, shift: boolean): string;
   desktop_pointer_move(x: number, y: number): string;
   desktop_pointer_up(): string;
   desktop_wheel(dx: number, dy: number, x: number, y: number, ctrl: boolean): string;
   launch_app(app_id: string): bigint;
   get_viewport_json(): string;
+  tick_desktop_transition(): boolean;
+  get_visual_active_workspace(): number;
+  is_animating(): boolean;
+  
+  // Unified frame tick - updates all animation state and returns complete frame data
+  // This is the preferred method for the render loop as it guarantees consistent state
+  tick_frame(): string;
 
   // Existing Supervisor API
   boot(): void;
