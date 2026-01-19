@@ -13,7 +13,7 @@
 Thumbs.db
 
 # Node.js (for orbital-web)
-node_modules/
+**/node_modules/
 
 # WebAssembly build outputs (generated, kept in pkg/)
 *.wasm.map
