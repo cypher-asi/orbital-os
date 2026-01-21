@@ -1,4 +1,5 @@
 /// Shared vertex shader for fullscreen triangle
+#[allow(dead_code)]
 pub const VERTEX_SHADER: &str = r#"
 struct Uniforms {
     time: f32,

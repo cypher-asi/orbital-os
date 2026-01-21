@@ -63,3 +63,118 @@ impl DragState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pan_canvas_state() {
+        let state = DragState::PanCanvas {
+            start: Vec2::new(100.0, 100.0),
+            start_center: Vec2::new(0.0, 0.0),
+        };
+
+        assert!(state.is_pan());
+        assert!(!state.is_move());
+        assert!(!state.is_resize());
+        assert!(state.window_id().is_none());
+    }
+
+    #[test]
+    fn test_move_window_state() {
+        let state = DragState::MoveWindow {
+            window_id: 42,
+            offset: Vec2::new(10.0, 20.0),
+        };
+
+        assert!(!state.is_pan());
+        assert!(state.is_move());
+        assert!(!state.is_resize());
+        assert_eq!(state.window_id(), Some(42));
+    }
+
+    #[test]
+    fn test_resize_window_state() {
+        let state = DragState::ResizeWindow {
+            window_id: 123,
+            handle: WindowRegion::ResizeSE,
+            start_pos: Vec2::new(100.0, 100.0),
+            start_size: Size::new(800.0, 600.0),
+            start_mouse: Vec2::new(900.0, 700.0),
+        };
+
+        assert!(!state.is_pan());
+        assert!(!state.is_move());
+        assert!(state.is_resize());
+        assert_eq!(state.window_id(), Some(123));
+    }
+
+    #[test]
+    fn test_drag_state_clone() {
+        let state = DragState::MoveWindow {
+            window_id: 42,
+            offset: Vec2::new(10.0, 20.0),
+        };
+
+        let cloned = state.clone();
+        assert!(cloned.is_move());
+        assert_eq!(cloned.window_id(), Some(42));
+    }
+
+    #[test]
+    fn test_pan_canvas_preserves_start_values() {
+        let state = DragState::PanCanvas {
+            start: Vec2::new(500.0, 400.0),
+            start_center: Vec2::new(-100.0, 200.0),
+        };
+
+        if let DragState::PanCanvas { start, start_center } = state {
+            assert!((start.x - 500.0).abs() < 0.001);
+            assert!((start.y - 400.0).abs() < 0.001);
+            assert!((start_center.x - (-100.0)).abs() < 0.001);
+            assert!((start_center.y - 200.0).abs() < 0.001);
+        } else {
+            panic!("Expected PanCanvas state");
+        }
+    }
+
+    #[test]
+    fn test_resize_window_preserves_all_fields() {
+        let state = DragState::ResizeWindow {
+            window_id: 99,
+            handle: WindowRegion::ResizeNW,
+            start_pos: Vec2::new(50.0, 75.0),
+            start_size: Size::new(400.0, 300.0),
+            start_mouse: Vec2::new(60.0, 85.0),
+        };
+
+        if let DragState::ResizeWindow { window_id, handle, start_pos, start_size, start_mouse } = state {
+            assert_eq!(window_id, 99);
+            assert_eq!(handle, WindowRegion::ResizeNW);
+            assert!((start_pos.x - 50.0).abs() < 0.001);
+            assert!((start_pos.y - 75.0).abs() < 0.001);
+            assert!((start_size.width - 400.0).abs() < 0.001);
+            assert!((start_size.height - 300.0).abs() < 0.001);
+            assert!((start_mouse.x - 60.0).abs() < 0.001);
+            assert!((start_mouse.y - 85.0).abs() < 0.001);
+        } else {
+            panic!("Expected ResizeWindow state");
+        }
+    }
+
+    #[test]
+    fn test_move_window_offset() {
+        let state = DragState::MoveWindow {
+            window_id: 1,
+            offset: Vec2::new(15.5, 25.5),
+        };
+
+        if let DragState::MoveWindow { offset, .. } = state {
+            assert!((offset.x - 15.5).abs() < 0.001);
+            assert!((offset.y - 25.5).abs() < 0.001);
+        } else {
+            panic!("Expected MoveWindow state");
+        }
+    }
+}

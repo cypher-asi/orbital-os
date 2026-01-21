@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Panel } from '@cypher-asi/zui';
-import { Brain, Cpu, Info, Layers, User } from 'lucide-react';
+import { Brain, Cpu, Info, Layers, User, Users, Lock } from 'lucide-react';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
@@ -16,6 +16,8 @@ const MOCK_USER = {
 const NAV_ITEMS = [
   { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
   { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
+  { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
+  { id: 'vault', label: 'Vault', icon: <Lock size={14} /> },
   { id: 'information', label: 'Information', icon: <Info size={14} /> },
 ];
 
@@ -67,7 +69,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
       <Panel className={styles.panel} variant="glass" border="future">
         {/* Section 1: Title */}
         <div className={styles.titleSection}>
-          <h2 className={styles.title}>NEURAL LINK</h2>
+          <h2 className={styles.title}>IDENTITY</h2>
         </div>
 
         {/* Section 2: Horizontal Image */}

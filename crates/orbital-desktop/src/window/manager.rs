@@ -228,102 +228,148 @@ impl WindowManager {
         windows.sort_by_key(|w| std::cmp::Reverse(w.z_order));
 
         for window in windows {
-            if let Some(visible_ids) = filter {
-                if !visible_ids.contains(&window.id) {
-                    continue;
-                }
-            }
-
-            if window.state == WindowState::Minimized {
+            if !self.should_test_window(window, filter) {
                 continue;
             }
 
-            let rect = window.rect();
-            if !rect.contains(pos) {
+            if !window.rect().contains(pos) {
                 continue;
             }
 
-            // Check buttons first
-            if window.close_button_rect().contains(pos) {
-                return Some((window.id, WindowRegion::CloseButton));
+            if let Some(region) = self.hit_test_window(window, pos, zoom) {
+                return Some((window.id, region));
             }
-            if window.maximize_button_rect().contains(pos) {
-                return Some((window.id, WindowRegion::MaximizeButton));
-            }
-            if window.minimize_button_rect().contains(pos) {
-                return Some((window.id, WindowRegion::MinimizeButton));
-            }
-
-            // Check resize handles
-            let edge_handle = (FRAME_STYLE.resize_handle_size / zoom).min(12.0);
-            let corner_handle = (12.0 / zoom).min(16.0);
-
-            let left = rect.x;
-            let right = rect.right();
-            let top = rect.y;
-            let bottom = rect.bottom();
-
-            let in_left_corner = pos.x < left + corner_handle;
-            let in_right_corner = pos.x > right - corner_handle;
-            let in_top_corner = pos.y < top + corner_handle;
-            let in_bottom_corner = pos.y > bottom - corner_handle;
-
-            let in_left = pos.x < left + edge_handle;
-            let in_right = pos.x > right - edge_handle;
-            let in_top = pos.y < top + edge_handle;
-            let in_bottom = pos.y > bottom - edge_handle;
-
-            // Corners first
-            if in_top_corner && in_left_corner {
-                return Some((window.id, WindowRegion::ResizeNW));
-            }
-            if in_top_corner && in_right_corner {
-                return Some((window.id, WindowRegion::ResizeNE));
-            }
-            if in_bottom_corner && in_left_corner {
-                return Some((window.id, WindowRegion::ResizeSW));
-            }
-            if in_bottom_corner && in_right_corner {
-                return Some((window.id, WindowRegion::ResizeSE));
-            }
-
-            // Title bar
-            let min_title_height = 24.0;
-            let title_height = (min_title_height / zoom).max(FRAME_STYLE.title_bar_height);
-            let title_rect = Rect::new(
-                window.position.x,
-                window.position.y,
-                window.size.width,
-                title_height,
-            );
-            if title_rect.contains(pos) {
-                return Some((window.id, WindowRegion::TitleBar));
-            }
-
-            // Edges
-            if in_top {
-                return Some((window.id, WindowRegion::ResizeN));
-            }
-            if in_bottom {
-                return Some((window.id, WindowRegion::ResizeS));
-            }
-            if in_left {
-                return Some((window.id, WindowRegion::ResizeW));
-            }
-            if in_right {
-                return Some((window.id, WindowRegion::ResizeE));
-            }
-
-            return Some((window.id, WindowRegion::Content));
         }
 
         None
+    }
+
+    /// Check if a window should be included in hit testing
+    fn should_test_window(&self, window: &Window, filter: Option<&[WindowId]>) -> bool {
+        if let Some(visible_ids) = filter {
+            if !visible_ids.contains(&window.id) {
+                return false;
+            }
+        }
+        window.state != WindowState::Minimized
+    }
+
+    /// Hit test a specific window at a position
+    fn hit_test_window(&self, window: &Window, pos: Vec2, zoom: f32) -> Option<WindowRegion> {
+        // Check buttons first (highest priority)
+        if let Some(region) = hit_test_buttons(window, pos) {
+            return Some(region);
+        }
+
+        // Check resize corners (before title bar to allow corner grabs)
+        if let Some(region) = hit_test_resize_corners(window, pos, zoom) {
+            return Some(region);
+        }
+
+        // Check title bar
+        if let Some(region) = hit_test_title_bar(window, pos, zoom) {
+            return Some(region);
+        }
+
+        // Check resize edges
+        if let Some(region) = hit_test_resize_edges(window, pos, zoom) {
+            return Some(region);
+        }
+
+        // Default to content
+        Some(WindowRegion::Content)
     }
 
     /// Get the number of windows
     pub fn count(&self) -> usize {
         self.windows.len()
     }
+}
+
+// =============================================================================
+// Hit testing helper functions
+// =============================================================================
+
+/// Hit test window buttons (close, maximize, minimize)
+fn hit_test_buttons(window: &Window, pos: Vec2) -> Option<WindowRegion> {
+    if window.close_button_rect().contains(pos) {
+        return Some(WindowRegion::CloseButton);
+    }
+    if window.maximize_button_rect().contains(pos) {
+        return Some(WindowRegion::MaximizeButton);
+    }
+    if window.minimize_button_rect().contains(pos) {
+        return Some(WindowRegion::MinimizeButton);
+    }
+    None
+}
+
+/// Hit test resize corner handles
+fn hit_test_resize_corners(window: &Window, pos: Vec2, zoom: f32) -> Option<WindowRegion> {
+    let corner_handle = (12.0 / zoom).min(16.0);
+    let rect = window.rect();
+
+    let in_left_corner = pos.x < rect.x + corner_handle;
+    let in_right_corner = pos.x > rect.right() - corner_handle;
+    let in_top_corner = pos.y < rect.y + corner_handle;
+    let in_bottom_corner = pos.y > rect.bottom() - corner_handle;
+
+    if in_top_corner && in_left_corner {
+        return Some(WindowRegion::ResizeNW);
+    }
+    if in_top_corner && in_right_corner {
+        return Some(WindowRegion::ResizeNE);
+    }
+    if in_bottom_corner && in_left_corner {
+        return Some(WindowRegion::ResizeSW);
+    }
+    if in_bottom_corner && in_right_corner {
+        return Some(WindowRegion::ResizeSE);
+    }
+    None
+}
+
+/// Hit test title bar region
+fn hit_test_title_bar(window: &Window, pos: Vec2, zoom: f32) -> Option<WindowRegion> {
+    let min_title_height = 24.0;
+    let title_height = (min_title_height / zoom).max(FRAME_STYLE.title_bar_height);
+    let title_rect = Rect::new(
+        window.position.x,
+        window.position.y,
+        window.size.width,
+        title_height,
+    );
+    
+    if title_rect.contains(pos) {
+        Some(WindowRegion::TitleBar)
+    } else {
+        None
+    }
+}
+
+/// Hit test resize edge handles (non-corner)
+fn hit_test_resize_edges(window: &Window, pos: Vec2, zoom: f32) -> Option<WindowRegion> {
+    let edge_handle = (FRAME_STYLE.resize_handle_size / zoom).min(12.0);
+    let rect = window.rect();
+
+    let in_left = pos.x < rect.x + edge_handle;
+    let in_right = pos.x > rect.right() - edge_handle;
+    let in_top = pos.y < rect.y + edge_handle;
+    let in_bottom = pos.y > rect.bottom() - edge_handle;
+
+    if in_top {
+        return Some(WindowRegion::ResizeN);
+    }
+    if in_bottom {
+        return Some(WindowRegion::ResizeS);
+    }
+    if in_left {
+        return Some(WindowRegion::ResizeW);
+    }
+    if in_right {
+        return Some(WindowRegion::ResizeE);
+    }
+    None
 }
 
 #[cfg(test)]

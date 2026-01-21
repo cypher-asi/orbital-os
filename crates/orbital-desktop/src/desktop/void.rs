@@ -173,6 +173,6 @@ mod tests {
         ];
         let screen_size = Size::new(1920.0, 1080.0);
         let zoom = VoidState::calculate_fit_zoom(&bounds, screen_size);
-        assert!(zoom >= 0.15 && zoom <= 0.5);
+        assert!((0.15..=0.5).contains(&zoom));
     }
 }

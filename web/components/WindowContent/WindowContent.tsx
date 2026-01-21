@@ -3,7 +3,7 @@ import { forwardRef, useRef } from 'react';
 import type { WindowInfo } from '../../desktop/hooks/useWindows';
 import { useWindowActions } from '../../desktop/hooks/useWindows';
 import { useDesktopController } from '../../desktop/hooks/useSupervisor';
-import { Panel, WindowButton } from '@cypher-asi/zui';
+import { Panel, ButtonWindow } from '@cypher-asi/zui';
 import styles from './WindowContent.module.css';
 
 // Frame style constants (must match Rust FRAME_STYLE)
@@ -47,11 +47,10 @@ export const WindowContent = forwardRef(function WindowContent(
     pointerEvents: 'auto',
   };
 
-  // Handle pointer down on window - focus window
+  // Handle pointer down on window - always focus to bring to front
   const handleWindowPointerDown = (e: React.PointerEvent) => {
-    if (!win.focused) {
-      focusWindow(win.id);
-    }
+    // Always call focus - Rust will update z-order to bring window to front
+    focusWindow(win.id);
   };
 
   const handleMinimize = (e: React.MouseEvent) => {
@@ -75,18 +74,14 @@ export const WindowContent = forwardRef(function WindowContent(
   // Handle resize start - directly calls Rust to start resize drag
   const handleResizeStart = (direction: string) => (e: React.PointerEvent) => {
     e.stopPropagation();
-    if (!win.focused) {
-      focusWindow(win.id);
-    }
+    focusWindow(win.id);
     desktopController?.start_window_resize(BigInt(win.id), direction, e.clientX, e.clientY);
   };
 
   // Handle drag start from title bar - directly calls Rust to start move drag
   const handleDragStart = (e: React.PointerEvent) => {
     e.stopPropagation();
-    if (!win.focused) {
-      focusWindow(win.id);
-    }
+    focusWindow(win.id);
     desktopController?.start_window_drag(BigInt(win.id), e.clientX, e.clientY);
   };
 
@@ -115,9 +110,9 @@ export const WindowContent = forwardRef(function WindowContent(
       <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
         <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title} (ID:{win.id} Y:{Math.round(win.screenRect.y)})</span>
         <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
-          <WindowButton action="minimize" size="xs" rounded="none" onClick={handleMinimize} />
-          <WindowButton action="maximize" size="xs" rounded="none" onClick={handleMaximize} />
-          <WindowButton action="close" size="xs" rounded="none" onClick={handleClose} />
+          <ButtonWindow action="minimize" size="xs" rounded="none" onClick={handleMinimize} />
+          <ButtonWindow action="maximize" size="xs" rounded="none" onClick={handleMaximize} />
+          <ButtonWindow action="close" size="xs" rounded="none" onClick={handleClose} />
         </div>
       </div>
       
@@ -125,16 +120,14 @@ export const WindowContent = forwardRef(function WindowContent(
       <div 
         className={styles.content}
         onPointerDown={(e) => {
-          // Don't interfere with buttons or inputs
+          // Always focus/bring to front when clicking anywhere in content
+          focusWindow(win.id);
+
+          // Don't set up drag tracking for interactive elements (buttons, inputs, etc.)
           const target = e.target as HTMLElement;
           if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
             e.stopPropagation();
             return;
-          }
-
-          // Focus window
-          if (!win.focused) {
-            focusWindow(win.id);
           }
 
           // Track potential drag start

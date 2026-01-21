@@ -951,8 +951,8 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
                     id: bg.id,
                     label: bg.name,
                   }))}
-                  selectedId={getActiveBackground()}
-                  onSelect={handleBackgroundSelect}
+                  value={getActiveBackground()}
+                  onChange={handleBackgroundSelect}
                   variant="glass"
                   border="future"
                   rounded="md"

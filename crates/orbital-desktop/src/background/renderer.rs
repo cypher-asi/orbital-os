@@ -5,6 +5,31 @@ use super::render::*;
 use super::types::BackgroundType;
 use super::uniforms::Uniforms;
 
+/// Intermediate struct for GPU resources during initialization
+struct GpuResources {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_config: wgpu::SurfaceConfiguration,
+    surface_format: wgpu::TextureFormat,
+    bind_group_layout: wgpu::BindGroupLayout,
+    bind_group: wgpu::BindGroup,
+    uniform_buffer: wgpu::Buffer,
+}
+
+/// Intermediate struct for render resources during initialization
+struct RenderResources {
+    pipelines: HashMap<BackgroundType, wgpu::RenderPipeline>,
+    scene_texture: wgpu::Texture,
+    scene_texture_view: wgpu::TextureView,
+    scene_sampler: wgpu::Sampler,
+    glass_overlay_texture: wgpu::Texture,
+    glass_overlay_view: wgpu::TextureView,
+    glass_static_pipeline: wgpu::RenderPipeline,
+    composite_bind_group_layout: wgpu::BindGroupLayout,
+    composite_bind_group: wgpu::BindGroup,
+    composite_pipeline: wgpu::RenderPipeline,
+}
+
 /// Background renderer with multiple switchable shaders
 pub struct BackgroundRenderer {
     device: wgpu::Device,
@@ -12,6 +37,7 @@ pub struct BackgroundRenderer {
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
     surface_format: wgpu::TextureFormat,
+    #[allow(dead_code)]
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
@@ -41,6 +67,19 @@ pub struct BackgroundRenderer {
 impl BackgroundRenderer {
     /// Create a new background renderer
     pub async fn new(canvas: web_sys::HtmlCanvasElement) -> Result<Self, String> {
+        let (instance, surface, width, height) = Self::create_surface(canvas)?;
+        let gpu = Self::setup_gpu(&instance, &surface, width, height).await?;
+        let resources = Self::setup_render_resources(&gpu, width, height);
+        
+        let mut renderer = Self::assemble(surface, gpu, resources);
+        renderer.render_static_glass();
+        
+        Ok(renderer)
+    }
+
+    /// Create the wgpu instance and surface from canvas
+    #[cfg(target_arch = "wasm32")]
+    fn create_surface(canvas: web_sys::HtmlCanvasElement) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
         let width = canvas.width();
         let height = canvas.height();
 
@@ -49,38 +88,58 @@ impl BackgroundRenderer {
             ..Default::default()
         });
 
-        #[cfg(target_arch = "wasm32")]
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
             .map_err(|e| format!("Failed to create surface: {}", e))?;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let surface: wgpu::Surface<'static> = {
-            return Err("BackgroundRenderer only supports WASM targets".to_string());
-        };
+        Ok((instance, surface, width, height))
+    }
 
-        let (device, queue, adapter) = create_device(&instance, &surface).await?;
-        let (surface_config, surface_format) =
-            configure_surface(&surface, &adapter, &device, width, height);
+    /// Create the wgpu instance and surface from canvas (non-WASM stub)
+    #[cfg(not(target_arch = "wasm32"))]
+    fn create_surface(_canvas: web_sys::HtmlCanvasElement) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
+        Err("BackgroundRenderer only supports WASM targets".to_string())
+    }
+
+    /// Setup GPU device, queue, and surface configuration
+    async fn setup_gpu(
+        instance: &wgpu::Instance,
+        surface: &wgpu::Surface<'static>,
+        width: u32,
+        height: u32,
+    ) -> Result<GpuResources, String> {
+        let (device, queue, adapter) = create_device(instance, surface).await?;
+        let (surface_config, surface_format) = configure_surface(surface, &adapter, &device, width, height);
+        let (uniform_buffer, bind_group_layout, bind_group) = create_uniform_resources(&device, width, height);
         
-        let (uniform_buffer, bind_group_layout, bind_group) =
-            create_uniform_resources(&device, width, height);
-        
-        let pipelines = create_pipelines(&device, &bind_group_layout, surface_format);
+        Ok(GpuResources {
+            device,
+            queue,
+            surface_config,
+            surface_format,
+            bind_group_layout,
+            bind_group,
+            uniform_buffer,
+        })
+    }
+
+    /// Setup rendering resources (pipelines, textures)
+    fn setup_render_resources(gpu: &GpuResources, width: u32, height: u32) -> RenderResources {
+        let pipelines = create_pipelines(&gpu.device, &gpu.bind_group_layout, gpu.surface_format);
         
         let (scene_texture, scene_texture_view, scene_sampler) =
-            create_smoke_texture(&device, width, height, surface_format);
+            create_smoke_texture(&gpu.device, width, height, gpu.surface_format);
         
         let (glass_overlay_texture, glass_overlay_view) =
-            create_glass_texture(&device, width, height, surface_format);
+            create_glass_texture(&gpu.device, width, height, gpu.surface_format);
         
         let glass_static_pipeline =
-            create_glass_static_pipeline(&device, &bind_group_layout, surface_format);
+            create_glass_static_pipeline(&gpu.device, &gpu.bind_group_layout, gpu.surface_format);
         
-        let composite_bind_group_layout = create_composite_bind_group_layout(&device);
+        let composite_bind_group_layout = create_composite_bind_group_layout(&gpu.device);
         
         let composite_bind_group = create_composite_bind_group(
-            &device,
+            &gpu.device,
             &composite_bind_group_layout,
             &scene_texture_view,
             &scene_sampler,
@@ -88,35 +147,14 @@ impl BackgroundRenderer {
         );
         
         let composite_pipeline = create_composite_pipeline(
-            &device,
-            &bind_group_layout,
+            &gpu.device,
+            &gpu.bind_group_layout,
             &composite_bind_group_layout,
-            surface_format,
+            gpu.surface_format,
         );
 
-        let start_time = js_sys::Date::now();
-
-        let mut renderer = Self {
-            device,
-            queue,
-            surface,
-            surface_config,
-            surface_format,
-            bind_group_layout,
-            bind_group,
-            uniform_buffer,
+        RenderResources {
             pipelines,
-            current_background: BackgroundType::default(),
-            start_time,
-            viewport_zoom: 1.0,
-            viewport_center: [0.0, 0.0],
-            workspace_count: 2.0,
-            active_workspace: 0.0,
-            workspace_backgrounds: [0.0, 0.0, 0.0, 0.0],
-            workspace_width: 1920.0,
-            workspace_height: 1080.0,
-            workspace_gap: 100.0,
-            transitioning: false,
             scene_texture,
             scene_texture_view,
             scene_sampler,
@@ -126,11 +164,46 @@ impl BackgroundRenderer {
             composite_bind_group_layout,
             composite_bind_group,
             composite_pipeline,
-        };
+        }
+    }
 
-        renderer.render_static_glass();
-
-        Ok(renderer)
+    /// Assemble the final renderer from surface, GPU and render resources
+    fn assemble(
+        surface: wgpu::Surface<'static>,
+        gpu: GpuResources,
+        resources: RenderResources,
+    ) -> Self {
+        Self {
+            device: gpu.device,
+            queue: gpu.queue,
+            surface,
+            surface_config: gpu.surface_config,
+            surface_format: gpu.surface_format,
+            bind_group_layout: gpu.bind_group_layout,
+            bind_group: gpu.bind_group,
+            uniform_buffer: gpu.uniform_buffer,
+            pipelines: resources.pipelines,
+            current_background: BackgroundType::default(),
+            start_time: js_sys::Date::now(),
+            viewport_zoom: 1.0,
+            viewport_center: [0.0, 0.0],
+            workspace_count: 2.0,
+            active_workspace: 0.0,
+            workspace_backgrounds: [0.0, 0.0, 0.0, 0.0],
+            workspace_width: 1920.0,
+            workspace_height: 1080.0,
+            workspace_gap: 100.0,
+            transitioning: false,
+            scene_texture: resources.scene_texture,
+            scene_texture_view: resources.scene_texture_view,
+            scene_sampler: resources.scene_sampler,
+            glass_overlay_texture: resources.glass_overlay_texture,
+            glass_overlay_view: resources.glass_overlay_view,
+            glass_static_pipeline: resources.glass_static_pipeline,
+            composite_bind_group_layout: resources.composite_bind_group_layout,
+            composite_bind_group: resources.composite_bind_group,
+            composite_pipeline: resources.composite_pipeline,
+        }
     }
 
     /// Render the static glass overlay texture
@@ -337,7 +410,6 @@ impl BackgroundRenderer {
             Err(wgpu::SurfaceError::Timeout) => {
                 Err("GPU timeout, skip frame".to_string())
             }
-            Err(e) => Err(format!("Failed to get surface texture: {}", e)),
         }
     }
 

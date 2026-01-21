@@ -18,12 +18,14 @@ pub fn ease_out_cubic(t: f32) -> f32 {
 
 /// Ease-in cubic function
 #[inline]
+#[allow(dead_code)]
 pub fn ease_in_cubic(t: f32) -> f32 {
     t * t * t
 }
 
 /// Linear interpolation (no easing)
 #[inline]
+#[allow(dead_code)]
 pub fn linear(t: f32) -> f32 {
     t
 }

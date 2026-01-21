@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSupervisor } from '../../desktop/hooks/useSupervisor';
-import { Drawer, CollapsibleGroup, Button, Text } from '@cypher-asi/zui';
+import { Drawer, GroupCollapsible, Button, Text } from '@cypher-asi/zui';
 import styles from './TerminalApp.module.css';
 
 interface TerminalAppProps {
@@ -194,11 +194,10 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
         maxSize={400}
       >
         <div className={styles.drawerContent}>
-          <CollapsibleGroup
+          <GroupCollapsible
             title="Processes"
             count={processes.length}
             defaultOpen
-            noBorder
             className={styles.collapsibleGroup}
           >
             <div className={styles.panelContent}>
@@ -233,13 +232,12 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
                 </Button>
               </div>
             </div>
-          </CollapsibleGroup>
+          </GroupCollapsible>
 
-          <CollapsibleGroup
+          <GroupCollapsible
             title="Memory"
             stats={formatBytes(processes.reduce((s, p) => s + p.memory, 0))}
             defaultOpen
-            noBorder
             className={styles.collapsibleGroup}
           >
             <div className={styles.panelContent}>
@@ -258,14 +256,13 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
                 })}
               </div>
             </div>
-          </CollapsibleGroup>
+          </GroupCollapsible>
 
           {axiomStats && (
-            <CollapsibleGroup
+            <GroupCollapsible
               title="Axiom"
               stats={`${axiomStats.commits} commits`}
               defaultOpen
-              noBorder
               className={styles.collapsibleGroup}
             >
               <div className={styles.panelContent}>
@@ -275,7 +272,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
                   <Text as="div" size="xs" variant="muted">Persisted: {axiomStats.persisted} | Pending: {axiomStats.pending}</Text>
                 </div>
               </div>
-            </CollapsibleGroup>
+            </GroupCollapsible>
           )}
         </div>
       </Drawer>

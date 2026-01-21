@@ -192,8 +192,8 @@ pub fn create_smoke_texture(
     height: u32,
     format: wgpu::TextureFormat,
 ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
-    let scene_width = ((width / 4).max(1)).min(480);
-    let scene_height = ((height / 4).max(1)).min(270);
+    let scene_width = (width / 4).clamp(1, 480);
+    let scene_height = (height / 4).clamp(1, 270);
     
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Smoke Texture"),

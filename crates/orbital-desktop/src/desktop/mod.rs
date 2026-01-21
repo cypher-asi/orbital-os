@@ -2,6 +2,7 @@
 //!
 //! Provides desktop (workspace) management with multiple infinite canvases.
 
+#[allow(clippy::module_inception)]
 mod desktop;
 mod manager;
 mod void;

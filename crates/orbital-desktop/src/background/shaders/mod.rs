@@ -8,4 +8,3 @@ pub use grain::SHADER_GRAIN;
 pub use glass_static::SHADER_GLASS_STATIC;
 pub use mist_composite::SHADER_MIST_COMPOSITE;
 pub use mist_smoke::SHADER_MIST_SMOKE;
-pub use vertex::VERTEX_SHADER;

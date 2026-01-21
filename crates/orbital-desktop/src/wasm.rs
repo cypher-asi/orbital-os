@@ -86,6 +86,7 @@ impl DesktopController {
 
     /// Create a new window
     #[wasm_bindgen]
+    #[allow(clippy::too_many_arguments)]
     pub fn create_window(
         &mut self,
         title: &str,
@@ -260,7 +261,7 @@ impl DesktopController {
             self.engine.switch_desktop(index, date_now());
         }
         
-        desktop_id as u32
+        desktop_id
     }
 
     /// Switch to a desktop by index
@@ -436,89 +437,104 @@ impl DesktopController {
     #[wasm_bindgen]
     pub fn tick_frame(&mut self) -> String {
         let now = date_now();
-
-        // Tick transition first
         self.engine.tick_transition(now);
 
-        // Get viewport state
-        let viewport = &self.engine.viewport;
-
-        // Get window screen rects
-        let rects = self.engine.get_window_screen_rects(now);
-        let windows: Vec<serde_json::Value> = rects
-            .into_iter()
-            .enumerate()
-            .map(|(z_order, r)| {
-                serde_json::json!({
-                    "id": r.id,
-                    "title": r.title,
-                    "appId": r.app_id,
-                    "state": match r.state {
-                        WindowState::Normal => "normal",
-                        WindowState::Minimized => "minimized",
-                        WindowState::Maximized => "maximized",
-                        WindowState::Fullscreen => "fullscreen",
-                    },
-                    "focused": r.focused,
-                    "zOrder": z_order,
-                    "opacity": r.opacity,
-                    "contentInteractive": r.content_interactive,
-                    "screenRect": {
-                        "x": r.screen_rect.x,
-                        "y": r.screen_rect.y,
-                        "width": r.screen_rect.width,
-                        "height": r.screen_rect.height
-                    }
-                })
-            })
-            .collect();
-
-        // Get view mode
-        let view_mode = if self.engine.is_transitioning() {
-            "transitioning"
-        } else {
-            match self.engine.get_view_mode() {
-                crate::ViewMode::Desktop { .. } => "desktop",
-                crate::ViewMode::Void => "void",
-            }
-        };
-
-        // Get desktop info
-        let desktops = self.engine.desktops.desktops();
-
-        // Get desktop dimensions
-        let size = self.engine.desktops.desktop_size();
-        let gap = self.engine.desktops.desktop_gap();
-
-        // Build backgrounds array - one per desktop
-        let backgrounds: Vec<String> = desktops
-            .iter()
-            .map(|d| d.background.clone())
-            .collect();
+        let windows = self.build_windows_json(now);
+        let view_mode = self.get_view_mode_str();
+        let workspace_info = self.build_workspace_info_json(now);
+        let workspace_dims = self.build_workspace_dimensions_json();
 
         serde_json::to_string(&serde_json::json!({
             "viewport": {
-                "center": { "x": viewport.center.x, "y": viewport.center.y },
-                "zoom": viewport.zoom
+                "center": { "x": self.engine.viewport.center.x, "y": self.engine.viewport.center.y },
+                "zoom": self.engine.viewport.zoom
             },
             "windows": windows,
             "animating": self.engine.is_animating(now),
             "transitioning": self.engine.is_animating_viewport(),
             "showVoid": self.engine.should_show_void(),
             "viewMode": view_mode,
-            "workspaceInfo": {
-                "count": desktops.len(),
-                "active": self.engine.get_visual_active_workspace_at(now),
-                "actualActive": self.engine.desktops.active_index(),
-                "backgrounds": backgrounds
-            },
-            "workspaceDimensions": {
-                "width": size.width,
-                "height": size.height,
-                "gap": gap
-            }
+            "workspaceInfo": workspace_info,
+            "workspaceDimensions": workspace_dims
         }))
         .unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Build JSON array of window screen rects
+    fn build_windows_json(&self, now: f64) -> Vec<serde_json::Value> {
+        self.engine
+            .get_window_screen_rects(now)
+            .into_iter()
+            .enumerate()
+            .map(|(z_order, r)| build_window_rect_json(&r, z_order))
+            .collect()
+    }
+
+    /// Get the view mode as a string
+    fn get_view_mode_str(&self) -> &'static str {
+        if self.engine.is_transitioning() {
+            "transitioning"
+        } else {
+            match self.engine.get_view_mode() {
+                crate::ViewMode::Desktop { .. } => "desktop",
+                crate::ViewMode::Void => "void",
+            }
+        }
+    }
+
+    /// Build workspace info JSON
+    fn build_workspace_info_json(&self, now: f64) -> serde_json::Value {
+        let desktops = self.engine.desktops.desktops();
+        let backgrounds: Vec<String> = desktops.iter().map(|d| d.background.clone()).collect();
+
+        serde_json::json!({
+            "count": desktops.len(),
+            "active": self.engine.get_visual_active_workspace_at(now),
+            "actualActive": self.engine.desktops.active_index(),
+            "backgrounds": backgrounds
+        })
+    }
+
+    /// Build workspace dimensions JSON
+    fn build_workspace_dimensions_json(&self) -> serde_json::Value {
+        let size = self.engine.desktops.desktop_size();
+        let gap = self.engine.desktops.desktop_gap();
+
+        serde_json::json!({
+            "width": size.width,
+            "height": size.height,
+            "gap": gap
+        })
+    }
+}
+
+/// Build JSON for a single window screen rect
+fn build_window_rect_json(r: &crate::engine::WindowScreenRect, z_order: usize) -> serde_json::Value {
+    serde_json::json!({
+        "id": r.id,
+        "title": r.title,
+        "appId": r.app_id,
+        "state": window_state_to_str(r.state),
+        "focused": r.focused,
+        "zOrder": z_order,
+        "opacity": r.opacity,
+        "contentInteractive": r.content_interactive,
+        "screenRect": {
+            "x": r.screen_rect.x,
+            "y": r.screen_rect.y,
+            "width": r.screen_rect.width,
+            "height": r.screen_rect.height
+        }
+    })
+}
+
+/// Convert WindowState to JSON-friendly string
+fn window_state_to_str(state: WindowState) -> &'static str {
+    match state {
+        WindowState::Normal => "normal",
+        WindowState::Minimized => "minimized",
+        WindowState::Maximized => "maximized",
+        WindowState::Fullscreen => "fullscreen",
     }
 }
 

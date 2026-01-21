@@ -2,6 +2,7 @@
 //!
 //! Provides window lifecycle, focus management, and hit testing.
 
+#[allow(clippy::module_inception)]
 mod window;
 mod config;
 mod region;
