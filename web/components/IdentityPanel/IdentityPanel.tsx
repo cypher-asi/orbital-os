@@ -1,17 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Panel, Menu, type MenuItem } from '@cypher-asi/zui';
-import { Brain, Cpu, Info, Layers, User, Users, Lock, LogOut } from 'lucide-react';
+import { Brain, Cpu, Info, Layers, User, Users, Lock, LogOut, Clock } from 'lucide-react';
+import { useIdentity, formatUserId, getSessionTimeRemaining } from '../../desktop/hooks/useIdentity';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
   onClose: () => void;
 }
-
-// Mock user data
-const MOCK_USER = {
-  name: 'CYPHER_01',
-  uid: 'UID-7A3F-9B2E-4D1C-8E5F',
-};
 
 const NAV_ITEMS: MenuItem[] = [
   { id: 'identity-menu', label: 'Identity Menu', icon: <Brain size={14} /> },
@@ -35,6 +30,16 @@ function Avatar({ name }: { size?: string; status?: string; name: string }) {
 
 export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const identity = useIdentity();
+
+  // Get current user info from identity service
+  const currentUser = identity?.state.currentUser;
+  const currentSession = identity?.state.currentSession;
+
+  // Compute display values
+  const displayName = currentUser?.displayName ?? 'Not logged in';
+  const displayUid = currentUser ? formatUserId(currentUser.id) : '---';
+  const sessionInfo = currentSession ? getSessionTimeRemaining(currentSession) : 'No session';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -49,11 +54,15 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
     };
   }, [onClose]);
 
-  const handleSelect = (id: string) => {
+  const handleSelect = async (id: string) => {
     console.log('[identity-panel] Selected:', id);
-    if (id === 'logout') {
-      // TODO: Implement logout functionality
-      console.log('[identity-panel] Logout requested');
+    if (id === 'logout' && identity) {
+      try {
+        await identity.logout();
+        console.log('[identity-panel] Logout successful');
+      } catch (error) {
+        console.error('[identity-panel] Logout failed:', error);
+      }
       onClose();
     }
   };
@@ -75,10 +84,15 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         {/* Section 3: Profile Data */}
         <div className={styles.profileSection}>
-          <Avatar name={MOCK_USER.name} />
+          <Avatar name={displayName} />
           <div className={styles.userInfo}>
-            <span className={styles.userName}>{MOCK_USER.name}</span>
-            <span className={styles.userUid}>{MOCK_USER.uid}</span>
+            <span className={styles.userName}>{displayName}</span>
+            <span className={styles.userUid}>{displayUid}</span>
+            {currentSession && (
+              <span className={styles.sessionInfo}>
+                <Clock size={10} /> {sessionInfo}
+              </span>
+            )}
           </div>
         </div>
 

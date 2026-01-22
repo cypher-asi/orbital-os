@@ -1,0 +1,18 @@
+[package]
+name = "zos-identity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Identity layer for Zero OS - users, sessions, Zero-ID integration, permissions"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]

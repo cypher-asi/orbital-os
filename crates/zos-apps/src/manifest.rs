@@ -22,6 +22,10 @@ pub enum ObjectType {
     Storage = 7,
     /// Network access
     Network = 8,
+    /// Filesystem access (VFS)
+    Filesystem = 9,
+    /// User identity service
+    Identity = 10,
 }
 
 /// Permission bits for capabilities

@@ -2,8 +2,9 @@
 //!
 //! Runs inside each WASM process, providing the event loop and syscall interface.
 
-use crate::app::{AppContext, ControlFlow, Message, ZeroApp};
+use crate::app::{AppContext, ControlFlow, Message, UserContext, ZeroApp};
 use alloc::format;
+use alloc::string::String;
 use zos_process as syscall;
 
 /// Runtime environment for a Zero application.
@@ -23,6 +24,12 @@ pub struct AppRuntime {
 
     /// Minimum interval between updates (in nanoseconds)
     update_interval_ns: u64,
+
+    /// User context (who launched this app)
+    user_context: UserContext,
+
+    /// App ID from manifest
+    app_id: String,
 }
 
 impl AppRuntime {
@@ -40,7 +47,25 @@ impl AppRuntime {
             input_slot: None,
             last_update_ns: 0,
             update_interval_ns: Self::DEFAULT_UPDATE_INTERVAL_NS,
+            user_context: UserContext::system(),
+            app_id: String::new(),
         }
+    }
+
+    /// Create a runtime with user context.
+    pub fn with_user(mut self, user_context: UserContext) -> Self {
+        self.user_context = user_context;
+        self
+    }
+
+    /// Set the app ID (usually from manifest).
+    pub fn set_app_id(&mut self, app_id: &str) {
+        self.app_id = String::from(app_id);
+    }
+
+    /// Set the user context.
+    pub fn set_user_context(&mut self, user_context: UserContext) {
+        self.user_context = user_context;
     }
 
     /// Run the main event loop.
@@ -102,6 +127,8 @@ impl AppRuntime {
             wallclock_ms: self.get_wallclock(),
             ui_endpoint: self.ui_slot,
             input_endpoint: self.input_slot,
+            user: self.user_context.clone(),
+            app_id: self.app_id.clone(),
         }
     }
 

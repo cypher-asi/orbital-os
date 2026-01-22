@@ -4,7 +4,53 @@
 
 use crate::error::AppError;
 use crate::manifest::AppManifest;
+use alloc::string::String;
 use alloc::vec::Vec;
+
+/// User ID type (128-bit UUID).
+pub type UserId = u128;
+
+/// Session ID type (128-bit UUID).
+pub type SessionId = u128;
+
+/// User identity context for apps.
+#[derive(Clone, Debug, Default)]
+pub struct UserContext {
+    /// User ID of the user who launched this app (None = system process)
+    pub user_id: Option<UserId>,
+
+    /// Session ID this app is running under (None = system process)
+    pub session_id: Option<SessionId>,
+
+    /// Display name of the user (for UI)
+    pub display_name: Option<String>,
+}
+
+impl UserContext {
+    /// Create a system context (no user).
+    pub fn system() -> Self {
+        Self::default()
+    }
+
+    /// Create a user context.
+    pub fn user(user_id: UserId, session_id: SessionId, display_name: String) -> Self {
+        Self {
+            user_id: Some(user_id),
+            session_id: Some(session_id),
+            display_name: Some(display_name),
+        }
+    }
+
+    /// Check if this is a system context (no user).
+    pub fn is_system(&self) -> bool {
+        self.user_id.is_none()
+    }
+
+    /// Check if this is a user context.
+    pub fn is_user(&self) -> bool {
+        self.user_id.is_some()
+    }
+}
 
 /// Execution context provided to app methods
 #[derive(Clone, Debug)]
@@ -25,6 +71,12 @@ pub struct AppContext {
 
     /// Capability slot for receiving input
     pub input_endpoint: Option<u32>,
+
+    /// User identity context (who launched this app)
+    pub user: UserContext,
+
+    /// App ID (from manifest)
+    pub app_id: String,
 }
 
 impl AppContext {
@@ -42,7 +94,67 @@ impl AppContext {
             wallclock_ms,
             ui_endpoint,
             input_endpoint,
+            user: UserContext::system(),
+            app_id: String::new(),
         }
+    }
+
+    /// Create a context with user information.
+    pub fn with_user(mut self, user: UserContext) -> Self {
+        self.user = user;
+        self
+    }
+
+    /// Set the app ID.
+    pub fn with_app_id(mut self, app_id: String) -> Self {
+        self.app_id = app_id;
+        self
+    }
+
+    /// Get the app's data directory path.
+    ///
+    /// For user apps: `/home/{user_id}/Apps/{app_id}/data`
+    /// For system apps: `/system/apps/{app_id}/data`
+    pub fn data_dir(&self) -> String {
+        if let Some(user_id) = self.user.user_id {
+            alloc::format!("/home/{:032x}/Apps/{}/data", user_id, self.app_id)
+        } else {
+            alloc::format!("/system/apps/{}/data", self.app_id)
+        }
+    }
+
+    /// Get the app's config directory path.
+    ///
+    /// For user apps: `/home/{user_id}/Apps/{app_id}/config`
+    /// For system apps: `/system/apps/{app_id}/config`
+    pub fn config_dir(&self) -> String {
+        if let Some(user_id) = self.user.user_id {
+            alloc::format!("/home/{:032x}/Apps/{}/config", user_id, self.app_id)
+        } else {
+            alloc::format!("/system/apps/{}/config", self.app_id)
+        }
+    }
+
+    /// Get the app's cache directory path.
+    ///
+    /// For user apps: `/home/{user_id}/Apps/{app_id}/cache`
+    /// For system apps: `/tmp/apps/{app_id}/cache`
+    pub fn cache_dir(&self) -> String {
+        if let Some(user_id) = self.user.user_id {
+            alloc::format!("/home/{:032x}/Apps/{}/cache", user_id, self.app_id)
+        } else {
+            alloc::format!("/tmp/apps/{}/cache", self.app_id)
+        }
+    }
+
+    /// Get the user's home directory path (if user context).
+    pub fn home_dir(&self) -> Option<String> {
+        self.user.user_id.map(|id| alloc::format!("/home/{:032x}", id))
+    }
+
+    /// Check if this app is running as a system process.
+    pub fn is_system_app(&self) -> bool {
+        self.user.is_system()
     }
 }
 

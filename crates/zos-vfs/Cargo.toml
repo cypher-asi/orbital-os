@@ -1,0 +1,24 @@
+[package]
+name = "zos-vfs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Virtual filesystem layer for Zero OS - hierarchical paths, inodes, storage"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+std = []
+wasm = ["wasm-bindgen", "js-sys"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# WASM-specific dependencies
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+
+[dev-dependencies]

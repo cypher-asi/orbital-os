@@ -26,5 +26,8 @@ path = "src/bin/permission_manager.rs"
 [dependencies]
 zos-process = { path = "../zos-process" }
 
+[dev-dependencies]
+zos-vfs = { path = "../zos-vfs" }
+
 [features]
 default = []

@@ -72,6 +72,15 @@
   white-space: nowrap;
 }
 
+.sessionInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--color-accent, #01f4cb);
+  opacity: 0.7;
+}
+
 /* Section 4: Menu */
 .menuSection {
   padding: 0;

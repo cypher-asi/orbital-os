@@ -14,32 +14,41 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Layer 8: Desktop/Compositor                           [08-desktop/]        │
-│           Window management, input routing, visual shell                    │
+│                            USERSPACE (Layers 05-08)                          │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Layer 08: Desktop/Compositor                    [08-desktop/]          │ │
+│  │            Window management, input routing, visual shell               │ │
+│  ├────────────────────────────────────────────────────────────────────────┤ │
+│  │  Layer 07: Applications                          [07-applications/]     │ │
+│  │            Sandboxed user applications, app model                       │ │
+│  ├────────────────────────────────────────────────────────────────────────┤ │
+│  │  Layer 06: Filesystem                            [06-filesystem/]       │ │
+│  │            VFS, storage services, user home directories                 │ │
+│  ├────────────────────────────────────────────────────────────────────────┤ │
+│  │  Layer 05: Identity                              [05-identity/]         │ │
+│  │            Users, sessions, Zero-ID, permissions                        │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  See [USERSPACE.md](v0.1.0/USERSPACE.md) for userspace overview             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Layer 04: Init Process             [04-init/]                               │
+│            Bootstrap, service supervision, process manager                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 7: Applications                                 [07-applications/]   │
-│           Sandboxed user applications, app model                            │
+│  Layer 03: Microkernel              [03-kernel/]                             │
+│            Capabilities, threads, VMM, IPC, interrupts                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 6: Drivers                                      [06-drivers/]        │
-│           User-space device drivers (block, network, display)               │
+│  Layer 02: Axiom (Verification)     [02-axiom/]                              │
+│            SysLog (audit), CommitLog (replay), sender verification           │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 5: Runtime Services                             [05-runtime/]        │
-│           Process manager, permissions, identity, storage, network          │
+│  Layer 01: Hardware Abstraction     [01-hal/]                                │
+│            Platform-specific: WASM/QEMU/Bare Metal                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 4: Init Process                                 [04-init/]           │
-│           Bootstrap, service supervision                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 3: Microkernel                                  [03-kernel/]         │
-│           Capabilities, threads, VMM, IPC, interrupts                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 2: Axiom (Verification)                         [02-axiom/]          │
-│           SysLog (audit), CommitLog (replay), sender verification           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 1: Hardware Abstraction Layer                   [01-hal/]            │
-│           Platform-specific: WASM/QEMU/Bare Metal                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Layer 0: Boot                                         [00-boot/]           │
-│           Reset vector, early init (WASM: handled by browser)               │
+│  Layer 00: Boot                     [00-boot/]                               │
+│            Reset vector, early init (WASM: handled by browser)               │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -141,17 +150,19 @@ Every system call flows through Axiom for verification and logging:
 
 For implementers, the recommended reading order is:
 
-1. **[02-axiom/README.md](02-axiom/README.md)** - Axiom verification layer (SysLog + CommitLog)
-2. **[02-axiom/02-commitlog.md](02-axiom/02-commitlog.md)** - Commit types and hash chain
-3. **[02-axiom/03-replay.md](02-axiom/03-replay.md)** - State reconstruction
-4. **[03-kernel/README.md](03-kernel/README.md)** - Kernel overview and verification goals
-5. **[03-kernel/03-capabilities.md](03-kernel/03-capabilities.md)** - Capability system
-6. **[03-kernel/06-syscalls.md](03-kernel/06-syscalls.md)** - Syscall ABI
-7. **[01-hal/03-traits.md](01-hal/03-traits.md)** - HAL interface
-8. **[03-kernel/01-threads.md](03-kernel/01-threads.md)** - Thread model
-9. **[03-kernel/04-ipc.md](03-kernel/04-ipc.md)** - IPC system
-10. **[04-init/01-bootstrap.md](04-init/01-bootstrap.md)** - Bootstrap and state reconstruction
-11. **[05-runtime/](05-runtime/)** - Runtime services
+1. **[02-axiom/README.md](v0.1.0/02-axiom/README.md)** - Axiom verification layer (SysLog + CommitLog)
+2. **[02-axiom/02-commitlog.md](v0.1.0/02-axiom/02-commitlog.md)** - Commit types and hash chain
+3. **[02-axiom/03-replay.md](v0.1.0/02-axiom/03-replay.md)** - State reconstruction
+4. **[03-kernel/README.md](v0.1.0/03-kernel/README.md)** - Kernel overview and verification goals
+5. **[03-kernel/03-capabilities.md](v0.1.0/03-kernel/03-capabilities.md)** - Capability system
+6. **[03-kernel/06-syscalls.md](v0.1.0/03-kernel/06-syscalls.md)** - Syscall ABI
+7. **[01-hal/03-traits.md](v0.1.0/01-hal/03-traits.md)** - HAL interface
+8. **[03-kernel/01-threads.md](v0.1.0/03-kernel/01-threads.md)** - Thread model
+9. **[03-kernel/04-ipc.md](v0.1.0/03-kernel/04-ipc.md)** - IPC system
+10. **[04-init/01-bootstrap.md](v0.1.0/04-init/01-bootstrap.md)** - Bootstrap and state reconstruction
+11. **[USERSPACE.md](v0.1.0/USERSPACE.md)** - Userspace layer overview
+12. **[05-identity/](v0.1.0/05-identity/)** - Identity, sessions, permissions
+13. **[06-filesystem/](v0.1.0/06-filesystem/)** - Virtual filesystem
 
 ## Spec File Conventions
 

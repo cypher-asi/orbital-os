@@ -6,6 +6,7 @@ use zos_kernel::ProcessId;
 use wasm_bindgen::prelude::*;
 
 use super::{log, Supervisor};
+use crate::vfs;
 
 #[wasm_bindgen]
 impl Supervisor {
@@ -63,5 +64,69 @@ impl Supervisor {
 
         self.supervisor_initialized = true;
         log("[supervisor] Supervisor initialized - uses privileged kernel APIs (no endpoints)");
+    }
+
+    /// Initialize VFS IndexedDB storage.
+    ///
+    /// This must be called before using VFS operations. It initializes the
+    /// `zos-userspace` IndexedDB database and creates the root filesystem
+    /// structure if it doesn't exist.
+    ///
+    /// Returns a JsValue indicating success (true) or an error message.
+    #[wasm_bindgen]
+    pub async fn init_vfs_storage(&mut self) -> Result<JsValue, JsValue> {
+        log("[supervisor] Initializing VFS storage...");
+
+        // Initialize the IndexedDB database
+        let result = vfs::init().await;
+        if result.is_falsy() {
+            return Err(JsValue::from_str("Failed to initialize VFS storage"));
+        }
+
+        // Check if root exists
+        let root = vfs::getInode("/").await;
+        if root.is_null() || root.is_undefined() {
+            log("[supervisor] Creating root filesystem structure...");
+
+            // Create root directory
+            let root_inode = vfs::create_root_inode();
+            vfs::putInode("/", root_inode).await;
+
+            // Create standard directories
+            let dirs = [
+                ("/system", "/", "system"),
+                ("/system/config", "/system", "config"),
+                ("/system/services", "/system", "services"),
+                ("/users", "/", "users"),
+                ("/tmp", "/", "tmp"),
+                ("/home", "/", "home"),
+            ];
+
+            for (path, parent, name) in dirs {
+                let inode = vfs::create_dir_inode(path, parent, name);
+                vfs::putInode(path, inode).await;
+            }
+
+            log("[supervisor] Root filesystem created");
+        } else {
+            log("[supervisor] VFS storage already initialized");
+        }
+
+        // Get inode count for logging
+        let count = vfs::getInodeCount().await;
+        if let Some(n) = count.as_f64() {
+            log(&format!("[supervisor] VFS ready with {} inodes", n as u64));
+        }
+
+        Ok(JsValue::from_bool(true))
+    }
+
+    /// Clear VFS storage (for testing/reset).
+    #[wasm_bindgen]
+    pub async fn clear_vfs_storage(&mut self) -> Result<JsValue, JsValue> {
+        log("[supervisor] Clearing VFS storage...");
+        vfs::clear().await;
+        log("[supervisor] VFS storage cleared");
+        Ok(JsValue::from_bool(true))
     }
 }

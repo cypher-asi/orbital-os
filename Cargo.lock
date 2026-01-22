@@ -1726,6 +1726,7 @@ name = "zos-apps"
 version = "0.1.0"
 dependencies = [
  "zos-process",
+ "zos-vfs",
 ]
 
 [[package]]
@@ -1747,11 +1748,19 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "wgpu",
+ "zos-vfs",
 ]
 
 [[package]]
 name = "zos-hal"
 version = "0.1.0"
+
+[[package]]
+name = "zos-identity"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "zos-init"
@@ -1795,4 +1804,14 @@ name = "zos-system-procs"
 version = "0.1.0"
 dependencies = [
  "zos-process",
+]
+
+[[package]]
+name = "zos-vfs"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]

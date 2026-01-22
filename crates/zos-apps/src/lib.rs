@@ -78,6 +78,9 @@ macro_rules! app_main {
             // Create and run runtime
             let mut runtime = $crate::AppRuntime::new();
 
+            // Set app ID from manifest
+            runtime.set_app_id(<$app_type as $crate::ZeroApp>::manifest().id);
+
             // Setup endpoints from capability slots
             // Slot 0 is typically the UI output endpoint
             // Slot 1 is typically the input endpoint

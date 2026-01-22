@@ -11,10 +11,10 @@ import styles from './Taskbar.module.css';
 function getWindowIcon(title: string) {
   const lowerTitle = title.toLowerCase();
   if (lowerTitle.includes('terminal') || lowerTitle.includes('shell') || lowerTitle.includes('bash')) {
-    return <TerminalSquare size={14} />;
+    return <TerminalSquare size={16} />;
   }
   // Default icon for other apps
-  return <AppWindow size={14} />;
+  return <AppWindow size={16} />;
 }
 
 export function Taskbar() {
@@ -79,7 +79,6 @@ export function Taskbar() {
       <div ref={beginSectionRef} className={styles.beginSection}>
         <Button
           variant={beginMenuOpen ? 'glass' : 'transparent'}
-          size="sm"
           rounded="none"
           iconOnly
           className={`${styles.beginBtn} ${beginMenuOpen ? styles.beginBtnActive : ''}`}
@@ -89,7 +88,7 @@ export function Taskbar() {
           selectedBgColor="transparent"
         >
           <span className={styles.beginIcon}>
-            <Circle size={14} className={styles.beginCircle} />
+            <Circle size={16} className={styles.beginCircle} />
             <span className={styles.beginSlash}>/</span>
           </span>
         </Button>
@@ -103,7 +102,6 @@ export function Taskbar() {
           <Button
             key={win.id}
             variant={win.focused ? 'glass' : 'transparent'}
-            size="sm"
             rounded="none"
             textCase="uppercase"
             icon={getWindowIcon(win.title)}
@@ -124,7 +122,6 @@ export function Taskbar() {
           <Button
             key={d.id}
             variant={d.active ? 'glass' : 'transparent'}
-            size="sm"
             rounded="none"
             iconOnly
             className={styles.workspaceBtn}
@@ -138,7 +135,6 @@ export function Taskbar() {
         ))}
         <Button
           variant="transparent"
-          size="sm"
           rounded="none"
           iconOnly
           className={styles.workspaceAdd}
@@ -147,11 +143,10 @@ export function Taskbar() {
           selected={false}
           selectedBgColor="transparent"
         >
-          <Plus size={14} />
+          <Plus size={16} />
         </Button>
         <Button
           variant="transparent"
-          size="sm"
           rounded="none"
           iconOnly
           className={styles.walletBtn}
@@ -160,12 +155,11 @@ export function Taskbar() {
           selected={false}
           selectedBgColor="transparent"
         >
-          <CreditCard size={14} />
+          <CreditCard size={16} />
         </Button>
         <div className={styles.neuralKeyWrapper}>
           <Button
             variant={identityPanelOpen ? 'glass' : 'transparent'}
-            size="sm"
             rounded="none"
             iconOnly
             className={styles.neuralKey}
@@ -174,7 +168,7 @@ export function Taskbar() {
             selected={identityPanelOpen}
             selectedBgColor="transparent"
           >
-            <KeyRound size={14} />
+            <KeyRound size={16} />
           </Button>
 
           {identityPanelOpen && <IdentityPanel onClose={() => setIdentityPanelOpen(false)} />}

@@ -5,11 +5,13 @@ members = [
     "crates/zos-axiom",
     "crates/zos-desktop",
     "crates/zos-hal",
+    "crates/zos-identity",
     "crates/zos-init",
     "crates/zos-kernel",
     "crates/zos-process",
     "crates/zos-system-procs",
     "crates/zos-supervisor-web",
+    "crates/zos-vfs",
     "tools/dev-server",
 ]
 
@@ -25,10 +27,12 @@ zos-apps = { path = "crates/zos-apps" }
 zos-axiom = { path = "crates/zos-axiom" }
 zos-desktop = { path = "crates/zos-desktop" }
 zos-hal = { path = "crates/zos-hal" }
+zos-identity = { path = "crates/zos-identity" }
 zos-init = { path = "crates/zos-init" }
 zos-kernel = { path = "crates/zos-kernel" }
 zos-process = { path = "crates/zos-process" }
 zos-system-procs = { path = "crates/zos-system-procs" }
+zos-vfs = { path = "crates/zos-vfs" }
 
 # External dependencies
 wasm-bindgen = "0.2"

@@ -33,6 +33,7 @@ pub(crate) mod hal;
 pub(crate) mod pingpong;
 pub(crate) mod supervisor;
 pub(crate) mod syscall;
+pub mod vfs;
 pub(crate) mod worker;
 
 // =============================================================================

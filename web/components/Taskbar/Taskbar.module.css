@@ -28,8 +28,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .beginCircle {
@@ -105,23 +105,23 @@
 }
 
 .workspaceBtn {
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
   padding: 0 !important;
 }
 
 .workspaceAdd {
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
   padding: 0 !important;
 }
 
 .walletBtn {
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
   padding: 0 !important;
 }
 
@@ -130,8 +130,8 @@
 }
 
 .neuralKey {
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
   padding: 0 !important;
 }
