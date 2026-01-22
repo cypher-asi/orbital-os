@@ -63,11 +63,11 @@ export interface AppManifest {
 // =============================================================================
 
 export interface PermissionDialogProps {
-  /** App requesting permissions */
+  /** App requesting capabilities */
   app: AppManifest;
   /** Called when user approves (with list of approved capabilities) */
   onApprove: (approved: CapabilityRequest[]) => void;
-  /** Called when user denies all permissions */
+  /** Called when user denies all capabilities */
   onDeny: () => void;
 }
 
@@ -126,10 +126,10 @@ function getObjectTypeIcon(type: ObjectType): string {
 // =============================================================================
 
 /**
- * Permission request dialog for third-party apps.
+ * Capability request dialog for third-party apps.
  * 
  * Shows requested capabilities from the app manifest and allows users to
- * selectively approve or deny permissions. Required permissions are
+ * selectively approve or deny capabilities. Required capabilities are
  * automatically selected and cannot be deselected.
  */
 export function PermissionDialog({
@@ -181,7 +181,7 @@ export function PermissionDialog({
     .filter((c) => c.required)
     .every((_, i) => selected.has(i));
 
-  // Check if this is a potentially dangerous permission request
+  // Check if this is a potentially dangerous capability request
   const hasSensitivePermissions = app.capabilities.some(
     (cap) =>
       cap.objectType === 'Network' ||
@@ -208,18 +208,18 @@ export function PermissionDialog({
             </Label>
           </div>
           <Text as="div" size="sm" className={styles.subtitle}>
-            This app is requesting the following permissions:
+            This app is requesting the following capabilities:
           </Text>
         </div>
 
         {/* Content */}
         <div className={styles.content}>
-          {/* Warning for sensitive permissions */}
+          {/* Warning for sensitive capabilities */}
           {hasSensitivePermissions && (
             <div className={styles.warning}>
               <span className={styles.warningIcon}>⚠</span>
               <Text as="span" size="xs" className={styles.warningText}>
-                This app requests sensitive permissions. Only approve if you
+                This app requests sensitive capabilities. Only approve if you
                 trust the source.
               </Text>
             </div>
@@ -228,7 +228,7 @@ export function PermissionDialog({
           {app.capabilities.length === 0 ? (
             <div className={styles.emptyState}>
               <Text as="p" size="sm" variant="muted">
-                This app doesn't require any special permissions.
+                This app doesn't require any special capabilities.
               </Text>
             </div>
           ) : (

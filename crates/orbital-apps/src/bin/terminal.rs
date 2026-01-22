@@ -26,6 +26,7 @@ use orbital_apps::app_protocol::{tags, TerminalInput, InputAction, MSG_CONSOLE_I
 use orbital_apps::manifest::TERMINAL_MANIFEST;
 use orbital_apps::syscall;
 use orbital_apps::{app_main, AppContext, AppError, AppManifest, ControlFlow, Message, OrbitalApp};
+use orbital_process::{MSG_CAP_REVOKED, ObjectType, error};
 
 // TODO: Used for future capability requests to PermissionManager
 // const PERMISSION_MANAGER_PID: u32 = 2;
@@ -143,6 +144,42 @@ impl TerminalApp {
         }
         self.print(Self::PROMPT);
         self.flush_output(ctx)
+    }
+
+    /// Handle capability revocation notification from supervisor
+    ///
+    /// Payload format: [slot: u32, object_type: u8, object_id: u64, reason: u8]
+    fn handle_cap_revoked(&mut self, data: &[u8], ctx: &AppContext) -> Result<(), AppError> {
+        if data.len() >= 14 {
+            let slot = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let object_type = data[4];
+            // object_id at bytes 5-12 (u64)
+            // reason at byte 13
+            
+            let type_name = ObjectType::from_u8(object_type)
+                .map(|t| t.name())
+                .unwrap_or("Unknown");
+            
+            // Print warning in yellow (ANSI escape code)
+            self.println("");
+            self.println(&format!(
+                "\x1B[33mWarning: {} capability (slot {}) was revoked\x1B[0m",
+                type_name, slot
+            ));
+            self.print(Self::PROMPT);
+            self.flush_output(ctx)?;
+        }
+        Ok(())
+    }
+
+    /// Format a capability error for user-friendly display
+    fn format_cap_error(&self, error_code: u32) -> String {
+        match error_code {
+            e if e == error::E_BADF => "Permission denied: capability has been revoked".to_string(),
+            e if e == error::E_PERM => "Permission denied: insufficient capability permissions".to_string(),
+            e if e == error::E_NOENT => "Resource not found: capability may have been revoked".to_string(),
+            code => format!("Operation failed (error code {})", code),
+        }
     }
 
     /// Execute a command
@@ -322,7 +359,7 @@ impl TerminalApp {
                 ));
             }
             Err(e) => {
-                self.println(&format!("Error: Grant failed (code {})", e));
+                self.println(&format!("Error: {}", self.format_cap_error(e)));
             }
         }
     }
@@ -346,7 +383,7 @@ impl TerminalApp {
                 self.println(&format!("Deleted capability at slot {}", slot));
             }
             Err(e) => {
-                self.println(&format!("Error: Delete failed (code {})", e));
+                self.println(&format!("Error: {}", self.format_cap_error(e)));
             }
         }
     }
@@ -410,6 +447,11 @@ impl OrbitalApp for TerminalApp {
             if let Ok(text) = core::str::from_utf8(&msg.data) {
                 return self.handle_raw_input(text, ctx);
             }
+        }
+
+        // Handle capability revocation notification
+        if msg.tag == MSG_CAP_REVOKED {
+            return self.handle_cap_revoked(&msg.data, ctx);
         }
 
         Ok(())

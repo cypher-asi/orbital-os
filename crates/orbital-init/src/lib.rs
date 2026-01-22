@@ -136,14 +136,15 @@ impl Init {
         self.log("Spawning PermissionManager (PID 2)...");
         syscall::debug("INIT:SPAWN:permission_manager");
 
-        // 2. Spawn Terminal - the user interface
-        self.log("Spawning Terminal...");
-        syscall::debug("INIT:SPAWN:terminal");
+        // NOTE: Terminal is no longer auto-spawned here.
+        // Each terminal window is spawned by the Desktop component via launchTerminal(),
+        // which creates a process and links it to a window for proper lifecycle management.
+        // This enables process isolation (each window has its own terminal process).
 
         self.boot_complete = true;
         self.log("Boot sequence complete");
         self.log("  PermissionManager: handles capability requests");
-        self.log("  Terminal: user command interface");
+        self.log("  Terminal: spawned per-window by Desktop");
         self.log("Init entering minimal idle state");
     }
 

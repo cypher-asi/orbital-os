@@ -2,145 +2,88 @@
 /* Uses ZUI CSS variables for theming */
 
 .container {
-  padding: 16px;
-  max-width: 480px;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-}
-
-.appIcon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--color-accent-muted, rgba(1, 244, 203, 0.15));
-  color: var(--color-accent, #01f4cb);
-  font-size: 20px;
-}
-
-.appInfo {
-  flex: 1;
-  min-width: 0;
-}
-
-.appName {
-  font-weight: 600;
-  color: var(--color-text-primary, #fff);
-  font-size: 16px;
-}
-
-.appId {
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
-  font-size: 12px;
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.permissionsList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.permissionCard {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-}
-
-.permissionIcon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: var(--color-surface, rgba(255, 255, 255, 0.03));
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.permissionInfo {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
 }
 
-.permissionHeader {
+/* Section header */
+.sectionHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 2px;
+  padding: 0 4px 12px 4px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
 }
 
-.permissionType {
+.sectionTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.sectionCount {
+  margin-left: auto;
+}
+
+/* Capabilities Card */
+.capabilitiesCard {
+  flex: 1;
+  overflow-y: auto;
+  background: transparent;
+}
+
+.capabilityItem {
+  cursor: default;
+}
+
+.capTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 500;
   color: var(--color-text-primary, #fff);
-  font-size: 14px;
 }
 
-.permissionPerms {
+.permsBadge {
+  font-family: monospace;
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: var(--color-overlay-subtle, rgba(255, 255, 255, 0.05));
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
-  font-family: monospace;
-}
-
-.permissionSlot {
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
-  font-size: 11px;
-  font-family: monospace;
 }
 
 .revokeButton {
   flex-shrink: 0;
 }
 
+/* Empty state */
 .emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 48px;
   text-align: center;
-  padding: 32px 16px;
   color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
 }
 
 .emptyIcon {
-  font-size: 32px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   opacity: 0.5;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
 }
 
-.footer {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.stats {
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
-  font-size: 12px;
-}
-
+/* Danger zone */
 .dangerZone {
   padding: 16px;
   background: var(--color-danger-muted, rgba(239, 68, 68, 0.1));
   border: 1px solid var(--color-danger, rgba(239, 68, 68, 0.3));
   border-radius: 8px;
   margin-top: 16px;
+  flex-shrink: 0;
 }
 
 .dangerTitle {
@@ -161,6 +104,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 100%;
   padding: 32px;
   color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
 }

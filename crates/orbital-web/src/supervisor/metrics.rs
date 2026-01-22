@@ -16,14 +16,10 @@ impl Supervisor {
         self.kernel.uptime_nanos() as f64 / 1_000_000.0
     }
 
-    /// Get process count (excluding supervisor)
+    /// Get process count (including supervisor)
     #[wasm_bindgen]
     pub fn get_process_count(&self) -> usize {
-        self.kernel
-            .list_processes()
-            .iter()
-            .filter(|(pid, _)| pid.0 != 0)
-            .count()
+        self.kernel.list_processes().len()
     }
 
     /// Get total memory usage in bytes
@@ -135,16 +131,14 @@ impl Supervisor {
 
     /// Get process list as JSON for dashboard
     ///
-    /// Excludes PID 0 (supervisor) as it's not a userspace process - it runs
-    /// on the main thread and is only registered in the kernel for capability
-    /// system participation.
+    /// Includes all processes including PID 0 (supervisor), which runs on the
+    /// main thread and manages kernel operations.
     #[wasm_bindgen]
     pub fn get_process_list_json(&self) -> String {
         let processes: Vec<_> = self
             .kernel
             .list_processes()
             .iter()
-            .filter(|(pid, _)| pid.0 != 0) // Exclude supervisor (PID 0)
             .map(|(pid, proc)| {
                 let state = match proc.state {
                     orbital_kernel::ProcessState::Running => "Running",
@@ -202,14 +196,13 @@ impl Supervisor {
         }
     }
 
-    /// Get all processes with their capabilities as JSON (excluding supervisor)
+    /// Get all processes with their capabilities as JSON (including supervisor)
     #[wasm_bindgen]
     pub fn get_processes_with_capabilities_json(&self) -> String {
         let processes: Vec<_> = self
             .kernel
             .list_processes()
             .iter()
-            .filter(|(pid, _)| pid.0 != 0) // Exclude supervisor (PID 0)
             .map(|(pid, proc)| {
                 let state = match proc.state {
                     orbital_kernel::ProcessState::Running => "Running",

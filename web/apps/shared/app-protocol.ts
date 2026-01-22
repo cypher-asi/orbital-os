@@ -21,6 +21,15 @@ export const MSG_UI_READY = 0x2002;
 export const MSG_APP_FOCUS = 0x2003;
 export const MSG_APP_ERROR = 0x2004;
 
+// Capability revocation notification (supervisor -> process)
+// Payload: [slot: u32, object_type: u8, object_id: u64, reason: u8]
+export const MSG_CAP_REVOKED = 0x3010;
+
+// Revocation reasons
+export const REVOKE_REASON_EXPLICIT = 1; // Supervisor/user revoked
+export const REVOKE_REASON_EXPIRED = 2; // Capability expired
+export const REVOKE_REASON_PROCESS_EXIT = 3; // Source process exited
+
 // Type tags for payload identification
 export const TYPE_CLOCK_STATE = 0x01;
 export const TYPE_CALCULATOR_STATE = 0x02;

@@ -41,6 +41,8 @@ export interface Supervisor {
   get_axiom_stats_json(): string;
   get_commitlog_json(count: number): string;
   get_syslog_json(count: number): string;
+  /** Revoke/delete a capability from any process (supervisor privilege) */
+  revoke_capability(pid: bigint, slot: number): boolean;
 }
 
 // =============================================================================

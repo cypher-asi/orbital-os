@@ -180,6 +180,21 @@ pub const MSG_SPAWN_RESPONSE: u32 = 0x1004;
 /// Service ready notification (service → init after registration complete)
 pub const MSG_SERVICE_READY: u32 = 0x1005;
 
+// =============================================================================
+// Capability Revocation Notification (IPC → Process)
+// =============================================================================
+
+/// Notification that a capability was revoked from this process
+/// Payload: [slot: u32, object_type: u8, object_id: u64, reason: u8]
+pub const MSG_CAP_REVOKED: u32 = 0x3010;
+
+/// Revocation reason: Supervisor/user explicitly revoked the capability
+pub const REVOKE_REASON_EXPLICIT: u8 = 1;
+/// Revocation reason: Capability expired
+pub const REVOKE_REASON_EXPIRED: u8 = 2;
+/// Revocation reason: Source process exited
+pub const REVOKE_REASON_PROCESS_EXIT: u8 = 3;
+
 /// Well-known slot for init's endpoint (every process gets this at spawn)
 pub const INIT_ENDPOINT_SLOT: u32 = 2;
 

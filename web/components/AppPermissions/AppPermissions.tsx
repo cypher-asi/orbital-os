@@ -1,5 +1,15 @@
 import { useCallback } from 'react';
-import { Panel, Button, Text, Label } from '@cypher-asi/zui';
+import { Card, CardItem, Button, Text, Label } from '@cypher-asi/zui';
+import {
+  ArrowLeftRight,
+  Keyboard,
+  HardDrive,
+  Globe,
+  Cog,
+  Cpu,
+  Shield,
+  ShieldOff,
+} from 'lucide-react';
 import styles from './AppPermissions.module.css';
 
 // =============================================================================
@@ -61,9 +71,9 @@ export interface AppPermissionsProps {
   app: AppManifest;
   /** Currently granted capabilities */
   grantedCaps: CapabilityInfo[];
-  /** Called when user wants to revoke a permission */
+  /** Called when user wants to revoke a capability */
   onRevoke: (objectType: ObjectType) => void;
-  /** Called when user wants to revoke all permissions */
+  /** Called when user wants to revoke all capabilities */
   onRevokeAll?: () => void;
   /** Loading state */
   isLoading?: boolean;
@@ -100,22 +110,23 @@ function formatPermissions(perms: Permissions): string {
   return parts.join('/') || 'none';
 }
 
-function getObjectTypeIcon(type: ObjectType): string {
+function getObjectTypeIcon(type: ObjectType): React.ReactNode {
+  const iconProps = { size: 16, strokeWidth: 1.5 };
   switch (type) {
     case 'Endpoint':
-      return '↔';
+      return <ArrowLeftRight {...iconProps} />;
     case 'Console':
-      return '⌨';
+      return <Keyboard {...iconProps} />;
     case 'Storage':
-      return '💾';
+      return <HardDrive {...iconProps} />;
     case 'Network':
-      return '🌐';
+      return <Globe {...iconProps} />;
     case 'Process':
-      return '⚙';
+      return <Cog {...iconProps} />;
     case 'Memory':
-      return '🧠';
+      return <Cpu {...iconProps} />;
     default:
-      return '?';
+      return null;
   }
 }
 
@@ -124,10 +135,10 @@ function getObjectTypeIcon(type: ObjectType): string {
 // =============================================================================
 
 /**
- * Settings component for viewing and managing app permissions.
+ * Settings component for viewing and managing app capabilities.
  *
  * Displays the list of granted capabilities for an app and allows
- * the user to revoke individual permissions or all permissions at once.
+ * the user to revoke individual capabilities or all capabilities at once.
  */
 export function AppPermissions({
   app,
@@ -145,110 +156,88 @@ export function AppPermissions({
 
   if (isLoading) {
     return (
-      <Panel variant="glass" className={styles.container}>
+      <div className={styles.container}>
         <div className={styles.loading}>
           <div className={styles.spinner} />
           <Text as="span" size="xs" variant="muted">
-            Loading permissions...
+            Loading capabilities...
           </Text>
         </div>
-      </Panel>
+      </div>
     );
   }
 
   return (
-    <Panel variant="glass" className={styles.container}>
-      {/* Header */}
-      <div className={styles.header}>
-        <div className={styles.appIcon}>🔐</div>
-        <div className={styles.appInfo}>
-          <Text as="div" size="sm" className={styles.appName}>
-            {app.name}
-          </Text>
-          <Text as="div" size="xs" className={styles.appId}>
-            {app.id}
-          </Text>
-        </div>
-        {app.isFactory && (
-          <Label size="xs" variant="success">
-            Factory App
-          </Label>
-        )}
-      </div>
-
+    <div className={styles.container}>
       {/* Permissions List */}
       {grantedCaps.length === 0 ? (
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>🛡️</div>
+          <div className={styles.emptyIcon}>
+            <ShieldOff size={48} strokeWidth={1} />
+          </div>
           <Text as="p" size="sm" variant="muted">
-            No permissions granted
+            No capabilities granted
           </Text>
           <Text as="p" size="xs" variant="muted">
             This app has not been granted any capabilities.
           </Text>
         </div>
       ) : (
-        <div className={styles.permissionsList}>
-          {grantedCaps.map((cap) => (
-            <Panel
-              key={`${cap.objectType}-${cap.slot}`}
-              variant="glass"
-              className={styles.permissionCard}
-            >
-              <div className={styles.permissionIcon}>
-                {getObjectTypeIcon(cap.objectType)}
-              </div>
-              <div className={styles.permissionInfo}>
-                <div className={styles.permissionHeader}>
-                  <span className={styles.permissionType}>
-                    {formatObjectType(cap.objectType)}
-                  </span>
-                  <span className={styles.permissionPerms}>
-                    {formatPermissions(cap.permissions)}
-                  </span>
-                </div>
-                <Text as="span" size="xs" className={styles.permissionSlot}>
-                  slot {cap.slot}
-                </Text>
-              </div>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleRevoke(cap.objectType)}
-                className={styles.revokeButton}
-              >
-                Revoke
-              </Button>
-            </Panel>
-          ))}
-        </div>
-      )}
-
-      {/* Footer with stats and danger zone */}
-      {grantedCaps.length > 0 && (
         <>
-          <div className={styles.footer}>
-            <Text as="span" size="xs" className={styles.stats}>
-              {grantedCaps.length} permission{grantedCaps.length !== 1 ? 's' : ''} granted
+          <div className={styles.sectionHeader}>
+            <Shield size={14} strokeWidth={1.5} />
+            <Text as="span" size="xs" weight="semibold" className={styles.sectionTitle}>
+              Granted Capabilities
+            </Text>
+            <Text as="span" size="xs" variant="muted" className={styles.sectionCount}>
+              {grantedCaps.length}
             </Text>
           </div>
+          <Card className={styles.capabilitiesCard}>
+            {grantedCaps.map((cap) => (
+              <CardItem
+                key={`${cap.objectType}-${cap.slot}`}
+                icon={getObjectTypeIcon(cap.objectType)}
+                title={
+                  <span className={styles.capTitle}>
+                    {formatObjectType(cap.objectType)}
+                    <Label size="xs" variant="default" className={styles.permsBadge}>
+                      {formatPermissions(cap.permissions)}
+                    </Label>
+                  </span>
+                }
+                description={`Capability slot ${cap.slot}`}
+                className={styles.capabilityItem}
+              >
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleRevoke(cap.objectType)}
+                  className={styles.revokeButton}
+                >
+                  Revoke
+                </Button>
+              </CardItem>
+            ))}
+          </Card>
 
+          {/* Danger Zone */}
           {onRevokeAll && grantedCaps.length > 1 && (
             <div className={styles.dangerZone}>
               <Text as="div" size="sm" className={styles.dangerTitle}>
                 Danger Zone
               </Text>
               <Text as="p" size="xs" className={styles.dangerText}>
-                Revoking all permissions may cause the app to stop working correctly.
+                Revoking all capabilities may cause the app to stop working correctly.
               </Text>
               <Button variant="danger" size="sm" onClick={onRevokeAll}>
-                Revoke All Permissions
+                Revoke All Capabilities
               </Button>
             </div>
           )}
         </>
       )}
-    </Panel>
+    </div>
   );
 }
 

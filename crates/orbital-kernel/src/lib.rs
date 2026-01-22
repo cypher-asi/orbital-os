@@ -429,6 +429,9 @@ pub const SYS_CONSOLE_WRITE: u32 = 0x07;
 // Console input message tag (supervisor -> terminal input endpoint)
 pub const MSG_CONSOLE_INPUT: u32 = 0x0002;
 
+// Capability revocation notification message tag (supervisor -> process input endpoint)
+pub const MSG_CAP_REVOKED: u32 = 0x3010;
+
 /// Create an IPC endpoint
 pub const SYS_CREATE_ENDPOINT: u32 = 0x11;
 /// Delete an endpoint
@@ -555,6 +558,39 @@ impl From<&Capability> for CapInfo {
             generation: cap.generation,
             expires_at: cap.expires_at,
         }
+    }
+}
+
+/// Information about a revoked capability for notification delivery
+#[derive(Clone, Debug)]
+pub struct RevokeNotification {
+    /// Process ID of the affected process
+    pub pid: ProcessId,
+    /// Capability slot that was revoked
+    pub slot: CapSlot,
+    /// Object type of the revoked capability
+    pub object_type: u8,
+    /// Object ID of the revoked capability
+    pub object_id: u64,
+    /// Reason for revocation
+    pub reason: u8,
+}
+
+impl RevokeNotification {
+    /// Create an empty notification (for cases where cap didn't exist)
+    pub fn empty() -> Self {
+        Self {
+            pid: ProcessId(0),
+            slot: 0,
+            object_type: 0,
+            object_id: 0,
+            reason: 0,
+        }
+    }
+
+    /// Check if this notification has valid data
+    pub fn is_valid(&self) -> bool {
+        self.object_type != 0
     }
 }
 
@@ -2581,6 +2617,51 @@ impl<H: HAL> Kernel<H> {
         result
     }
 
+    /// Delete a capability and return information for notification.
+    ///
+    /// This method is used by the supervisor when revoking capabilities externally.
+    /// It captures the capability info before deletion so a notification message
+    /// can be delivered to the affected process.
+    ///
+    /// # Arguments
+    /// - `pid`: Process whose capability to delete
+    /// - `slot`: Capability slot to delete
+    /// - `reason`: Revocation reason code (see REVOKE_REASON_* constants)
+    ///
+    /// # Returns
+    /// - `Ok(RevokeNotification)`: Deletion succeeded, notification info captured
+    /// - `Err(KernelError)`: Deletion failed
+    pub fn delete_capability_with_notification(
+        &mut self,
+        pid: ProcessId,
+        slot: CapSlot,
+        reason: u8,
+    ) -> Result<RevokeNotification, KernelError> {
+        // Get cap info before deletion (for the notification payload)
+        let cap_info = self
+            .get_cap_space(pid)
+            .and_then(|cs| cs.get(slot))
+            .map(|cap| (cap.object_type as u8, cap.object_id));
+
+        // Perform the deletion
+        self.delete_capability(pid, slot)?;
+
+        // Build notification if cap existed
+        if let Some((object_type, object_id)) = cap_info {
+            Ok(RevokeNotification {
+                pid,
+                slot,
+                object_type,
+                object_id,
+                reason,
+            })
+        } else {
+            // This shouldn't happen since delete_capability succeeded,
+            // but return an empty notification as fallback
+            Ok(RevokeNotification::empty())
+        }
+    }
+
     /// Derive capability and log the mutation.
     pub fn derive_capability(
         &mut self,
@@ -2728,6 +2809,69 @@ impl<H: HAL> Kernel<H> {
         }
 
         Ok(())
+    }
+
+    /// Deliver a capability revocation notification to a process (PRIVILEGED - supervisor only).
+    ///
+    /// This is a privileged operation for the supervisor (PID 0) to notify a process
+    /// that one of its capabilities has been revoked. The notification is delivered
+    /// to the process's input endpoint (slot 1) with the MSG_CAP_REVOKED tag.
+    ///
+    /// # Arguments
+    /// - `notif`: The revocation notification containing cap info and reason
+    ///
+    /// # Returns
+    /// - `Ok(())`: Notification was delivered successfully
+    /// - `Err(KernelError)`: Delivery failed (e.g., no input endpoint)
+    pub fn deliver_revoke_notification(
+        &mut self,
+        notif: &RevokeNotification,
+    ) -> Result<(), KernelError> {
+        if !notif.is_valid() {
+            return Ok(()); // Nothing to deliver
+        }
+
+        let timestamp = self.uptime_nanos();
+        let supervisor_pid = ProcessId(0);
+
+        // Build payload: [slot: u32, object_type: u8, object_id: u64, reason: u8]
+        let mut payload = alloc::vec::Vec::with_capacity(14);
+        payload.extend_from_slice(&notif.slot.to_le_bytes());
+        payload.push(notif.object_type);
+        payload.extend_from_slice(&notif.object_id.to_le_bytes());
+        payload.push(notif.reason);
+
+        // Log to SysLog with PID 0 (supervisor operation)
+        // Use a special syscall number 0xF1 = SUPERVISOR_CAP_REVOKE_NOTIFY
+        let args = [notif.pid.0 as u32, notif.slot, MSG_CAP_REVOKED, payload.len() as u32];
+        let req_id = self.axiom.syslog_mut().log_request(
+            supervisor_pid.0,
+            0xF1, // SUPERVISOR_CAP_REVOKE_NOTIFY
+            args,
+            timestamp,
+        );
+
+        // Terminal's input endpoint is at slot 1
+        const INPUT_ENDPOINT_SLOT: CapSlot = 1;
+
+        // Deliver to process's input endpoint
+        let result = self.deliver_to_endpoint_internal(
+            supervisor_pid,
+            notif.pid,
+            INPUT_ENDPOINT_SLOT,
+            MSG_CAP_REVOKED,
+            &payload,
+            timestamp,
+        );
+
+        // Log the result
+        let result_code = match &result {
+            Ok(()) => 0,
+            Err(_) => -1,
+        };
+        self.axiom.syslog_mut().log_response(supervisor_pid.0, req_id, result_code, timestamp);
+
+        result
     }
 
     /// Log a syscall request to the SysLog.

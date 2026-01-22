@@ -244,6 +244,52 @@ impl Supervisor {
         }
     }
 
+    /// Revoke/delete a capability from any process (supervisor privilege)
+    ///
+    /// This method allows the UI to directly revoke capabilities from any process
+    /// without routing through terminal commands. The supervisor has privileged
+    /// kernel access to delete capabilities from any process's CSpace.
+    ///
+    /// After revocation, a MSG_CAP_REVOKED notification is delivered to the
+    /// affected process so it can react to the revocation (e.g., display a warning).
+    #[wasm_bindgen]
+    pub fn revoke_capability(&mut self, pid: u64, slot: u32) -> bool {
+        // REVOKE_REASON_EXPLICIT = 1 (matches orbital_process::REVOKE_REASON_EXPLICIT)
+        const REVOKE_REASON_EXPLICIT: u8 = 1;
+        
+        let process_id = ProcessId(pid);
+        
+        // Delete capability and get notification info
+        match self.kernel.delete_capability_with_notification(process_id, slot, REVOKE_REASON_EXPLICIT) {
+            Ok(notification) => {
+                log(&format!(
+                    "[supervisor] Revoked capability from PID {} slot {} (type: {}, object: {})",
+                    pid, slot, notification.object_type, notification.object_id
+                ));
+                
+                // Deliver notification to the process's input endpoint
+                if notification.is_valid() {
+                    if let Err(e) = self.kernel.deliver_revoke_notification(&notification) {
+                        log(&format!(
+                            "[supervisor] Failed to deliver revoke notification to PID {}: {:?}",
+                            pid, e
+                        ));
+                        // Revocation still succeeded, just notification failed
+                    }
+                }
+                
+                true
+            }
+            Err(e) => {
+                log(&format!(
+                    "[supervisor] Revoke capability failed for PID {} slot {}: {:?}",
+                    pid, slot, e
+                ));
+                false
+            }
+        }
+    }
+
     /// Send input to the terminal via privileged kernel API (legacy)
     ///
     /// This method finds the first terminal process and sends input to it.

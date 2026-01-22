@@ -101,6 +101,9 @@ export function useFocusedWindow(): number | null {
   return focusedId;
 }
 
+// Module-level cache for terminal WASM binary
+let terminalWasmCache: Uint8Array | null = null;
+
 // Hook for window actions
 export function useWindowActions() {
   const desktop = useDesktopController();
@@ -178,6 +181,43 @@ export function useWindowActions() {
     [desktop]
   );
 
+  // Launch terminal with its own isolated process
+  // This spawns the process first, then creates the window and links them
+  const launchTerminal = useCallback(async () => {
+    if (!supervisor || !desktop) return null;
+
+    try {
+      // 1. Fetch terminal WASM binary (use cache if available)
+      if (!terminalWasmCache) {
+        console.log('[useWindows] Fetching terminal.wasm...');
+        const response = await fetch('/processes/terminal.wasm');
+        if (!response.ok) {
+          console.error('[useWindows] Failed to fetch terminal.wasm:', response.status);
+          return null;
+        }
+        terminalWasmCache = new Uint8Array(await response.arrayBuffer());
+        console.log('[useWindows] Loaded terminal.wasm:', terminalWasmCache.length, 'bytes');
+      }
+
+      // 2. Spawn the terminal process FIRST (before creating window)
+      const pid = supervisor.complete_spawn('terminal', terminalWasmCache);
+      console.log('[useWindows] Spawned terminal process with PID:', pid);
+
+      // 3. Create the window
+      const windowId = desktop.launch_app('terminal');
+      console.log('[useWindows] Created terminal window:', windowId);
+
+      // 4. Link window to process (this also updates the title to show PID)
+      desktop.set_window_process_id(windowId, pid);
+      console.log('[useWindows] Linked window', windowId, 'to process', pid);
+
+      return Number(windowId);
+    } catch (e) {
+      console.error('[useWindows] Error launching terminal:', e);
+      return null;
+    }
+  }, [supervisor, desktop]);
+
   return {
     createWindow,
     closeWindow,
@@ -187,5 +227,6 @@ export function useWindowActions() {
     maximizeWindow,
     restoreWindow,
     launchApp,
+    launchTerminal,
   };
 }

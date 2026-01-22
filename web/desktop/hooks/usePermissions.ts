@@ -241,7 +241,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
   );
 
   /**
-   * Revoke a single permission
+   * Revoke a single permission using direct supervisor API
    */
   const revokePermission = useCallback(
     async (pid: number, objectType: ObjectType): Promise<boolean> => {
@@ -253,34 +253,33 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
       setIsLoading(true);
 
       try {
-        // Encode revoke request
-        const objectTypeValue = OBJECT_TYPE[objectType];
+        // Find the capability slot for this object type from local tracking
+        const caps = grantedCapabilities.get(pid) || [];
+        const cap = caps.find((c) => c.objectType === objectType);
+        
+        if (!cap) {
+          console.warn(`No capability found for PID ${pid} objectType ${objectType}`);
+          return false;
+        }
 
-        // Build message: [target_pid: u32, object_type: u8]
-        const msgData = new Uint8Array(5);
-        msgData[0] = pid & 0xff;
-        msgData[1] = (pid >> 8) & 0xff;
-        msgData[2] = (pid >> 16) & 0xff;
-        msgData[3] = (pid >> 24) & 0xff;
-        msgData[4] = objectTypeValue;
+        // Use direct supervisor API to revoke the capability
+        // Note: pid must be BigInt for wasm-bindgen u64 parameter
+        const success = supervisor.revoke_capability(BigInt(pid), cap.slot);
+        
+        if (success) {
+          // Update local tracking
+          setGrantedCapabilities((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(pid) || [];
+            next.set(
+              pid,
+              existing.filter((c) => c.objectType !== objectType)
+            );
+            return next;
+          });
+        }
 
-        const hex = Array.from(msgData)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        supervisor.send_input(`revoke ${pid} ${hex}`);
-
-        // Update local tracking
-        setGrantedCapabilities((prev) => {
-          const next = new Map(prev);
-          const existing = next.get(pid) || [];
-          next.set(
-            pid,
-            existing.filter((cap) => cap.objectType !== objectType)
-          );
-          return next;
-        });
-
-        return true;
+        return success;
       } catch (error) {
         console.error('Failed to revoke permission:', error);
         return false;
@@ -288,7 +287,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         setIsLoading(false);
       }
     },
-    [supervisor]
+    [supervisor, grantedCapabilities]
   );
 
   /**

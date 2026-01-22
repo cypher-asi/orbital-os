@@ -64,7 +64,7 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
       setOutput((prev) => [...prev, { text, className: styles.outputText }]);
     };
 
-    if (processId !== undefined) {
+    if (processId != null) {
       // Process-isolated mode: register callback for specific PID
       // Note: Rust u64 maps to JavaScript BigInt in wasm-bindgen
       console.log('[TerminalApp] Registering per-process callback for PID', processId);
@@ -134,7 +134,7 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     setOutput((prev) => [...prev, { text: `z::> ${line}\n`, className: styles.inputEcho }]);
     
     // Send input to specific process (if processId provided) or legacy global
-    if (processId !== undefined) {
+    if (processId != null) {
       supervisor.send_input_to_process(BigInt(processId), line);
     } else {
       supervisor.send_input(line);
@@ -181,7 +181,7 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     if (supervisor) {
       setOutput((prev) => [...prev, { text: `z::> spawn ${type}\n`, className: styles.inputEcho }]);
       // Send spawn command to this terminal's process (or legacy global)
-      if (processId !== undefined) {
+      if (processId != null) {
         supervisor.send_input_to_process(BigInt(processId), `spawn ${type}`);
       } else {
         supervisor.send_input(`spawn ${type}`);
@@ -193,7 +193,7 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     if (supervisor) {
       setOutput((prev) => [...prev, { text: `z::> kill ${pid}\n`, className: styles.inputEcho }]);
       // Send kill command to this terminal's process (or legacy global)
-      if (processId !== undefined) {
+      if (processId != null) {
         supervisor.send_input_to_process(BigInt(processId), `kill ${pid}`);
       } else {
         supervisor.send_input(`kill ${pid}`);

@@ -71,9 +71,15 @@ impl DesktopEngine {
     /// This links a window to its associated process, enabling:
     /// - Process termination when window is closed
     /// - Per-process console callbacks routing
+    /// - Title updated to show PID for terminal windows
     pub fn set_window_process_id(&mut self, id: WindowId, process_id: u64) {
         if let Some(window) = self.windows.get_mut(id) {
             window.process_id = Some(process_id);
+            
+            // Update title to show PID for terminal windows
+            if window.app_id == "terminal" {
+                window.title = format!("Terminal p{}", process_id);
+            }
         }
     }
 
@@ -595,6 +601,22 @@ mod tests {
         // Calculator widget should fit its content (300x420)
         assert!(window.size.width <= 400.0);
         assert!(window.size.height <= 500.0);
+    }
+
+    #[test]
+    fn test_terminal_title_includes_pid() {
+        let mut engine = create_test_engine();
+
+        let id = engine.launch_app("terminal");
+        
+        // Before setting process ID, title is just "Terminal"
+        let window = engine.windows.get(id).unwrap();
+        assert_eq!(window.title, "Terminal");
+        
+        // After setting process ID, title includes PID
+        engine.set_window_process_id(id, 42);
+        let window = engine.windows.get(id).unwrap();
+        assert_eq!(window.title, "Terminal p42");
     }
 
     #[test]

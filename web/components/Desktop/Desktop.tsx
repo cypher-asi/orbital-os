@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, createContext, useContext } from 'react';
 import { SupervisorProvider, Supervisor, DesktopControllerProvider, DesktopController } from '../../desktop/hooks/useSupervisor';
 import { usePermissions, PermissionsProvider } from '../../desktop/hooks/usePermissions';
+import { useWindowActions } from '../../desktop/hooks/useWindows';
 import { WindowContent } from '../WindowContent/WindowContent';
 import { Taskbar } from '../Taskbar/Taskbar';
 import { AppRouter } from '../../apps/AppRouter/AppRouter';
@@ -557,9 +558,6 @@ function DesktopInner({
 // DesktopWithPermissions - Inner component that uses permissions hook
 // =============================================================================
 
-// Cache for terminal WASM binary (shared across all launches)
-let terminalWasmBinaryCache: Uint8Array | null = null;
-
 function DesktopWithPermissions({ 
   supervisor, 
   desktop 
@@ -578,42 +576,11 @@ function DesktopWithPermissions({
   // Permissions state
   const permissions = usePermissions();
   
+  // Window actions (includes launchTerminal for spawning terminal with process)
+  const { launchTerminal } = useWindowActions();
+  
   // Ref to track current workspace info (updated by render loop in DesktopInner)
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
-
-  // Launch terminal with its own isolated process
-  // This implements the spawn-link flow: spawn process FIRST, then create window with process_id
-  const launchTerminalWithProcess = useCallback(async () => {
-    if (!supervisor || !desktop) return;
-
-    try {
-      // 1. Fetch terminal WASM binary (use cache if available)
-      if (!terminalWasmBinaryCache) {
-        console.log('[Desktop] Fetching terminal.wasm...');
-        const response = await fetch('/processes/terminal.wasm');
-        if (!response.ok) {
-          console.error('[Desktop] Failed to fetch terminal.wasm:', response.status);
-          return;
-        }
-        terminalWasmBinaryCache = new Uint8Array(await response.arrayBuffer());
-        console.log('[Desktop] Loaded terminal.wasm:', terminalWasmBinaryCache.length, 'bytes');
-      }
-
-      // 2. Spawn the terminal process FIRST (before creating window)
-      const pid = supervisor.complete_spawn('terminal', terminalWasmBinaryCache);
-      console.log('[Desktop] Spawned terminal process with PID:', pid);
-
-      // 3. Create the window (it will initially have no processId)
-      const windowId = desktop.launch_app('terminal');
-      console.log('[Desktop] Created terminal window:', windowId);
-
-      // 4. Link window to process immediately
-      desktop.set_window_process_id(windowId, pid);
-      console.log('[Desktop] Linked window', windowId, 'to process', pid);
-    } catch (e) {
-      console.error('[Desktop] Error launching terminal:', e);
-    }
-  }, [supervisor, desktop]);
 
   // Initialize desktop engine
   useEffect(() => {
@@ -625,11 +592,13 @@ function DesktopWithPermissions({
     const rect = container.getBoundingClientRect();
     desktop.init(rect.width, rect.height);
     
-    // Launch default terminal window with its own process
-    launchTerminalWithProcess();
+    // NOTE: Terminal is NOT auto-spawned here.
+    // The boot sequence is: init (PID 1) → permission_manager (PID 2) → ready
+    // Terminals are spawned on-demand via BeginMenu or 'T' keyboard shortcut,
+    // which ensures permission_manager is ready before any terminal processes.
     
     setInitialized(true);
-  }, [desktop, initialized, launchTerminalWithProcess]);
+  }, [desktop, initialized]);
 
   // Handle resize
   useEffect(() => {
@@ -666,8 +635,9 @@ function DesktopWithPermissions({
         const processPids = new Set(processes.map((p) => p.pid));
 
         // Check each window with a processId
+        // Note: UI-only apps (like Permissions) have no backing process, so processId is null/undefined
         for (const win of windows) {
-          if (win.processId !== undefined && !processPids.has(win.processId)) {
+          if (win.processId != null && !processPids.has(win.processId)) {
             // Process died - close the orphaned window
             console.log(
               `[Desktop] Process ${win.processId} died, closing orphaned window ${win.id}`
@@ -905,7 +875,7 @@ function DesktopWithPermissions({
       // T key: Create new terminal with its own process
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
-        launchTerminalWithProcess();
+        launchTerminal();
         return;
       }
       
@@ -1022,7 +992,7 @@ function DesktopWithPermissions({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [initialized, desktop, launchTerminalWithProcess]);
+  }, [initialized, desktop, launchTerminal]);
 
   // Compute selection box rectangle
   const selectionRect = selectionBox

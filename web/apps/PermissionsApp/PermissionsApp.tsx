@@ -1,8 +1,25 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Panel, Text, Label } from '@cypher-asi/zui';
+import { Card, CardItem, Panel, Text, Label, Button } from '@cypher-asi/zui';
 import { AppPermissions, type CapabilityInfo, type ObjectType } from '../../components/AppPermissions';
 import type { AppManifest } from '../../components/PermissionDialog';
 import { useSupervisor } from '../../desktop/hooks/useSupervisor';
+import {
+  Shield,
+  Lock,
+  Terminal,
+  Clock,
+  Calculator,
+  Zap,
+  Moon,
+  Smartphone,
+  ArrowLeftRight,
+  Keyboard,
+  HardDrive,
+  Globe,
+  Cog,
+  Cpu,
+  ArrowLeft,
+} from 'lucide-react';
 import styles from './PermissionsApp.module.css';
 
 // =============================================================================
@@ -30,25 +47,25 @@ interface AppWithPermissions {
 // Helper Functions
 // =============================================================================
 
-function getAppIcon(name: string): string {
+function getAppIcon(name: string): React.ReactNode {
   const lowerName = name.toLowerCase();
-  if (lowerName.includes('terminal')) return '⌨';
-  if (lowerName.includes('clock')) return '🕐';
-  if (lowerName.includes('calculator')) return '🔢';
-  if (lowerName.includes('init')) return '⚡';
-  if (lowerName.includes('idle')) return '💤';
-  return '📱';
+  if (lowerName.includes('terminal')) return <Terminal size={18} />;
+  if (lowerName.includes('clock')) return <Clock size={18} />;
+  if (lowerName.includes('calculator')) return <Calculator size={18} />;
+  if (lowerName.includes('init')) return <Zap size={18} />;
+  if (lowerName.includes('idle')) return <Moon size={18} />;
+  return <Smartphone size={18} />;
 }
 
-function getObjectTypeIcon(type: ObjectType): string {
+function getObjectTypeIcon(type: ObjectType): React.ReactNode {
   switch (type) {
-    case 'Endpoint': return '↔';
-    case 'Console': return '⌨';
-    case 'Storage': return '💾';
-    case 'Network': return '🌐';
-    case 'Process': return '⚙';
-    case 'Memory': return '🧠';
-    default: return '?';
+    case 'Endpoint': return <ArrowLeftRight size={12} />;
+    case 'Console': return <Keyboard size={12} />;
+    case 'Storage': return <HardDrive size={12} />;
+    case 'Network': return <Globe size={12} />;
+    case 'Process': return <Cog size={12} />;
+    case 'Memory': return <Cpu size={12} />;
+    default: return null;
   }
 }
 
@@ -180,9 +197,9 @@ export function PermissionsApp() {
 
   // Calculate stats
   const totalApps = apps.length;
-  const totalPermissions = apps.reduce((sum, app) => sum + app.grantedCaps.length, 0);
+  const totalCapabilities = apps.reduce((sum, app) => sum + app.grantedCaps.length, 0);
 
-  // Handle revoking a permission
+  // Handle revoking a capability
   const handleRevoke = useCallback((objectType: ObjectType) => {
     if (!selectedApp || !supervisor) return;
 
@@ -190,22 +207,33 @@ export function PermissionsApp() {
     const cap = selectedApp.grantedCaps.find(c => c.objectType === objectType);
     if (!cap) return;
 
-    // Send revoke command to supervisor
-    // The terminal command format is: revoke <pid> <slot>
-    supervisor.send_input(`revoke ${selectedApp.pid} ${cap.slot}`);
+    // Use direct supervisor API to revoke capability from the target process
+    // Note: pid must be BigInt for wasm-bindgen u64 parameter
+    const success = supervisor.revoke_capability(BigInt(selectedApp.pid), cap.slot);
+    if (success) {
+      console.log(`[PermissionsApp] Revoked ${objectType} from PID ${selectedApp.pid} slot ${cap.slot}`);
+    } else {
+      console.error(`[PermissionsApp] Failed to revoke ${objectType} from PID ${selectedApp.pid}`);
+    }
 
     // Trigger refresh
     setRefreshKey(k => k + 1);
   }, [selectedApp, supervisor]);
 
-  // Handle revoking all permissions
+  // Handle revoking all capabilities
   const handleRevokeAll = useCallback(() => {
     if (!selectedApp || !supervisor) return;
 
-    // Revoke each capability
+    // Revoke each capability using direct supervisor API
+    // Note: pid must be BigInt for wasm-bindgen u64 parameter
+    const pidBigInt = BigInt(selectedApp.pid);
+    let successCount = 0;
     for (const cap of selectedApp.grantedCaps) {
-      supervisor.send_input(`revoke ${selectedApp.pid} ${cap.slot}`);
+      if (supervisor.revoke_capability(pidBigInt, cap.slot)) {
+        successCount++;
+      }
     }
+    console.log(`[PermissionsApp] Revoked ${successCount}/${selectedApp.grantedCaps.length} caps from PID ${selectedApp.pid}`);
 
     // Trigger refresh
     setRefreshKey(k => k + 1);
@@ -216,9 +244,11 @@ export function PermissionsApp() {
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.title}>
-          <div className={styles.titleIcon}>🛡️</div>
+          <div className={styles.titleIcon}>
+            <Shield size={16} />
+          </div>
           <Text as="span" size="lg" weight="semibold">
-            Permissions
+            Capabilities
           </Text>
         </div>
         <div className={styles.stats}>
@@ -227,8 +257,8 @@ export function PermissionsApp() {
             <span className={styles.statLabel}>apps</span>
           </div>
           <div className={styles.stat}>
-            <span className={styles.statValue}>{totalPermissions}</span>
-            <span className={styles.statLabel}>grants</span>
+            <span className={styles.statValue}>{totalCapabilities}</span>
+            <span className={styles.statLabel}>capabilities</span>
           </div>
         </div>
       </div>
@@ -237,34 +267,31 @@ export function PermissionsApp() {
       <div className={styles.content}>
         {apps.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>🔒</div>
+            <Lock size={48} strokeWidth={1} />
             <div className={styles.emptyTitle}>No Apps</div>
             <div className={styles.emptyText}>
               No applications are currently running.
             </div>
           </div>
         ) : (
-          <div className={styles.appList}>
+          <Card className={styles.appList}>
             {apps.map((app) => (
-              <Panel
-                key={app.manifest.id}
-                variant="glass"
-                className={styles.appCard}
+              <CardItem
+                key={app.pid}
+                icon={getAppIcon(app.manifest.name)}
+                title={
+                  <span className={styles.appName}>
+                    {app.manifest.name}
+                    {app.manifest.isFactory && (
+                      <Label size="xs" variant="success">System</Label>
+                    )}
+                    <Label size="xs" variant="default">PID {app.pid}</Label>
+                  </span>
+                }
+                description={app.manifest.id}
                 onClick={() => setSelectedApp(app)}
+                className={styles.appCard}
               >
-                <div className={styles.appCardHeader}>
-                  <div className={styles.appIcon}>{getAppIcon(app.manifest.name)}</div>
-                  <div className={styles.appInfo}>
-                    <div className={styles.appName}>
-                      {app.manifest.name}
-                      {app.manifest.isFactory && (
-                        <Label size="xs" variant="success">System</Label>
-                      )}
-                      <Label size="xs" variant="default">PID {app.pid}</Label>
-                    </div>
-                    <div className={styles.appId}>{app.manifest.id}</div>
-                  </div>
-                </div>
                 <div className={styles.permissionTags}>
                   {app.grantedCaps.length === 0 ? (
                     <span className={styles.noPermissions}>No capabilities</span>
@@ -280,22 +307,24 @@ export function PermissionsApp() {
                     ))
                   )}
                 </div>
-              </Panel>
+              </CardItem>
             ))}
-          </div>
+          </Card>
         )}
       </div>
 
       {/* Detail Panel */}
       {selectedApp && (
-        <div className={styles.detailPanel}>
+        <Panel variant="glass" border="none" className={styles.detailPanel}>
           <div className={styles.detailHeader}>
-            <button
-              className={styles.backButton}
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
               onClick={() => setSelectedApp(null)}
             >
-              ←
-            </button>
+              <ArrowLeft size={16} />
+            </Button>
             <div className={styles.appIcon}>{getAppIcon(selectedApp.manifest.name)}</div>
             <div className={styles.appInfo}>
               <div className={styles.appName}>
@@ -315,7 +344,7 @@ export function PermissionsApp() {
               onRevokeAll={selectedApp.grantedCaps.length > 1 ? handleRevokeAll : undefined}
             />
           </div>
-        </div>
+        </Panel>
       )}
     </div>
   );

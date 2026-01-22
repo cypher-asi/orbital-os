@@ -39,7 +39,7 @@ const MENU_ITEMS: MenuItem[] = [
 ];
 
 export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
-  const { launchApp } = useWindowActions();
+  const { launchApp, launchTerminal } = useWindowActions();
   const supervisor = useSupervisor();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +63,7 @@ export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
     };
   }, [onClose, containerRef]);
 
-  const handleSelect = (id: string) => {
+  const handleSelect = async (id: string) => {
     // Skip parent menu items (submenus)
     if (id === 'programs' || id === 'settings') return;
 
@@ -72,6 +72,10 @@ export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
       if (supervisor) {
         supervisor.send_input('shutdown');
       }
+    } else if (id === 'terminal') {
+      // Terminal uses special spawn-and-link flow
+      onClose();
+      await launchTerminal();
     } else {
       launchApp(id);
       onClose();
