@@ -9,11 +9,13 @@ interface IdentityPanelProps {
 }
 
 const NAV_ITEMS: MenuItem[] = [
-  { id: 'identity-menu', label: 'Identity Menu', icon: <Brain size={14} /> },
+  { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
   { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
   { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
   { id: 'vault', label: 'Vault', icon: <Lock size={14} /> },
   { id: 'information', label: 'Information', icon: <Info size={14} /> },
+  { type: 'separator' },
+  { id: 'login-zero-id', label: 'Login w/ ZERO ID', icon: <User size={14} /> },
   { type: 'separator' },
   { id: 'logout', label: 'Logout', icon: <LogOut size={14} /> },
 ];

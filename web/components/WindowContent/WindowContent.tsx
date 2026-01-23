@@ -8,7 +8,7 @@ import styles from './WindowContent.module.css';
 
 // Frame style constants (must match Rust FRAME_STYLE)
 const FRAME_STYLE = {
-  titleBarHeight: 22,
+  titleBarHeight: 28,
   resizeHandleSize: 6,
   cornerHandleSize: 12, // Larger corners for easier diagonal targeting
 };
@@ -182,9 +182,9 @@ export const WindowContent = forwardRef(function WindowContent(
         <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
           <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title}</span>
           <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
-            <ButtonWindow action="minimize" size="sm" rounded="none" onClick={handleMinimize} />
-            <ButtonWindow action="maximize" size="sm" rounded="none" onClick={handleMaximize} />
-            <ButtonWindow action="close" size="sm" rounded="none" onClick={handleClose} />
+            <ButtonWindow action="minimize" size="xs" rounded="none" onClick={handleMinimize} />
+            <ButtonWindow action="maximize" size="xs" rounded="none" onClick={handleMaximize} />
+            <ButtonWindow action="close" size="xs" rounded="none" onClick={handleClose} />
           </div>
         </div>
       )}
@@ -192,7 +192,7 @@ export const WindowContent = forwardRef(function WindowContent(
       {/* Widget window: Floating close button only */}
       {isWidget && (
         <div className={styles.widgetCloseButton} onPointerDown={(e) => e.stopPropagation()}>
-          <ButtonWindow action="close" size="sm" rounded="none" onClick={handleClose} />
+          <ButtonWindow action="close" size="xs" rounded="none" onClick={handleClose} />
         </div>
       )}
       
