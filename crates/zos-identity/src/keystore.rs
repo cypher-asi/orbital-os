@@ -8,6 +8,64 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::UserId;
 
+// ============================================================================
+// Serde helpers for u128 as hex string (for JavaScript interop)
+// ============================================================================
+
+/// Serde module for serializing/deserializing u128 as hex string (e.g., "0x123abc")
+/// Also accepts numbers for backward compatibility with existing stored data.
+mod u128_hex_string {
+    use alloc::format;
+    use core::fmt;
+    use serde::{self, de, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&format!("0x{:032x}", value))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct U128Visitor;
+
+        impl<'de> de::Visitor<'de> for U128Visitor {
+            type Value = u128;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string like '0x...' or a number")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                u128::from_str_radix(s, 16).map_err(de::Error::custom)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(v as u128)
+            }
+
+            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(v)
+            }
+        }
+
+        deserializer.deserialize_any(U128Visitor)
+    }
+}
+
 /// Local storage for user cryptographic material (public keys).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalKeyStore {
@@ -37,6 +95,10 @@ pub struct LocalKeyStore {
 
     /// Post-quantum encryption public key (if PqHybrid scheme)
     pub pq_encryption_public_key: Option<Vec<u8>>,
+
+    /// Timestamp when the key was created (milliseconds since Unix epoch)
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 impl LocalKeyStore {
@@ -51,6 +113,7 @@ impl LocalKeyStore {
         identity_signing_public_key: [u8; 32],
         machine_signing_public_key: [u8; 32],
         machine_encryption_public_key: [u8; 32],
+        created_at: u64,
     ) -> Self {
         Self {
             user_id,
@@ -62,6 +125,7 @@ impl LocalKeyStore {
             epoch: 1,
             pq_signing_public_key: None,
             pq_encryption_public_key: None,
+            created_at,
         }
     }
 }
@@ -196,7 +260,8 @@ impl Default for KeyDerivation {
 /// Per-machine key record.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MachineKeyRecord {
-    /// Machine ID
+    /// Machine ID (hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
     pub machine_id: u128,
 
     /// Machine-specific signing public key
@@ -208,7 +273,8 @@ pub struct MachineKeyRecord {
     /// When this machine was authorized
     pub authorized_at: u64,
 
-    /// Who authorized this machine (user_id or machine_id)
+    /// Who authorized this machine (user_id or machine_id, hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
     pub authorized_by: u128,
 
     /// Machine capabilities
@@ -219,6 +285,15 @@ pub struct MachineKeyRecord {
 
     /// Last seen timestamp
     pub last_seen_at: u64,
+
+    /// Key epoch (increments on rotation)
+    #[serde(default = "default_epoch")]
+    pub epoch: u64,
+}
+
+/// Default epoch value for backward compatibility with existing records
+fn default_epoch() -> u64 {
+    1
 }
 
 impl MachineKeyRecord {

@@ -1,6 +1,7 @@
 //! IPC protocol definitions for the Identity layer.
 //!
-//! Defines message types for inter-process communication.
+//! Defines request/response types for inter-process communication.
+//! Message constants are defined in `zos-ipc` (the single source of truth).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -11,132 +12,62 @@ use crate::keystore::{LocalKeyStore, MachineKeyCapabilities, MachineKeyRecord};
 use crate::session::SessionId;
 use crate::types::{User, UserId, UserStatus};
 
-/// User service IPC message types.
-pub mod user_msg {
-    // User Management
-    /// Create user request
-    pub const MSG_CREATE_USER: u32 = 0x7000;
-    /// Create user response
-    pub const MSG_CREATE_USER_RESPONSE: u32 = 0x7001;
-    /// Get user request
-    pub const MSG_GET_USER: u32 = 0x7002;
-    /// Get user response
-    pub const MSG_GET_USER_RESPONSE: u32 = 0x7003;
-    /// List users request
-    pub const MSG_LIST_USERS: u32 = 0x7004;
-    /// List users response
-    pub const MSG_LIST_USERS_RESPONSE: u32 = 0x7005;
-    /// Delete user request
-    pub const MSG_DELETE_USER: u32 = 0x7006;
-    /// Delete user response
-    pub const MSG_DELETE_USER_RESPONSE: u32 = 0x7007;
+// ============================================================================
+// Serde helpers for u128 as hex string (for JavaScript interop)
+// ============================================================================
 
-    // Local Login (Offline)
-    /// Login challenge request
-    pub const MSG_LOGIN_CHALLENGE: u32 = 0x7010;
-    /// Login challenge response
-    pub const MSG_LOGIN_CHALLENGE_RESPONSE: u32 = 0x7011;
-    /// Login verify request
-    pub const MSG_LOGIN_VERIFY: u32 = 0x7012;
-    /// Login verify response
-    pub const MSG_LOGIN_VERIFY_RESPONSE: u32 = 0x7013;
-    /// Logout request
-    pub const MSG_LOGOUT: u32 = 0x7014;
-    /// Logout response
-    pub const MSG_LOGOUT_RESPONSE: u32 = 0x7015;
+/// Serde module for serializing/deserializing u128 as hex string (e.g., "0x123abc")
+/// Also accepts numbers for backward compatibility.
+mod u128_hex_string {
+    use alloc::format;
+    use core::fmt;
+    use serde::{self, de, Deserializer, Serializer};
 
-    // Remote Authentication
-    /// Remote auth request
-    pub const MSG_REMOTE_AUTH: u32 = 0x7020;
-    /// Remote auth response
-    pub const MSG_REMOTE_AUTH_RESPONSE: u32 = 0x7021;
+    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&format!("0x{:032x}", value))
+    }
 
-    // Process Queries
-    /// Whoami request
-    pub const MSG_WHOAMI: u32 = 0x7030;
-    /// Whoami response
-    pub const MSG_WHOAMI_RESPONSE: u32 = 0x7031;
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct U128Visitor;
 
-    // Credential Management
-    /// Attach email request
-    pub const MSG_ATTACH_EMAIL: u32 = 0x7040;
-    /// Attach email response
-    pub const MSG_ATTACH_EMAIL_RESPONSE: u32 = 0x7041;
-    /// Get credentials request
-    pub const MSG_GET_CREDENTIALS: u32 = 0x7042;
-    /// Get credentials response
-    pub const MSG_GET_CREDENTIALS_RESPONSE: u32 = 0x7043;
-}
+        impl<'de> de::Visitor<'de> for U128Visitor {
+            type Value = u128;
 
-/// Permission service IPC message types.
-pub mod perm_msg {
-    /// Check permission request
-    pub const MSG_CHECK_PERM: u32 = 0x5000;
-    /// Check permission response
-    pub const MSG_CHECK_PERM_RESPONSE: u32 = 0x5001;
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string like '0x...' or a number")
+            }
 
-    /// Query capabilities request
-    pub const MSG_QUERY_CAPS: u32 = 0x5002;
-    /// Query capabilities response
-    pub const MSG_QUERY_CAPS_RESPONSE: u32 = 0x5003;
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                u128::from_str_radix(s, 16).map_err(de::Error::custom)
+            }
 
-    /// Query history request
-    pub const MSG_QUERY_HISTORY: u32 = 0x5004;
-    /// Query history response
-    pub const MSG_QUERY_HISTORY_RESPONSE: u32 = 0x5005;
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(v as u128)
+            }
 
-    /// Get provenance request
-    pub const MSG_GET_PROVENANCE: u32 = 0x5006;
-    /// Get provenance response
-    pub const MSG_GET_PROVENANCE_RESPONSE: u32 = 0x5007;
+            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(v)
+            }
+        }
 
-    /// Update policy request (admin only)
-    pub const MSG_UPDATE_POLICY: u32 = 0x5008;
-    /// Update policy response
-    pub const MSG_UPDATE_POLICY_RESPONSE: u32 = 0x5009;
-}
-
-/// Key management IPC message types.
-pub mod key_msg {
-    // Identity Key Messages (0x7050-0x705F)
-    /// Register identity key request (public keys from Neural Key)
-    pub const MSG_REGISTER_IDENTITY_KEY: u32 = 0x7050;
-    /// Register identity key response
-    pub const MSG_REGISTER_IDENTITY_KEY_RESPONSE: u32 = 0x7051;
-    /// Get identity key request
-    pub const MSG_GET_IDENTITY_KEY: u32 = 0x7052;
-    /// Get identity key response
-    pub const MSG_GET_IDENTITY_KEY_RESPONSE: u32 = 0x7053;
-    /// Generate Neural Key request (creates entropy, derives keys, returns shards)
-    pub const MSG_GENERATE_NEURAL_KEY: u32 = 0x7054;
-    /// Generate Neural Key response
-    pub const MSG_GENERATE_NEURAL_KEY_RESPONSE: u32 = 0x7055;
-    /// Recover Neural Key from shards request
-    pub const MSG_RECOVER_NEURAL_KEY: u32 = 0x7056;
-    /// Recover Neural Key from shards response
-    pub const MSG_RECOVER_NEURAL_KEY_RESPONSE: u32 = 0x7057;
-
-    // Machine Key Messages (0x7060-0x706F)
-    /// Create machine key request
-    pub const MSG_CREATE_MACHINE_KEY: u32 = 0x7060;
-    /// Create machine key response
-    pub const MSG_CREATE_MACHINE_KEY_RESPONSE: u32 = 0x7061;
-    /// List machine keys request
-    pub const MSG_LIST_MACHINE_KEYS: u32 = 0x7062;
-    /// List machine keys response
-    pub const MSG_LIST_MACHINE_KEYS_RESPONSE: u32 = 0x7063;
-    /// Get specific machine key request
-    pub const MSG_GET_MACHINE_KEY: u32 = 0x7064;
-    /// Get specific machine key response
-    pub const MSG_GET_MACHINE_KEY_RESPONSE: u32 = 0x7065;
-    /// Revoke machine key request
-    pub const MSG_REVOKE_MACHINE_KEY: u32 = 0x7066;
-    /// Revoke machine key response
-    pub const MSG_REVOKE_MACHINE_KEY_RESPONSE: u32 = 0x7067;
-    /// Rotate machine key request (new epoch)
-    pub const MSG_ROTATE_MACHINE_KEY: u32 = 0x7068;
-    /// Rotate machine key response
-    pub const MSG_ROTATE_MACHINE_KEY_RESPONSE: u32 = 0x7069;
+        deserializer.deserialize_any(U128Visitor)
+    }
 }
 
 // ============================================================================
@@ -448,6 +379,7 @@ pub struct GetIdentityKeyResponse {
 /// Create machine key request.
 ///
 /// Creates a new machine key record. Requires identity key to be registered first.
+/// The service will generate machine keys using entropy - no public keys needed in request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateMachineKeyRequest {
     /// User ID
@@ -456,10 +388,6 @@ pub struct CreateMachineKeyRequest {
     pub machine_name: Option<String>,
     /// Machine key capabilities
     pub capabilities: MachineKeyCapabilities,
-    /// Machine signing public key (Ed25519)
-    pub signing_public_key: [u8; 32],
-    /// Machine encryption public key (X25519)
-    pub encryption_public_key: [u8; 32],
 }
 
 /// Create machine key response.
@@ -488,7 +416,8 @@ pub struct ListMachineKeysResponse {
 pub struct GetMachineKeyRequest {
     /// User ID
     pub user_id: UserId,
-    /// Machine ID to retrieve
+    /// Machine ID to retrieve (hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
     pub machine_id: u128,
 }
 
@@ -506,7 +435,8 @@ pub struct GetMachineKeyResponse {
 pub struct RevokeMachineKeyRequest {
     /// User ID
     pub user_id: UserId,
-    /// Machine ID to revoke
+    /// Machine ID to revoke (hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
     pub machine_id: u128,
 }
 
@@ -520,16 +450,14 @@ pub struct RevokeMachineKeyResponse {
 /// Rotate machine key request.
 ///
 /// Rotates the keys for a machine, incrementing the epoch.
+/// The service will generate new keys using entropy - no public keys needed in request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RotateMachineKeyRequest {
     /// User ID
     pub user_id: UserId,
-    /// Machine ID to rotate keys for
+    /// Machine ID to rotate keys for (hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
     pub machine_id: u128,
-    /// New signing public key (Ed25519)
-    pub new_signing_public_key: [u8; 32],
-    /// New encryption public key (X25519)
-    pub new_encryption_public_key: [u8; 32],
 }
 
 /// Rotate machine key response.
@@ -542,47 +470,6 @@ pub struct RotateMachineKeyResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_message_constants() {
-        // Ensure no overlapping message IDs between modules
-        assert!(user_msg::MSG_CREATE_USER != perm_msg::MSG_CHECK_PERM);
-        assert!(user_msg::MSG_WHOAMI > user_msg::MSG_LOGOUT);
-
-        // Key messages should be in the 0x7050-0x706F range
-        assert!(key_msg::MSG_REGISTER_IDENTITY_KEY >= 0x7050);
-        assert!(key_msg::MSG_ROTATE_MACHINE_KEY_RESPONSE <= 0x706F);
-
-        // No overlap with user messages
-        assert!(key_msg::MSG_REGISTER_IDENTITY_KEY > user_msg::MSG_GET_CREDENTIALS_RESPONSE);
-    }
-
-    #[test]
-    fn test_key_message_ranges() {
-        // Identity key messages: 0x7050-0x705F
-        assert_eq!(key_msg::MSG_REGISTER_IDENTITY_KEY, 0x7050);
-        assert_eq!(key_msg::MSG_REGISTER_IDENTITY_KEY_RESPONSE, 0x7051);
-        assert_eq!(key_msg::MSG_GET_IDENTITY_KEY, 0x7052);
-        assert_eq!(key_msg::MSG_GET_IDENTITY_KEY_RESPONSE, 0x7053);
-        
-        // Neural key messages: 0x7054-0x7057
-        assert_eq!(key_msg::MSG_GENERATE_NEURAL_KEY, 0x7054);
-        assert_eq!(key_msg::MSG_GENERATE_NEURAL_KEY_RESPONSE, 0x7055);
-        assert_eq!(key_msg::MSG_RECOVER_NEURAL_KEY, 0x7056);
-        assert_eq!(key_msg::MSG_RECOVER_NEURAL_KEY_RESPONSE, 0x7057);
-
-        // Machine key messages: 0x7060-0x706F
-        assert_eq!(key_msg::MSG_CREATE_MACHINE_KEY, 0x7060);
-        assert_eq!(key_msg::MSG_CREATE_MACHINE_KEY_RESPONSE, 0x7061);
-        assert_eq!(key_msg::MSG_LIST_MACHINE_KEYS, 0x7062);
-        assert_eq!(key_msg::MSG_LIST_MACHINE_KEYS_RESPONSE, 0x7063);
-        assert_eq!(key_msg::MSG_GET_MACHINE_KEY, 0x7064);
-        assert_eq!(key_msg::MSG_GET_MACHINE_KEY_RESPONSE, 0x7065);
-        assert_eq!(key_msg::MSG_REVOKE_MACHINE_KEY, 0x7066);
-        assert_eq!(key_msg::MSG_REVOKE_MACHINE_KEY_RESPONSE, 0x7067);
-        assert_eq!(key_msg::MSG_ROTATE_MACHINE_KEY, 0x7068);
-        assert_eq!(key_msg::MSG_ROTATE_MACHINE_KEY_RESPONSE, 0x7069);
-    }
 
     #[test]
     fn test_request_serialization() {
@@ -614,8 +501,6 @@ mod tests {
             user_id: 3,
             machine_name: Some(String::from("My Laptop")),
             capabilities: MachineKeyCapabilities::default(),
-            signing_public_key: [3u8; 32],
-            encryption_public_key: [4u8; 32],
         };
         assert_eq!(create_req.user_id, 3);
         assert!(create_req.machine_name.is_some());
@@ -636,8 +521,6 @@ mod tests {
         let rotate_req = RotateMachineKeyRequest {
             user_id: 6,
             machine_id: 200,
-            new_signing_public_key: [5u8; 32],
-            new_encryption_public_key: [6u8; 32],
         };
         assert_eq!(rotate_req.user_id, 6);
         assert_eq!(rotate_req.machine_id, 200);

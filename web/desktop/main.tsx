@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@cypher-asi/zui';
 import { Desktop } from '../components/Desktop/Desktop';
 import { Supervisor, DesktopController } from './hooks/useSupervisor';
+import { useSettingsStore } from '../stores';
 import '@cypher-asi/zui/styles';
 import '../styles/global.css';
 
@@ -86,6 +87,20 @@ async function init() {
     } catch (e) {
       console.warn('[main] Axiom storage init failed (non-fatal):', e);
     }
+
+    // Initialize ZosStorage with the supervisor reference for async storage callbacks
+    // This enables services like IdentityService and VfsService to use storage syscalls
+    if (window.ZosStorage) {
+      window.ZosStorage.initSupervisor(supervisor);
+      console.log('[main] ZosStorage supervisor reference set');
+    } else {
+      console.warn('[main] ZosStorage not available - storage syscalls will fail');
+    }
+
+    // Initialize settings store with supervisor reference
+    // This enables time settings sync with time_service when it's running
+    useSettingsStore.getState().initializeService(supervisor);
+    console.log('[main] Settings store initialized with supervisor');
 
     // Boot the kernel
     showLoading('Booting kernel...');

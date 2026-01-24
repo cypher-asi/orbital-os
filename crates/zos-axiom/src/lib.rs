@@ -4,21 +4,31 @@
 //! - **SysLog**: Audit trail of all syscalls (request + response)
 //! - **CommitLog**: Deterministic state mutations for replay
 //! - **AxiomGateway**: Entry point for all syscalls
+//! - **Capability verification**: The `axiom_check` function for authority validation
 //!
 //! # Core Guarantee
 //!
 //! > Same CommitLog always produces same state.
 //!
 //! This is the foundation of Zero OS's deterministic replay capability.
+//!
+//! # Invariants (per docs/invariants/invariants.md)
+//!
+//! - Invariant 9: Axiom records all requests and responses
+//! - Invariant 10: Axiom verifies capabilities before execution
 
 #![no_std]
 extern crate alloc;
 
+pub mod capability;
 pub mod commitlog;
 pub mod gateway;
 pub mod replay;
 pub mod syslog;
 pub mod types;
+
+// Re-export capability types
+pub use capability::{axiom_check, AxiomError, Capability, CapabilitySpace};
 
 // Re-export main types
 pub use commitlog::{Commit, CommitLog, CommitType};

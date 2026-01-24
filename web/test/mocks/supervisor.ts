@@ -111,6 +111,22 @@ export function createMockSupervisor(
     })),
     get_commitlog_json: vi.fn((count: number) => JSON.stringify([])),
     get_syslog_json: vi.fn((count: number) => JSON.stringify([])),
+    
+    // Process isolation APIs
+    send_input_to_process: vi.fn((pid: number, input: string) => {}),
+    register_console_callback: vi.fn((pid: number, callback: (text: string) => void) => {}),
+    unregister_console_callback: vi.fn((pid: number) => {}),
+    
+    // Capability API
+    revoke_capability: vi.fn((pid: bigint, slot: number) => true),
+    
+    // Generic Service IPC API (Thin Boundary Layer)
+    set_ipc_response_callback: vi.fn((callback: (requestId: string, data: string) => void) => {}),
+    send_service_ipc: vi.fn((serviceName: string, tag: number, data: string) => {
+      // Return a mock request_id based on tag+1 convention
+      const responseTag = tag + 1;
+      return responseTag.toString(16).padStart(8, '0');
+    }),
   };
 }
 

@@ -21,6 +21,9 @@
  * | 56     | 4    | pid (stored by supervisor)         |
  */
 
+// Note: VFS operations now go through syscalls to the supervisor (main thread),
+// which handles IndexedDB access. Workers no longer need direct VFS bindings.
+
 // Capture the worker's memory context ID from the browser
 // performance.timeOrigin is the Unix timestamp (ms) when this worker context was created
 const WORKER_MEMORY_ID = Math.floor(performance.timeOrigin);
@@ -202,6 +205,8 @@ self.onmessage = async (event) => {
                 zos_recv_bytes: zos_recv_bytes,
                 zos_yield: zos_yield,
                 zos_get_pid: zos_get_pid,
+                // Note: VFS operations now go through storage syscalls (0x70-0x74)
+                // which are handled by the supervisor in the main thread.
             }
         };
         

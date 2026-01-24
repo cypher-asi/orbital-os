@@ -45,9 +45,11 @@
 extern crate alloc;
 
 pub mod bootstrap;
+pub mod client;
 pub mod error;
-#[cfg(target_arch = "wasm32")]
-pub mod indexeddb;
+// Note: IndexedDB access is handled by ZosStorage in web/public/zos-storage.js
+// and accessed through HAL methods. The browser-specific storage bindings
+// live in zos-supervisor-web/src/vfs.rs for bootstrap operations only.
 pub mod ipc;
 pub mod memory;
 pub mod path;
@@ -56,6 +58,7 @@ pub mod storage;
 pub mod types;
 
 // Re-export main types
+pub use client::VfsClient;
 pub use error::{StorageError, VfsError};
 pub use memory::MemoryVfs;
 pub use path::{normalize_path, parent_path, validate_path};

@@ -54,10 +54,16 @@ pub mod syscall {
     pub const SYS_EXIT: u32 = 0x11;
     /// Yield to scheduler
     pub const SYS_YIELD: u32 = 0x12;
-    /// Sleep for specified nanoseconds
-    pub const SYS_SLEEP: u32 = 0x13;
-    /// Wait for thread to exit
-    pub const SYS_THREAD_JOIN: u32 = 0x14;
+    /// Kill a process (requires Process capability)
+    pub const SYS_KILL: u32 = 0x13;
+    /// Register a new process (Init-only syscall for spawn protocol)
+    pub const SYS_REGISTER_PROCESS: u32 = 0x14;
+    /// Create an endpoint for another process (Init-only syscall for spawn protocol)
+    pub const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
+    /// Wait for thread to exit (reusing 0x16 to avoid conflict)
+    pub const SYS_THREAD_JOIN: u32 = 0x16;
+    /// Sleep for specified nanoseconds (legacy, now 0x15)
+    pub const SYS_SLEEP: u32 = 0x15;
 
     // === Memory (0x20 - 0x2F) ===
     /// Map memory region
@@ -117,19 +123,67 @@ pub mod syscall {
     /// Write dword to I/O port
     pub const SYS_IO_OUT32: u32 = 0x65;
 
-    // === VFS (0x70 - 0x7F) ===
-    /// Read file contents: path -> content
-    pub const SYS_VFS_READ: u32 = 0x70;
-    /// Write file: path, content
-    pub const SYS_VFS_WRITE: u32 = 0x71;
-    /// Create directory
-    pub const SYS_VFS_MKDIR: u32 = 0x72;
-    /// List directory contents
-    pub const SYS_VFS_LIST: u32 = 0x73;
-    /// Delete file or directory
-    pub const SYS_VFS_DELETE: u32 = 0x74;
-    /// Check if path exists
-    pub const SYS_VFS_EXISTS: u32 = 0x75;
+    // === Platform Storage (0x70 - 0x7F) ===
+    // These are HAL-level key-value storage operations, NOT filesystem operations.
+    // VfsService (userspace) uses these syscalls for persistence to IndexedDB/disk.
+    // Applications should use zos_vfs::VfsClient for filesystem operations.
+    //
+    // All storage syscalls are ASYNC and return a request_id immediately.
+    // The result is delivered via IPC to the requesting process.
+    
+    /// Read blob from platform storage (async - returns request_id)
+    /// Args: key_len in data buffer
+    /// Returns: request_id (response delivered via IPC with data)
+    pub const SYS_STORAGE_READ: u32 = 0x70;
+    
+    /// Write blob to platform storage (async - returns request_id)
+    /// Args: key_len, value_len in data buffer (key then value)
+    /// Returns: request_id (response delivered via IPC with success/error)
+    pub const SYS_STORAGE_WRITE: u32 = 0x71;
+    
+    /// Delete blob from platform storage (async - returns request_id)
+    /// Args: key_len in data buffer
+    /// Returns: request_id (response delivered via IPC with success/error)
+    pub const SYS_STORAGE_DELETE: u32 = 0x72;
+    
+    /// List keys with prefix (async - returns request_id)
+    /// Args: prefix_len in data buffer
+    /// Returns: request_id (response delivered via IPC with key list)
+    pub const SYS_STORAGE_LIST: u32 = 0x73;
+    
+    /// Check if key exists (async - returns request_id)
+    /// Args: key_len in data buffer
+    /// Returns: request_id (response delivered via IPC with bool)
+    pub const SYS_STORAGE_EXISTS: u32 = 0x74;
+
+    // =========================================================================
+    // Deprecated VFS syscalls (kept for backward compatibility)
+    // These are superseded by the VFS IPC service (zos_vfs::VfsClient)
+    // =========================================================================
+
+    /// DEPRECATED: Read file via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_READ: u32 = 0x80;
+
+    /// DEPRECATED: Write file via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_WRITE: u32 = 0x81;
+
+    /// DEPRECATED: Create directory via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_MKDIR: u32 = 0x82;
+
+    /// DEPRECATED: List directory via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_LIST: u32 = 0x83;
+
+    /// DEPRECATED: Delete file/directory via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_DELETE: u32 = 0x84;
+
+    /// DEPRECATED: Check if path exists via kernel VFS
+    #[deprecated(since = "0.1.0", note = "Use VFS IPC service via zos_vfs::VfsClient")]
+    pub const SYS_VFS_EXISTS: u32 = 0x85;
 }
 
 // Re-export canonical syscalls at module level for convenience
@@ -168,31 +222,40 @@ pub mod error {
 // ============================================================================
 // Message Tags (for IPC protocol)
 // ============================================================================
+// All IPC message constants are defined in zos-ipc as the single source of truth.
+// We re-export them here for backward compatibility.
+
+// Re-export all IPC modules for convenient access
+pub use zos_ipc::{
+    console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
+    identity_query, identity_remote, identity_session, identity_user, init, kernel, permission,
+    pm, revoke_reason, slots, storage, supervisor, vfs_dir, vfs_file, vfs_meta, vfs_quota,
+};
 
 /// Console input message tag - used by terminal for receiving keyboard input.
-pub const MSG_CONSOLE_INPUT: u32 = 0x0002;
+pub use zos_ipc::MSG_CONSOLE_INPUT;
 
 // =============================================================================
 // Init Service Protocol (for service discovery)
 // =============================================================================
 
 /// Register a service with init: data = [name_len: u8, name: [u8], endpoint_id_low: u32, endpoint_id_high: u32]
-pub const MSG_REGISTER_SERVICE: u32 = 0x1000;
+pub use zos_ipc::init::MSG_REGISTER_SERVICE;
 
 /// Lookup a service: data = [name_len: u8, name: [u8]]
-pub const MSG_LOOKUP_SERVICE: u32 = 0x1001;
+pub use zos_ipc::init::MSG_LOOKUP_SERVICE;
 
 /// Lookup response: data = [found: u8, endpoint_id_low: u32, endpoint_id_high: u32]
-pub const MSG_LOOKUP_RESPONSE: u32 = 0x1002;
+pub use zos_ipc::init::MSG_LOOKUP_RESPONSE;
 
 /// Request spawn: data = [name_len: u8, name: [u8]]
-pub const MSG_SPAWN_SERVICE: u32 = 0x1003;
+pub use zos_ipc::init::MSG_SPAWN_SERVICE;
 
 /// Spawn response: data = [success: u8, pid: u32]
-pub const MSG_SPAWN_RESPONSE: u32 = 0x1004;
+pub use zos_ipc::init::MSG_SPAWN_RESPONSE;
 
 /// Service ready notification (service → init after registration complete)
-pub const MSG_SERVICE_READY: u32 = 0x1005;
+pub use zos_ipc::init::MSG_SERVICE_READY;
 
 // =============================================================================
 // Capability Revocation Notification (IPC → Process)
@@ -200,17 +263,56 @@ pub const MSG_SERVICE_READY: u32 = 0x1005;
 
 /// Notification that a capability was revoked from this process
 /// Payload: [slot: u32, object_type: u8, object_id: u64, reason: u8]
-pub const MSG_CAP_REVOKED: u32 = 0x3010;
+pub use zos_ipc::kernel::MSG_CAP_REVOKED;
 
 /// Revocation reason: Supervisor/user explicitly revoked the capability
-pub const REVOKE_REASON_EXPLICIT: u8 = 1;
+pub const REVOKE_REASON_EXPLICIT: u8 = zos_ipc::revoke_reason::EXPLICIT;
 /// Revocation reason: Capability expired
-pub const REVOKE_REASON_EXPIRED: u8 = 2;
+pub const REVOKE_REASON_EXPIRED: u8 = zos_ipc::revoke_reason::EXPIRED;
 /// Revocation reason: Source process exited
-pub const REVOKE_REASON_PROCESS_EXIT: u8 = 3;
+pub const REVOKE_REASON_PROCESS_EXIT: u8 = zos_ipc::revoke_reason::PROCESS_EXIT;
 
 /// Well-known slot for init's endpoint (every process gets this at spawn)
-pub const INIT_ENDPOINT_SLOT: u32 = 2;
+pub use zos_ipc::slots::INIT_ENDPOINT_SLOT;
+
+// =============================================================================
+// Storage Result IPC (delivered from supervisor via HAL async storage)
+// =============================================================================
+
+/// Storage operation result delivered via IPC
+/// Payload format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+pub use zos_ipc::storage::MSG_STORAGE_RESULT;
+
+/// Storage result types
+pub mod storage_result {
+    pub use zos_ipc::storage::result::*;
+}
+
+// =============================================================================
+// Supervisor → Init Protocol (0x2xxx range)
+// =============================================================================
+// These messages are sent from the supervisor to Init to route operations
+// that need kernel access. The supervisor has no direct kernel access.
+
+/// Supervisor requests Init to deliver console input to a terminal process.
+/// Payload: [target_pid: u32, endpoint_slot: u32, data_len: u16, data: [u8]]
+pub use zos_ipc::supervisor::MSG_SUPERVISOR_CONSOLE_INPUT;
+
+/// Supervisor requests Init to terminate a process.
+/// Payload: [target_pid: u32]
+pub use zos_ipc::supervisor::MSG_SUPERVISOR_KILL_PROCESS;
+
+/// Supervisor requests Init to route an IPC message to a process.
+/// Payload: [target_pid: u32, endpoint_slot: u32, tag: u32, data_len: u16, data: [u8]]
+pub use zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY;
+
+// =============================================================================
+// Supervisor → PermissionManager Protocol
+// =============================================================================
+
+/// Supervisor requests PermissionManager to revoke a capability from a process.
+/// Payload: [target_pid: u32, slot: u32, reason: u8]
+pub use zos_ipc::supervisor::MSG_SUPERVISOR_REVOKE_CAP;
 
 // =============================================================================
 // Permission Protocol (03-security.md)
@@ -218,16 +320,16 @@ pub const INIT_ENDPOINT_SLOT: u32 = 2;
 // =============================================================================
 
 /// Request Init to grant a capability to a process
-pub const MSG_GRANT_PERMISSION: u32 = 0x1010;
+pub use zos_ipc::permission::MSG_GRANT_PERMISSION;
 
 /// Request Init to revoke a capability from a process
-pub const MSG_REVOKE_PERMISSION: u32 = 0x1011;
+pub use zos_ipc::permission::MSG_REVOKE_PERMISSION;
 
 /// Query what permissions a process has
-pub const MSG_LIST_PERMISSIONS: u32 = 0x1012;
+pub use zos_ipc::permission::MSG_LIST_PERMISSIONS;
 
 /// Response from Init with grant/revoke result
-pub const MSG_PERMISSION_RESPONSE: u32 = 0x1013;
+pub use zos_ipc::permission::MSG_PERMISSION_RESPONSE;
 
 // =============================================================================
 // Object Types (for capabilities)
@@ -385,16 +487,40 @@ pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
         if len == 0 {
             return None;
         }
-        // Parse: first 4 bytes = from_pid, next 4 = tag, rest = data
-        if len < 8 {
+        // Parse message format:
+        // [from_pid: u32][tag: u32][num_caps: u8][cap_slots: u32*num_caps][data: ...]
+        // Minimum: 4 + 4 + 1 = 9 bytes
+        if len < 9 {
             return None;
         }
         let from_pid = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
         let tag = u32::from_le_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
-        let data = buffer[8..len as usize].to_vec();
+        let num_caps = buffer[8] as usize;
+        
+        // Parse capability slots
+        let cap_data_len = num_caps * 4;
+        let data_start = 9 + cap_data_len;
+        if (len as usize) < data_start {
+            return None;
+        }
+        
+        let mut cap_slots = Vec::with_capacity(num_caps);
+        for i in 0..num_caps {
+            let offset = 9 + i * 4;
+            let slot = u32::from_le_bytes([
+                buffer[offset],
+                buffer[offset + 1],
+                buffer[offset + 2],
+                buffer[offset + 3],
+            ]);
+            cap_slots.push(slot);
+        }
+        
+        let data = buffer[data_start..len as usize].to_vec();
         Some(ReceivedMessage {
             from_pid,
             tag,
+            cap_slots,
             data,
         })
     }
@@ -492,6 +618,34 @@ pub fn exit(code: i32) -> ! {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn exit(_code: i32) -> ! {
     panic!("exit called outside WASM")
+}
+
+/// Kill a process.
+///
+/// This syscall requires the caller to have a Process capability for the target
+/// process with write permission, OR the caller must be Init (PID 1).
+///
+/// # Arguments
+/// - `target_pid`: PID of the process to terminate
+///
+/// # Returns
+/// - `Ok(())`: Process was terminated
+/// - `Err(code)`: Error (e.g., permission denied, process not found)
+#[cfg(target_arch = "wasm32")]
+pub fn kill(target_pid: u32) -> Result<(), u32> {
+    unsafe {
+        let result = zos_syscall(SYS_KILL, target_pid, 0, 0);
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn kill(_target_pid: u32) -> Result<(), u32> {
+    Err(error::E_NOSYS)
 }
 
 // ============================================================================
@@ -608,6 +762,35 @@ pub fn cap_revoke(slot: u32) -> Result<(), u32> {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn cap_revoke(_slot: u32) -> Result<(), u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Revoke a capability from another process (privileged operation)
+///
+/// This is a privileged syscall for the PermissionManager (PID 2).
+/// It allows revoking capabilities from any process's CSpace.
+///
+/// # Arguments
+/// - `target_pid`: Process ID to revoke from
+/// - `slot`: Capability slot to revoke
+///
+/// # Returns
+/// - `Ok(())`: Capability revoked
+/// - `Err(code)`: Error code
+#[cfg(target_arch = "wasm32")]
+pub fn cap_revoke_from(target_pid: u32, slot: u32) -> Result<(), u32> {
+    unsafe {
+        let result = zos_syscall(SYS_CAP_REVOKE, target_pid, slot, 0);
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn cap_revoke_from(_target_pid: u32, _slot: u32) -> Result<(), u32> {
     Err(error::E_NOSYS)
 }
 
@@ -842,10 +1025,255 @@ pub fn create_endpoint() -> Result<(u64, u32), u32> {
 }
 
 // ============================================================================
-// VFS Syscall Wrappers
+// Init-Only Syscalls (Spawn Protocol)
 // ============================================================================
+//
+// These syscalls can only be invoked by Init (PID 1) as part of the
+// Init-driven spawn protocol. They ensure all process lifecycle management
+// flows through Init, enabling proper audit logging via SysLog.
+
+/// Register a new process in the kernel (Init-only syscall).
+///
+/// This is the first step of the Init-driven spawn protocol. Only Init (PID 1)
+/// can call this syscall. Other processes will receive an error.
+///
+/// # Arguments
+/// - `name`: Name of the process to register
+///
+/// # Returns
+/// - `Ok(pid)`: The PID assigned to the new process
+/// - `Err(code)`: Error code (e.g., permission denied if caller is not Init)
+#[cfg(target_arch = "wasm32")]
+pub fn register_process(name: &str) -> Result<u32, u32> {
+    let bytes = name.as_bytes();
+    unsafe {
+        zos_send_bytes(bytes.as_ptr(), bytes.len() as u32);
+        let result = zos_syscall(SYS_REGISTER_PROCESS, bytes.len() as u32, 0, 0) as i32;
+        if result >= 0 {
+            Ok(result as u32)
+        } else {
+            Err(error::E_PERM)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn register_process(_name: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Create an endpoint for another process (Init-only syscall).
+///
+/// This syscall is part of the Init-driven spawn protocol. Only Init (PID 1)
+/// can create endpoints for other processes. This enables Init to set up
+/// the standard endpoint configuration during spawn.
+///
+/// # Arguments
+/// - `target_pid`: PID of the process to create an endpoint for
+///
+/// # Returns
+/// - `Ok((endpoint_id, slot))`: The created endpoint ID and slot
+/// - `Err(code)`: Error code (e.g., permission denied if caller is not Init)
+#[cfg(target_arch = "wasm32")]
+pub fn create_endpoint_for(target_pid: u32) -> Result<(u64, u32), u32> {
+    unsafe {
+        let result = zos_syscall(SYS_CREATE_ENDPOINT_FOR, target_pid, 0, 0) as i64;
+        if result >= 0 {
+            // Result is packed: high 32 = slot, low 32 = endpoint_id
+            let slot = (result >> 32) as u32;
+            let endpoint_id = (result & 0xFFFFFFFF) as u64;
+            Ok((endpoint_id, slot))
+        } else {
+            Err(error::E_PERM)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn create_endpoint_for(_target_pid: u32) -> Result<(u64, u32), u32> {
+    Err(error::E_NOSYS)
+}
+
+// ============================================================================
+// Async Platform Storage Syscalls (for VfsService)
+// ============================================================================
+//
+// These syscalls initiate async storage operations and return a request_id
+// immediately. The result is delivered via MSG_STORAGE_RESULT IPC message.
+//
+// Only VfsService should use these - applications use zos_vfs::VfsClient.
+
+/// Start async storage read operation.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_STORAGE_RESULT IPC message.
+///
+/// # Arguments
+/// - `key`: Storage key to read
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_read_async(key: &str) -> Result<u32, u32> {
+    let key_bytes = key.as_bytes();
+    unsafe {
+        zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
+        let result = zos_syscall(SYS_STORAGE_READ, key_bytes.len() as u32, 0, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_read_async(_key: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Start async storage write operation.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_STORAGE_RESULT IPC message.
+///
+/// # Arguments
+/// - `key`: Storage key to write
+/// - `value`: Data to store
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_write_async(key: &str, value: &[u8]) -> Result<u32, u32> {
+    let key_bytes = key.as_bytes();
+    // Data format: [key_len: u32, key: [u8], value: [u8]]
+    let mut data = Vec::with_capacity(4 + key_bytes.len() + value.len());
+    data.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+    data.extend_from_slice(key_bytes);
+    data.extend_from_slice(value);
+    
+    unsafe {
+        zos_send_bytes(data.as_ptr(), data.len() as u32);
+        let result = zos_syscall(SYS_STORAGE_WRITE, key_bytes.len() as u32, value.len() as u32, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_write_async(_key: &str, _value: &[u8]) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Start async storage delete operation.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_STORAGE_RESULT IPC message.
+///
+/// # Arguments
+/// - `key`: Storage key to delete
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_delete_async(key: &str) -> Result<u32, u32> {
+    let key_bytes = key.as_bytes();
+    unsafe {
+        zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
+        let result = zos_syscall(SYS_STORAGE_DELETE, key_bytes.len() as u32, 0, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_delete_async(_key: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Start async storage list operation.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_STORAGE_RESULT IPC message
+/// with a JSON array of matching keys.
+///
+/// # Arguments
+/// - `prefix`: Key prefix to match
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_list_async(prefix: &str) -> Result<u32, u32> {
+    let prefix_bytes = prefix.as_bytes();
+    unsafe {
+        zos_send_bytes(prefix_bytes.as_ptr(), prefix_bytes.len() as u32);
+        let result = zos_syscall(SYS_STORAGE_LIST, prefix_bytes.len() as u32, 0, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_list_async(_prefix: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Start async storage exists check.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_STORAGE_RESULT IPC message
+/// with EXISTS_OK result type (data byte: 1=exists, 0=not exists).
+///
+/// # Arguments
+/// - `key`: Storage key to check
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_exists_async(key: &str) -> Result<u32, u32> {
+    let key_bytes = key.as_bytes();
+    unsafe {
+        zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
+        let result = zos_syscall(SYS_STORAGE_EXISTS, key_bytes.len() as u32, 0, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_exists_async(_key: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+// ============================================================================
+// VFS Syscall Wrappers (DEPRECATED)
+// ============================================================================
+//
+// These functions are deprecated. Use zos_vfs::VfsClient for VFS operations.
+// VFS operations now go through the VFS IPC service, which maintains the
+// thin-supervisor architecture principle.
 
 /// Read a file from the VFS.
+///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::read_file()` instead.
 ///
 /// # Arguments
 /// - `path`: Path to the file to read
@@ -853,7 +1281,9 @@ pub fn create_endpoint() -> Result<(u64, u32), u32> {
 /// # Returns
 /// - `Ok(Vec<u8>)`: File contents
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::read_file() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_read(path: &str) -> Result<Vec<u8>, u32> {
     let path_bytes = path.as_bytes();
     unsafe {
@@ -870,12 +1300,16 @@ pub fn vfs_read(path: &str) -> Result<Vec<u8>, u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::read_file() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_read(_path: &str) -> Result<Vec<u8>, u32> {
     Err(error::E_NOSYS)
 }
 
 /// Write a file to the VFS.
+///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::write_file()` instead.
 ///
 /// # Arguments
 /// - `path`: Path to the file to write
@@ -884,7 +1318,9 @@ pub fn vfs_read(_path: &str) -> Result<Vec<u8>, u32> {
 /// # Returns
 /// - `Ok(())`: File written successfully
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::write_file() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_write(path: &str, content: &[u8]) -> Result<(), u32> {
     // Send path length, then path, then content
     let path_bytes = path.as_bytes();
@@ -904,6 +1340,7 @@ pub fn vfs_write(path: &str, content: &[u8]) -> Result<(), u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::write_file() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_write(_path: &str, _content: &[u8]) -> Result<(), u32> {
     Err(error::E_NOSYS)
@@ -911,13 +1348,18 @@ pub fn vfs_write(_path: &str, _content: &[u8]) -> Result<(), u32> {
 
 /// Create a directory in the VFS.
 ///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::mkdir()` instead.
+///
 /// # Arguments
 /// - `path`: Path to the directory to create
 ///
 /// # Returns
 /// - `Ok(())`: Directory created successfully
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::mkdir() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_mkdir(path: &str) -> Result<(), u32> {
     let path_bytes = path.as_bytes();
     unsafe {
@@ -931,6 +1373,7 @@ pub fn vfs_mkdir(path: &str) -> Result<(), u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::mkdir() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_mkdir(_path: &str) -> Result<(), u32> {
     Err(error::E_NOSYS)
@@ -938,13 +1381,18 @@ pub fn vfs_mkdir(_path: &str) -> Result<(), u32> {
 
 /// List directory contents.
 ///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::readdir()` instead.
+///
 /// # Arguments
 /// - `path`: Path to the directory to list
 ///
 /// # Returns
 /// - `Ok(Vec<String>)`: List of entry names
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::readdir() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_list(path: &str) -> Result<Vec<String>, u32> {
     let path_bytes = path.as_bytes();
     unsafe {
@@ -984,6 +1432,7 @@ pub fn vfs_list(path: &str) -> Result<Vec<String>, u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::readdir() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_list(_path: &str) -> Result<Vec<String>, u32> {
     Err(error::E_NOSYS)
@@ -991,13 +1440,18 @@ pub fn vfs_list(_path: &str) -> Result<Vec<String>, u32> {
 
 /// Delete a file or directory.
 ///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::unlink()` instead.
+///
 /// # Arguments
 /// - `path`: Path to delete
 ///
 /// # Returns
 /// - `Ok(())`: Deleted successfully
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::unlink() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_delete(path: &str) -> Result<(), u32> {
     let path_bytes = path.as_bytes();
     unsafe {
@@ -1011,12 +1465,16 @@ pub fn vfs_delete(path: &str) -> Result<(), u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::unlink() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_delete(_path: &str) -> Result<(), u32> {
     Err(error::E_NOSYS)
 }
 
 /// Check if a path exists in the VFS.
+///
+/// # Deprecated
+/// Use `zos_vfs::VfsClient::exists()` instead.
 ///
 /// # Arguments
 /// - `path`: Path to check
@@ -1025,7 +1483,9 @@ pub fn vfs_delete(_path: &str) -> Result<(), u32> {
 /// - `Ok(true)`: Path exists
 /// - `Ok(false)`: Path does not exist
 /// - `Err(code)`: Error code
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::exists() via VFS IPC service")]
 #[cfg(target_arch = "wasm32")]
+#[allow(deprecated)]
 pub fn vfs_exists(path: &str) -> Result<bool, u32> {
     let path_bytes = path.as_bytes();
     unsafe {
@@ -1040,6 +1500,7 @@ pub fn vfs_exists(path: &str) -> Result<bool, u32> {
     }
 }
 
+#[deprecated(since = "0.1.0", note = "Use zos_vfs::VfsClient::exists() via VFS IPC service")]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn vfs_exists(_path: &str) -> Result<bool, u32> {
     Err(error::E_NOSYS)
@@ -1056,6 +1517,10 @@ pub struct ReceivedMessage {
     pub from_pid: u32,
     /// Message tag
     pub tag: u32,
+    /// Capability slots containing transferred capabilities
+    /// These are slots in the receiver's CSpace where the kernel installed
+    /// capabilities that were transferred with this message.
+    pub cap_slots: Vec<u32>,
     /// Message data
     pub data: Vec<u8>,
 }

@@ -1,64 +1,51 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useDesktopController } from './useSupervisor';
-import type { LayerOpacities, ViewMode } from '../types';
+import { 
+  useDesktopStore, 
+  selectDesktops,
+  selectActiveIndex,
+  selectViewMode, 
+  selectInVoid,
+  selectLayerOpacities,
+  type DesktopInfo,
+  type ViewMode,
+  type LayerOpacities,
+} from '../../stores';
 
-// Desktop info from Rust
-export interface DesktopInfo {
-  id: number;
-  name: string;
-  active: boolean;
-  windowCount: number;
-}
+// =============================================================================
+// Re-export Types from Store
+// =============================================================================
 
-const DESKTOP_STORAGE_KEY = 'zero-desktop-settings';
+export type { DesktopInfo, ViewMode, LayerOpacities };
 
-// Hook to get all desktops
+// =============================================================================
+// DEPRECATED POLLING HOOKS
+// =============================================================================
+// These hooks now use Zustand stores instead of polling.
+// The stores are updated by the unified render loop in Desktop.tsx.
+// =============================================================================
+
+/**
+ * Hook to get all desktops.
+ * 
+ * @deprecated Use `useDesktopStore(selectDesktops)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useDesktops(): DesktopInfo[] {
-  const desktop = useDesktopController();
-  const [desktops, setDesktops] = useState<DesktopInfo[]>([]);
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      try {
-        const json = desktop.get_desktops_json();
-        const parsed = JSON.parse(json) as DesktopInfo[];
-        setDesktops(parsed);
-      } catch (e) {
-        console.error('Failed to parse desktops:', e);
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 200);
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return desktops;
+  return useDesktopStore(selectDesktops);
 }
 
-// Hook to get active desktop index
+/**
+ * Hook to get active desktop index.
+ * 
+ * @deprecated Use `useDesktopStore(selectActiveIndex)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useActiveDesktop(): number {
-  const desktop = useDesktopController();
-  const [active, setActive] = useState(0);
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      setActive(desktop.get_active_desktop());
-    };
-
-    update();
-    const interval = setInterval(update, 200);
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return active;
+  return useDesktopStore(selectActiveIndex);
 }
 
-// Hook for desktop actions
+// Hook for desktop actions (kept unchanged - wraps WASM calls)
 export function useDesktopActions() {
   const desktop = useDesktopController();
 
@@ -83,61 +70,27 @@ export function useDesktopActions() {
   };
 }
 
-// Hook to get the current view mode
+/**
+ * Hook to get the current view mode.
+ * 
+ * @deprecated Use `useDesktopStore(selectViewMode)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useViewMode(): ViewMode {
-  const desktop = useDesktopController();
-  const [viewMode, setViewMode] = useState<ViewMode>('desktop');
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      try {
-        const mode = desktop.get_view_mode() as string;
-        // Map legacy 'workspace' to 'desktop'
-        if (mode === 'workspace') {
-          setViewMode('desktop');
-        } else {
-          setViewMode(mode as ViewMode);
-        }
-      } catch (e) {
-        // DesktopController may not have this method yet
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 100); // More frequent for responsive UI
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return viewMode;
+  return useDesktopStore(selectViewMode);
 }
 
-// Hook to check if in void mode
+/**
+ * Hook to check if in void mode.
+ * 
+ * @deprecated Use `useDesktopStore(selectInVoid)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useIsInVoid(): boolean {
-  const desktop = useDesktopController();
-  const [isInVoid, setIsInVoid] = useState(false);
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      try {
-        setIsInVoid(desktop.is_in_void());
-      } catch (e) {
-        // DesktopController may not have this method yet
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 100);
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return isInVoid;
+  return useDesktopStore(selectInVoid);
 }
 
-// Hook for void actions
+// Hook for void actions (kept unchanged - wraps WASM calls)
 export function useVoidActions() {
   const desktop = useDesktopController();
 
@@ -155,40 +108,15 @@ export function useVoidActions() {
   return { enterVoid, exitVoid };
 }
 
-// Hook to get layer opacities during crossfade transitions
-// Returns { desktop: number, void: number } where values are 0.0-1.0
+/**
+ * Hook to get layer opacities during crossfade transitions.
+ * Returns { desktop: number, void: number } where values are 0.0-1.0.
+ * 
+ * @deprecated Use `useDesktopStore(selectLayerOpacities)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useLayerOpacities(): LayerOpacities {
-  const desktop = useDesktopController();
-  const [opacities, setOpacities] = useState<LayerOpacities>({ desktop: 1.0, void: 0.0 });
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      try {
-        const mode = desktop.get_view_mode() as string;
-        const transitioning = desktop.is_animating_viewport?.() ?? false;
-
-        if (transitioning) {
-          // During transition, both layers visible with 50/50 opacity
-          setOpacities({ desktop: 0.5, void: 0.5 });
-        } else if (mode === 'workspace' || mode === 'desktop') {
-          setOpacities({ desktop: 1.0, void: 0.0 });
-        } else if (mode === 'void') {
-          setOpacities({ desktop: 0.0, void: 1.0 });
-        }
-      } catch (e) {
-        // Default to desktop visible
-        setOpacities({ desktop: 1.0, void: 0.0 });
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 50); // Fast updates for smooth transitions
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return opacities;
+  return useDesktopStore(selectLayerOpacities);
 }
 
 // =============================================================================

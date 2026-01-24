@@ -27,6 +27,7 @@ export interface Supervisor {
   kill_process(pid: number): void;
   kill_all_processes(): void;
   get_uptime_ms(): number;
+  get_wallclock_ms(): number;
   get_process_count(): number;
   get_total_memory(): number;
   get_endpoint_count(): number;
@@ -45,58 +46,35 @@ export interface Supervisor {
   revoke_capability(pid: bigint, slot: number): boolean;
 
   // ==========================================================================
-  // Identity Service Bridge API
+  // Generic Service IPC API (Thin Boundary Layer)
   // ==========================================================================
 
-  /** 
-   * Generate a new Neural Key for a user.
-   * Returns JSON with shards and public identifiers, or error.
-   * @param userId - User ID as hex string (e.g., "0x1234...")
+  /**
+   * Register a callback for IPC responses from services.
+   * 
+   * This callback is invoked immediately when a SERVICE:RESPONSE debug message
+   * is received from a service process. The callback receives:
+   * - requestId: The response tag as hex string (e.g., "00007055")
+   * - data: The JSON response data as a string
+   * 
+   * This is event-based, not polling-based.
    */
-  identity_generate_neural_key(userId: string): unknown;
+  set_ipc_response_callback(callback: (requestId: string, data: string) => void): void;
 
   /**
-   * Recover a Neural Key from Shamir shards.
-   * Requires at least 3 of 5 shards.
-   * @param userId - User ID as hex string
-   * @param shardsJson - JSON array of shards [{index, hex}, ...]
+   * Send an IPC message to a named service.
+   * 
+   * This is a generic method that:
+   * 1. Finds the service by name (e.g., "identity" -> "identity_service")
+   * 2. Delivers the message to the service's input endpoint (slot 1)
+   * 3. Returns a request_id for tracking the response
+   * 
+   * @param serviceName - Service name without "_service" suffix (e.g., "identity", "vfs")
+   * @param tag - Request message tag (e.g., 0x7054 for MSG_GENERATE_NEURAL_KEY)
+   * @param data - JSON request data as a string
+   * @returns On success: request_id string (e.g., "00007055"); On error: "error:..." string
    */
-  identity_recover_neural_key(userId: string, shardsJson: string): unknown;
-
-  /**
-   * Get stored identity key for a user.
-   * Returns public identifiers if Neural Key exists, null otherwise.
-   * @param userId - User ID as hex string
-   */
-  identity_get_key(userId: string): unknown;
-
-  /**
-   * Create a new machine key record for a user.
-   * @param userId - User ID as hex string
-   * @param name - Human-readable machine name
-   * @param capsJson - JSON of capabilities object
-   */
-  identity_create_machine(userId: string, name: string, capsJson: string): unknown;
-
-  /**
-   * List all machine keys for a user.
-   * @param userId - User ID as hex string
-   */
-  identity_list_machines(userId: string): unknown;
-
-  /**
-   * Revoke/delete a machine key.
-   * @param userId - User ID as hex string
-   * @param machineId - Machine ID as hex string
-   */
-  identity_revoke_machine(userId: string, machineId: string): unknown;
-
-  /**
-   * Rotate keys for a machine.
-   * @param userId - User ID as hex string
-   * @param machineId - Machine ID as hex string
-   */
-  identity_rotate_machine(userId: string, machineId: string): unknown;
+  send_service_ipc(serviceName: string, tag: number, data: string): string;
 }
 
 // =============================================================================

@@ -9,3 +9,4 @@ description = "Process-side syscall library for Zero OS"
 default = []
 
 [dependencies]
+zos-ipc.workspace = true

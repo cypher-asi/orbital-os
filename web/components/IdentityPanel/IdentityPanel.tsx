@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { Panel, PanelDrill, type PanelDrillItem, Menu, type MenuItem, Avatar } from '@cypher-asi/zui';
 import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link } from 'lucide-react';
-import { useIdentity, formatUserId, getSessionTimeRemaining } from '../../desktop/hooks/useIdentity';
+import { 
+  useIdentityStore, 
+  selectCurrentUser, 
+  selectCurrentSession,
+  formatUserId, 
+  getSessionTimeRemaining 
+} from '../../stores';
 import { useZeroIdAuth } from '../../desktop/hooks/useZeroIdAuth';
 import { useWindowActions } from '../../desktop/hooks/useWindows';
 import { setPendingSettingsNavigation } from '../../apps/SettingsApp/SettingsApp';
@@ -23,17 +29,18 @@ function formatUserKey(key: string): string {
 
 export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const identity = useIdentity();
+  
+  // Use Zustand store directly for better performance
+  const identityStore = useIdentityStore();
+  const currentUser = useIdentityStore(selectCurrentUser);
+  const currentSession = useIdentityStore(selectCurrentSession);
+  
   const { remoteAuthState } = useZeroIdAuth();
   const { launchOrFocusApp } = useWindowActions();
   
   // Stack state for drill-down navigation (subpanel overlay)
   const [stack, setStack] = useState<PanelDrillItem[]>([]);
   const isSubpanelOpen = stack.length > 0;
-
-  // Get current user info from identity service
-  const currentUser = identity?.state.currentUser;
-  const currentSession = identity?.state.currentSession;
 
   // Compute display values
   const displayName = currentUser?.displayName ?? 'Not logged in';
@@ -79,15 +86,13 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
         break;
         
       case 'logout':
-        if (identity) {
-          try {
-            await identity.logout();
-            console.log('[identity-panel] Logout successful');
-          } catch (error) {
-            console.error('[identity-panel] Logout failed:', error);
-          }
-          onClose();
+        try {
+          await identityStore.logout();
+          console.log('[identity-panel] Logout successful');
+        } catch (error) {
+          console.error('[identity-panel] Logout failed:', error);
         }
+        onClose();
         return; // Don't open subpanel
         
       default:
@@ -103,7 +108,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
         { id, label: subPanelLabel, content: subPanelContent }
       ]);
     }
-  }, [identity, onClose, isZeroIdConnected, openIdentitySettings]);
+  }, [identityStore, onClose, isZeroIdConnected, openIdentitySettings]);
 
   // Handle breadcrumb navigation within subpanel
   const handleNavigate = useCallback((_id: string, index: number) => {

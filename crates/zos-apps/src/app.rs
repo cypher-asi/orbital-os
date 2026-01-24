@@ -180,14 +180,19 @@ pub struct Message {
     /// Sender's process ID
     pub from_pid: u32,
 
+    /// Capability slots containing transferred capabilities
+    /// These are slots in the receiver's CSpace where the kernel installed
+    /// capabilities that were transferred with this message.
+    pub cap_slots: Vec<u32>,
+
     /// Message payload data
     pub data: Vec<u8>,
 }
 
 impl Message {
     /// Create a new message
-    pub fn new(tag: u32, from_pid: u32, data: Vec<u8>) -> Self {
-        Self { tag, from_pid, data }
+    pub fn new(tag: u32, from_pid: u32, cap_slots: Vec<u32>, data: Vec<u8>) -> Self {
+        Self { tag, from_pid, cap_slots, data }
     }
 }
 

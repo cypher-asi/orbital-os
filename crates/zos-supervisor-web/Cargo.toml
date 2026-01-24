@@ -14,6 +14,7 @@ console_error_panic_hook = ["dep:console_error_panic_hook"]
 
 [dependencies]
 zos-hal.workspace = true
+zos-ipc.workspace = true
 zos-kernel.workspace = true
 zos-desktop = { path = "../zos-desktop", features = ["wasm"] }
 wasm-bindgen.workspace = true

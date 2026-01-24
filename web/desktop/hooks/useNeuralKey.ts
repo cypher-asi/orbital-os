@@ -1,8 +1,18 @@
-import { useState, useCallback } from 'react';
-import { useIdentity, type UserId } from './useIdentity';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useIdentityStore, selectCurrentUser } from '../../stores';
+import { useSupervisor } from './useSupervisor';
+import {
+  IdentityServiceClient,
+  type NeuralShard as ServiceNeuralShard,
+  type NeuralKeyGenerated as ServiceNeuralKeyGenerated,
+  type Supervisor,
+  type LocalKeyStore as ServiceLocalKeyStore,
+  VfsStorageClient,
+  getIdentityKeyStorePath,
+} from '../../services';
 
 // =============================================================================
-// Neural Key Types (mirrors zos-identity/src/ipc.rs)
+// Neural Key Types (public API - mirrors zos-identity/src/ipc.rs)
 // =============================================================================
 
 /**
@@ -52,8 +62,12 @@ export interface NeuralKeyState {
   publicIdentifiers: PublicIdentifiers | null;
   /** When the key was created */
   createdAt: number | null;
+  /** Pending shards (shown during generation, cleared after confirmation) */
+  pendingShards: NeuralShard[] | null;
   /** Loading state */
   isLoading: boolean;
+  /** Whether we're in the initial settling period (component should show nothing) */
+  isInitializing: boolean;
   /** Error message */
   error: string | null;
 }
@@ -68,39 +82,40 @@ export interface UseNeuralKeyReturn {
   generateNeuralKey: () => Promise<NeuralKeyGenerated>;
   /** Recover Neural Key from shards */
   recoverNeuralKey: (shards: NeuralShard[]) => Promise<NeuralKeyGenerated>;
-  /** Check if Neural Key exists */
-  checkNeuralKeyExists: () => Promise<boolean>;
+  /** Confirm shards have been saved - clears pending shards */
+  confirmShardsSaved: () => void;
   /** Refresh state from identity service */
   refresh: () => Promise<void>;
 }
 
 // =============================================================================
-// IPC Message Types (from zos-identity/src/ipc.rs)
+// Response conversion helpers
 // =============================================================================
 
-// key_msg::MSG_GENERATE_NEURAL_KEY = 0x7054
-// key_msg::MSG_GENERATE_NEURAL_KEY_RESPONSE = 0x7055
-// key_msg::MSG_RECOVER_NEURAL_KEY = 0x7056
-// key_msg::MSG_RECOVER_NEURAL_KEY_RESPONSE = 0x7057
-// key_msg::MSG_GET_IDENTITY_KEY = 0x7052
-// key_msg::MSG_GET_IDENTITY_KEY_RESPONSE = 0x7053
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function generateMockHexKey(length: number): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+function bytesToHex(bytes: number[]): string {
+  return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function generateMockShards(): NeuralShard[] {
-  // Generate 5 Shamir shards (3-of-5 threshold)
-  return [1, 2, 3, 4, 5].map(index => ({
-    index,
-    hex: generateMockHexKey(48), // ~384 bits per shard
-  }));
+/**
+ * Convert service response format to public API format
+ */
+function convertServiceResponse(service: ServiceNeuralKeyGenerated): NeuralKeyGenerated {
+  return {
+    publicIdentifiers: {
+      identitySigningPubKey: service.public_identifiers.identity_signing_pub_key,
+      machineSigningPubKey: service.public_identifiers.machine_signing_pub_key,
+      machineEncryptionPubKey: service.public_identifiers.machine_encryption_pub_key,
+    },
+    shards: service.shards.map(s => ({ index: s.index, hex: s.hex })),
+    createdAt: service.created_at,
+  };
+}
+
+/**
+ * Convert public shard format to service format
+ */
+function convertShardsForService(shards: NeuralShard[]): ServiceNeuralShard[] {
+  return shards.map(s => ({ index: s.index, hex: s.hex }));
 }
 
 // =============================================================================
@@ -111,64 +126,88 @@ const INITIAL_STATE: NeuralKeyState = {
   hasNeuralKey: false,
   publicIdentifiers: null,
   createdAt: null,
-  isLoading: false,
+  pendingShards: null,
+  isLoading: true,
+  isInitializing: true, // Start with initializing true - component shows nothing during settle
   error: null,
 };
+
+// How long to wait before showing "no key" message (ms)
+// This gives the VFS cache time to populate on initial load
+const INITIAL_LOAD_SETTLE_DELAY = 500;
 
 // =============================================================================
 // Hook Implementation
 // =============================================================================
 
 export function useNeuralKey(): UseNeuralKeyReturn {
-  const identity = useIdentity();
+  const currentUser = useIdentityStore(selectCurrentUser);
+  const supervisor = useSupervisor();
   const [state, setState] = useState<NeuralKeyState>(INITIAL_STATE);
 
+  // Create a stable reference to the IdentityServiceClient
+  const clientRef = useRef<IdentityServiceClient | null>(null);
+
+  // Track if we've completed the initial load (to avoid premature "no key" flash)
+  const hasCompletedInitialLoadRef = useRef(false);
+
+  // Initialize client when supervisor becomes available
+  useEffect(() => {
+    if (supervisor && !clientRef.current) {
+      // Cast supervisor to the Supervisor interface
+      clientRef.current = new IdentityServiceClient(supervisor as unknown as Supervisor);
+      console.log('[useNeuralKey] IdentityServiceClient initialized');
+    }
+  }, [supervisor]);
+
+  // Get user ID as BigInt for client API
+  const getUserIdBigInt = useCallback((): bigint | null => {
+    const userId = currentUser?.id;
+    if (!userId) return null;
+    if (typeof userId === 'string') {
+      if (userId.startsWith('0x')) {
+        return BigInt(userId);
+      }
+      try {
+        return BigInt(userId);
+      } catch {
+        return null;
+      }
+    }
+    return BigInt(userId);
+  }, [currentUser?.id]);
+
   const generateNeuralKey = useCallback(async (): Promise<NeuralKeyGenerated> => {
-    const userId = identity?.state.currentUser?.id;
+    const userId = getUserIdBigInt();
     if (!userId) {
       throw new Error('No user logged in');
+    }
+
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error('Identity service client not available');
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TODO: Call supervisor IPC with MSG_GENERATE_NEURAL_KEY (0x7054)
-      // Request: GenerateNeuralKeyRequest { user_id: UserId }
-      // Response: GenerateNeuralKeyResponse { result: Result<NeuralKeyGenerated, KeyError> }
-      //
-      // The identity service will:
-      // 1. Generate 32 bytes of secure entropy
-      // 2. Derive Ed25519/X25519 keypairs using HKDF
-      // 3. Split entropy into 5 Shamir shards (3-of-5 threshold)
-      // 4. Store public keys to VFS at /home/{user_id}/.zos/identity/public_keys.json
-      // 5. Return shards + public identifiers (shards are NOT stored)
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Mock response
-      const publicIdentifiers: PublicIdentifiers = {
-        identitySigningPubKey: generateMockHexKey(32),
-        machineSigningPubKey: generateMockHexKey(32),
-        machineEncryptionPubKey: generateMockHexKey(32),
-      };
-
-      const result: NeuralKeyGenerated = {
-        publicIdentifiers,
-        shards: generateMockShards(),
-        createdAt: Date.now(),
-      };
+      console.log(`[useNeuralKey] Generating Neural Key for user ${userId}`);
+      const serviceResult = await client.generateNeuralKey(userId);
+      const result = convertServiceResponse(serviceResult);
 
       setState(prev => ({
         ...prev,
         hasNeuralKey: true,
-        publicIdentifiers,
+        publicIdentifiers: result.publicIdentifiers,
         createdAt: result.createdAt,
+        pendingShards: result.shards,
         isLoading: false,
       }));
 
       return result;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to generate Neural Key';
+      console.error('[useNeuralKey] generateNeuralKey error:', errorMsg);
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -176,12 +215,17 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       }));
       throw err;
     }
-  }, [identity?.state.currentUser?.id]);
+  }, [getUserIdBigInt]);
 
   const recoverNeuralKey = useCallback(async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
-    const userId = identity?.state.currentUser?.id;
+    const userId = getUserIdBigInt();
     if (!userId) {
       throw new Error('No user logged in');
+    }
+
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error('Identity service client not available');
     }
 
     if (shards.length < 3) {
@@ -191,43 +235,24 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TODO: Call supervisor IPC with MSG_RECOVER_NEURAL_KEY (0x7056)
-      // Request: RecoverNeuralKeyRequest { user_id: UserId, shards: Vec<NeuralShard> }
-      // Response: RecoverNeuralKeyResponse { result: Result<NeuralKeyGenerated, KeyError> }
-      //
-      // The identity service will:
-      // 1. Combine shards using Shamir secret sharing
-      // 2. Re-derive Ed25519/X25519 keypairs from recovered entropy
-      // 3. Verify derived public keys match any existing stored keys
-      // 4. Store public keys to VFS
-      // 5. Return new shards + public identifiers
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Mock response - in reality this would derive the same keys from the recovered entropy
-      const publicIdentifiers: PublicIdentifiers = {
-        identitySigningPubKey: generateMockHexKey(32),
-        machineSigningPubKey: generateMockHexKey(32),
-        machineEncryptionPubKey: generateMockHexKey(32),
-      };
-
-      const result: NeuralKeyGenerated = {
-        publicIdentifiers,
-        shards: generateMockShards(), // New shards from recovered entropy
-        createdAt: Date.now(),
-      };
+      console.log(`[useNeuralKey] Recovering Neural Key for user ${userId}`);
+      const serviceShards = convertShardsForService(shards);
+      const serviceResult = await client.recoverNeuralKey(userId, serviceShards);
+      const result = convertServiceResponse(serviceResult);
 
       setState(prev => ({
         ...prev,
         hasNeuralKey: true,
-        publicIdentifiers,
+        publicIdentifiers: result.publicIdentifiers,
         createdAt: result.createdAt,
+        pendingShards: result.shards,
         isLoading: false,
       }));
 
       return result;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to recover Neural Key';
+      console.error('[useNeuralKey] recoverNeuralKey error:', errorMsg);
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -235,65 +260,151 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       }));
       throw err;
     }
-  }, [identity?.state.currentUser?.id]);
+  }, [getUserIdBigInt]);
 
-  const checkNeuralKeyExists = useCallback(async (): Promise<boolean> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
-      return false;
-    }
-
-    try {
-      // TODO: Call supervisor IPC with MSG_GET_IDENTITY_KEY (0x7052)
-      // Request: GetIdentityKeyRequest { user_id: UserId }
-      // Response: GetIdentityKeyResponse { result: Result<Option<LocalKeyStore>, KeyError> }
-      //
-      // Check if public_keys.json exists at /home/{user_id}/.zos/identity/
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Mock: Check current state
-      return state.hasNeuralKey;
-    } catch {
-      return false;
-    }
-  }, [identity?.state.currentUser?.id, state.hasNeuralKey]);
+  const confirmShardsSaved = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      pendingShards: null,
+    }));
+  }, []);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const userId = identity?.state.currentUser?.id;
+    const userId = getUserIdBigInt();
     if (!userId) {
-      setState(INITIAL_STATE);
+      hasCompletedInitialLoadRef.current = true;
+      setState({ ...INITIAL_STATE, isLoading: false, isInitializing: false });
+      return;
+    }
+
+    // Read directly from VfsStorage cache (synchronous, no IPC deadlock)
+    // This follows the canonical pattern: React reads from VFS cache, services write via async syscalls
+    const keyPath = getIdentityKeyStorePath(userId);
+
+    console.log(`[useNeuralKey] Refreshing Neural Key state from VFS cache: ${keyPath}`);
+
+    // Check VfsStorage availability
+    if (!VfsStorageClient.isAvailable()) {
+      console.warn('[useNeuralKey] VfsStorage not available yet');
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        isInitializing: false,
+        error: 'VFS cache not ready',
+      }));
       return;
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-    try {
-      // TODO: Call supervisor IPC with MSG_GET_IDENTITY_KEY (0x7052)
-      // to fetch current key state from VFS
+    // Helper to read key store and update state
+    const readAndUpdateState = (): boolean => {
+      try {
+        // Read key store directly from VFS cache (synchronous)
+        const keyStore = VfsStorageClient.readJsonSync<ServiceLocalKeyStore>(keyPath);
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+        // Log received data for debugging
+        console.log('[useNeuralKey] Read keyStore from VFS cache:', {
+          hasKey: !!keyStore,
+          userId: keyStore?.user_id,
+          hasCreatedAt: keyStore?.created_at !== undefined,
+          createdAt: keyStore?.created_at,
+          epoch: keyStore?.epoch,
+          cacheStats: VfsStorageClient.getCacheStats(),
+        });
 
-      // Mock: Keep current state (in reality would load from VFS)
+        if (keyStore) {
+          // Validate response structure - warn if expected fields are missing
+          if (keyStore.created_at === undefined) {
+            console.warn('[useNeuralKey] LocalKeyStore missing created_at - may be old format');
+          }
+
+          setState(prev => ({
+            ...prev,
+            hasNeuralKey: true,
+            publicIdentifiers: {
+              identitySigningPubKey: '0x' + bytesToHex(keyStore.identity_signing_public_key),
+              machineSigningPubKey: '0x' + bytesToHex(keyStore.machine_signing_public_key),
+              machineEncryptionPubKey: '0x' + bytesToHex(keyStore.machine_encryption_public_key),
+            },
+            // Set createdAt from keyStore.created_at, or null for backward compatibility
+            createdAt: keyStore.created_at ?? null,
+            isLoading: false,
+            isInitializing: false,
+          }));
+          return true; // Key found
+        }
+        return false; // No key found
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to refresh Neural Key state';
+        console.error('[useNeuralKey] refresh error:', errorMsg);
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          isInitializing: false,
+          error: errorMsg,
+        }));
+        return true; // Return true to stop retry (error case)
+      }
+    };
+
+    // First attempt to read key
+    const foundKey = readAndUpdateState();
+
+    if (!foundKey && !hasCompletedInitialLoadRef.current) {
+      // On initial load, wait and retry before showing "no key" message
+      // This gives the VFS cache time to populate
+      console.log('[useNeuralKey] No key found on initial load, waiting before retry...');
+      await new Promise(resolve => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
+
+      // Retry reading
+      const foundKeyOnRetry = readAndUpdateState();
+
+      if (!foundKeyOnRetry) {
+        // Still no key after waiting - now we can show "no key" message
+        console.log('[useNeuralKey] No key store found at', keyPath, '(after settle delay)');
+        setState(prev => ({
+          ...prev,
+          hasNeuralKey: false,
+          publicIdentifiers: null,
+          createdAt: null,
+          isLoading: false,
+          isInitializing: false,
+        }));
+      }
+      // Note: if key was found on retry, readAndUpdateState already set isInitializing: false
+
+      hasCompletedInitialLoadRef.current = true;
+    } else if (!foundKey) {
+      // Not initial load, immediately show "no key" message
+      console.log('[useNeuralKey] No key store found at', keyPath);
       setState(prev => ({
         ...prev,
+        hasNeuralKey: false,
+        publicIdentifiers: null,
+        createdAt: null,
         isLoading: false,
-      }));
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to refresh Neural Key state';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
       }));
     }
-  }, [identity?.state.currentUser?.id]);
+    // Note: if key was found on first attempt, readAndUpdateState already set isInitializing: false
+
+    // Mark initial load as complete
+    hasCompletedInitialLoadRef.current = true;
+  }, [getUserIdBigInt]);
+
+  // Auto-refresh on mount and when user changes
+  // Reads directly from VfsStorage cache, no IPC client needed
+  useEffect(() => {
+    if (currentUser?.id) {
+      refresh();
+    }
+  }, [currentUser?.id, refresh]);
 
   return {
     state,
     generateNeuralKey,
     recoverNeuralKey,
-    checkNeuralKeyExists,
+    confirmShardsSaved,
     refresh,
   };
 }

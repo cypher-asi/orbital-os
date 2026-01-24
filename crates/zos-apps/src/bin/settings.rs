@@ -137,7 +137,7 @@ impl ZeroApp for SettingsApp {
             let event = InputEvent::from_bytes(&msg.data)?;
 
             // Handle text input (navigation commands)
-            if let Some(text) = event.text() {
+            if let Some(text) = event.text_content() {
                 self.handle_input(text);
                 self.send_state(ctx)?;
             }

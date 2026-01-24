@@ -276,3 +276,53 @@ pub static SETTINGS_MANIFEST: AppManifest = AppManifest {
         },
     ],
 };
+
+/// VFS Service manifest (PID 4)
+pub static VFS_SERVICE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.vfs_service",
+    name: "VFS Service",
+    version: "1.0.0",
+    description: "Virtual filesystem service for Zero OS",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::full(),
+            reason: "Receive VFS requests and send responses",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Storage,
+            permissions: Permissions::full(),
+            reason: "Access IndexedDB for persistent filesystem storage",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Filesystem,
+            permissions: Permissions::full(),
+            reason: "Provide filesystem operations to all processes",
+            required: true,
+        },
+    ],
+};
+
+/// Time Service manifest (PID 5)
+pub static TIME_SERVICE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.time_service",
+    name: "Time Service",
+    version: "1.0.0",
+    description: "Time settings management service for Zero OS",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::full(),
+            reason: "Receive time settings requests and send responses",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Storage,
+            permissions: Permissions::read_write(),
+            reason: "Persist time settings to system storage",
+            required: true,
+        },
+    ],
+};

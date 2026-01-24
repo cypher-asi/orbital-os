@@ -41,6 +41,7 @@
 #![no_std]
 extern crate alloc;
 
+pub mod client;
 pub mod error;
 pub mod ipc;
 pub mod keystore;
@@ -58,8 +59,11 @@ pub use service::{SessionService, UserService};
 pub use session::{LocalSession, RemoteAuthState, SessionMetadata};
 pub use types::{User, UserPreferences, UserRegistry, UserRegistryEntry, UserStatus};
 
-// IPC message constants
-pub use ipc::{key_msg, perm_msg, user_msg};
+// IPC message constants - re-export from zos-ipc (single source of truth)
+pub use zos_process::{
+    identity_cred, identity_key, identity_machine, identity_perm, identity_query, identity_remote,
+    identity_session, identity_user,
+};
 
 // Key management IPC types
 pub use ipc::{
@@ -75,3 +79,6 @@ pub use ipc::{
     GenerateNeuralKeyRequest, GenerateNeuralKeyResponse, NeuralKeyGenerated, NeuralShard,
     PublicIdentifiers, RecoverNeuralKeyRequest, RecoverNeuralKeyResponse,
 };
+
+// IPC Client
+pub use client::{IdentityClient, IDENTITY_ENDPOINT_SLOT, INPUT_ENDPOINT_SLOT};

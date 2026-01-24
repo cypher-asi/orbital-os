@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@cypher-asi/zui';
-import { useWindows, useWindowActions } from '../../desktop/hooks/useWindows';
-import { useDesktops, useDesktopActions } from '../../desktop/hooks/useDesktops';
+import { useWindowActions } from '../../desktop/hooks/useWindows';
+import { useDesktopActions } from '../../desktop/hooks/useDesktops';
+import { useWindowStore, selectWindows, useDesktopStore, selectDesktops } from '../../stores';
 import { BeginMenu } from '../BeginMenu/BeginMenu';
 import { IdentityPanel } from '../IdentityPanel';
+import { DateTime } from '../DateTime';
 import { TerminalSquare, AppWindow, Circle, Plus, KeyRound, CreditCard } from 'lucide-react';
 import styles from './Taskbar.module.css';
 
@@ -21,8 +23,11 @@ export function Taskbar() {
   const [beginMenuOpen, setBeginMenuOpen] = useState(false);
   const [identityPanelOpen, setIdentityPanelOpen] = useState(false);
   const beginSectionRef = useRef<HTMLDivElement>(null);
-  const windows = useWindows();
-  const desktops = useDesktops();
+  
+  // Use Zustand stores directly for better performance
+  const windows = useWindowStore(selectWindows);
+  const desktops = useDesktopStore(selectDesktops);
+  
   const { focusWindow, panToWindow, restoreWindow } = useWindowActions();
   const { createDesktop, switchDesktop } = useDesktopActions();
 
@@ -157,6 +162,7 @@ export function Taskbar() {
         >
           <CreditCard size={16} />
         </Button>
+        <DateTime />
         <div className={styles.neuralKeyWrapper}>
           <Button
             variant={identityPanelOpen ? 'glass' : 'transparent'}

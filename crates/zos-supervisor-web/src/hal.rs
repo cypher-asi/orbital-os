@@ -4,10 +4,10 @@
 //! in a web browser using Web Workers for process isolation.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use zos_hal::{HalError, HAL};
+use zos_hal::{HalError, StorageRequestId, HAL};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, Worker};
@@ -18,6 +18,143 @@ use crate::worker::{self, PendingSyscall, WasmProcessHandle, WorkerMessage, Work
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+}
+
+// JS functions for async storage operations
+// These are defined on window.ZosStorage and call IndexedDB
+// The supervisor must call supervisor.init_storage() to set up the callbacks
+#[wasm_bindgen]
+extern "C" {
+    /// Type alias for window object
+    type Window;
+
+    /// Get the global window object
+    #[wasm_bindgen(js_name = "window", thread_local)]
+    static WINDOW: Window;
+
+    /// Start async storage read operation
+    /// JS will call supervisor.notify_storage_read_complete when done
+    #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startRead")]
+    fn zos_storage_start_read(this: &Window, request_id: u32, key: &str);
+
+    /// Start async storage write operation
+    #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startWrite")]
+    fn zos_storage_start_write(this: &Window, request_id: u32, key: &str, value: &[u8]);
+
+    /// Start async storage delete operation
+    #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startDelete")]
+    fn zos_storage_start_delete(this: &Window, request_id: u32, key: &str);
+
+    /// Start async storage list operation
+    #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startList")]
+    fn zos_storage_start_list(this: &Window, request_id: u32, prefix: &str);
+
+    /// Start async storage exists check
+    #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startExists")]
+    fn zos_storage_start_exists(this: &Window, request_id: u32, key: &str);
+}
+
+/// Helper functions to call ZosStorage methods
+fn start_storage_read(request_id: u32, key: &str) {
+    if let Some(window) = web_sys::window() {
+        // Call window.ZosStorage.startRead(request_id, key)
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startRead".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of2(&request_id.into(), &key.into()),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!("[wasm-hal] ZosStorage.startRead not available for request_id={}", request_id));
+}
+
+fn start_storage_write(request_id: u32, key: &str, value: &[u8]) {
+    if let Some(window) = web_sys::window() {
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                let value_array = js_sys::Uint8Array::from(value);
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startWrite".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of3(&request_id.into(), &key.into(), &value_array),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!("[wasm-hal] ZosStorage.startWrite not available for request_id={}", request_id));
+}
+
+fn start_storage_delete(request_id: u32, key: &str) {
+    if let Some(window) = web_sys::window() {
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startDelete".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of2(&request_id.into(), &key.into()),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!("[wasm-hal] ZosStorage.startDelete not available for request_id={}", request_id));
+}
+
+fn start_storage_list(request_id: u32, prefix: &str) {
+    if let Some(window) = web_sys::window() {
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startList".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of2(&request_id.into(), &prefix.into()),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!("[wasm-hal] ZosStorage.startList not available for request_id={}", request_id));
+}
+
+fn start_storage_exists(request_id: u32, key: &str) {
+    if let Some(window) = web_sys::window() {
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startExists".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of2(&request_id.into(), &key.into()),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!("[wasm-hal] ZosStorage.startExists not available for request_id={}", request_id));
 }
 
 /// WASM HAL implementation
@@ -31,6 +168,10 @@ pub struct WasmHal {
     pub(crate) processes: Arc<Mutex<HashMap<u64, WorkerProcess>>>,
     /// Incoming messages from Workers (syscalls, status updates)
     incoming_messages: Arc<Mutex<Vec<WorkerMessage>>>,
+    /// Next storage request ID (monotonically increasing)
+    next_storage_request_id: AtomicU32,
+    /// Pending storage requests: request_id -> requesting PID
+    pending_storage_requests: Arc<Mutex<HashMap<u32, u64>>>,
 }
 
 impl WasmHal {
@@ -40,6 +181,20 @@ impl WasmHal {
             next_pid: AtomicU64::new(1),
             processes: Arc::new(Mutex::new(HashMap::new())),
             incoming_messages: Arc::new(Mutex::new(Vec::new())),
+            next_storage_request_id: AtomicU32::new(1),
+            pending_storage_requests: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+    
+    /// Generate a new unique storage request ID
+    fn next_request_id(&self) -> StorageRequestId {
+        self.next_storage_request_id.fetch_add(1, Ordering::SeqCst)
+    }
+    
+    /// Record a pending storage request
+    fn record_pending_request(&self, request_id: StorageRequestId, pid: u64) {
+        if let Ok(mut pending) = self.pending_storage_requests.lock() {
+            pending.insert(request_id, pid);
         }
     }
 
@@ -532,5 +687,221 @@ impl HAL for WasmHal {
         } else {
             Vec::new()
         }
+    }
+
+    // === Async Platform Storage ===
+
+    fn storage_read_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        self.record_pending_request(request_id, pid);
+        
+        log(&format!(
+            "[wasm-hal] storage_read_async: request_id={}, pid={}, key={}",
+            request_id, pid, key
+        ));
+        
+        // Call JavaScript to start IndexedDB operation
+        start_storage_read(request_id, key);
+        
+        Ok(request_id)
+    }
+
+    fn storage_write_async(&self, pid: u64, key: &str, value: &[u8]) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        self.record_pending_request(request_id, pid);
+        
+        log(&format!(
+            "[wasm-hal] storage_write_async: request_id={}, pid={}, key={}, len={}",
+            request_id, pid, key, value.len()
+        ));
+        
+        // Call JavaScript to start IndexedDB operation
+        start_storage_write(request_id, key, value);
+        
+        Ok(request_id)
+    }
+
+    fn storage_delete_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        self.record_pending_request(request_id, pid);
+        
+        log(&format!(
+            "[wasm-hal] storage_delete_async: request_id={}, pid={}, key={}",
+            request_id, pid, key
+        ));
+        
+        // Call JavaScript to start IndexedDB operation
+        start_storage_delete(request_id, key);
+        
+        Ok(request_id)
+    }
+
+    fn storage_list_async(&self, pid: u64, prefix: &str) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        self.record_pending_request(request_id, pid);
+        
+        log(&format!(
+            "[wasm-hal] storage_list_async: request_id={}, pid={}, prefix={}",
+            request_id, pid, prefix
+        ));
+        
+        // Call JavaScript to start IndexedDB operation
+        start_storage_list(request_id, prefix);
+        
+        Ok(request_id)
+    }
+
+    fn storage_exists_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        self.record_pending_request(request_id, pid);
+        
+        log(&format!(
+            "[wasm-hal] storage_exists_async: request_id={}, pid={}, key={}",
+            request_id, pid, key
+        ));
+        
+        // Call JavaScript to start IndexedDB operation
+        start_storage_exists(request_id, key);
+        
+        Ok(request_id)
+    }
+
+    fn get_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.pending_storage_requests
+            .lock()
+            .ok()
+            .and_then(|pending| pending.get(&request_id).copied())
+    }
+
+    fn take_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.pending_storage_requests
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&request_id))
+    }
+
+    // === Bootstrap Storage (Supervisor Only) ===
+    // These methods use ZosStorage's synchronous cache for reads.
+    // For async operations (init, writes), use vfs module's async functions directly.
+
+    fn bootstrap_storage_init(&self) -> Result<bool, HalError> {
+        // Check if ZosStorage is available (init happens asynchronously via vfs::init)
+        if let Some(window) = web_sys::window() {
+            let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+            if let Some(storage) = zos_storage {
+                if !storage.is_undefined() {
+                    // Check if DB is initialized by looking for the db property
+                    let db = js_sys::Reflect::get(&storage, &"db".into()).ok();
+                    if let Some(db_val) = db {
+                        return Ok(!db_val.is_null() && !db_val.is_undefined());
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn bootstrap_storage_get_inode(&self, path: &str) -> Result<Option<Vec<u8>>, HalError> {
+        // Use ZosStorage.getInodeSync from the in-memory cache
+        if let Some(window) = web_sys::window() {
+            let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+            if let Some(storage) = zos_storage {
+                if !storage.is_undefined() {
+                    // Call getInodeSync
+                    let get_fn = js_sys::Reflect::get(&storage, &"getInodeSync".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
+                    
+                    if let Some(func) = get_fn {
+                        let result = func.call1(&storage, &path.into()).ok();
+                        if let Some(inode) = result {
+                            if !inode.is_null() && !inode.is_undefined() {
+                                // Serialize to JSON
+                                let json = js_sys::JSON::stringify(&inode).ok();
+                                if let Some(json_str) = json {
+                                    let json_string: String = json_str.into();
+                                    return Ok(Some(json_string.into_bytes()));
+                                }
+                            }
+                        }
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        Err(HalError::NotSupported)
+    }
+
+    fn bootstrap_storage_put_inode(&self, path: &str, inode_json: &[u8]) -> Result<(), HalError> {
+        // Parse JSON and call ZosStorage.putInode asynchronously via spawn_local
+        // Note: This returns immediately; the actual write completes asynchronously.
+        // For bootstrap where waiting is required, use vfs::putInode().await directly.
+        if let Some(window) = web_sys::window() {
+            let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+            if let Some(storage) = zos_storage {
+                if !storage.is_undefined() {
+                    // Parse the JSON
+                    let json_str = String::from_utf8_lossy(inode_json);
+                    let inode = js_sys::JSON::parse(&json_str).ok();
+                    
+                    if let Some(inode_obj) = inode {
+                        // Call putInode (this is async but we fire-and-forget)
+                        let put_fn = js_sys::Reflect::get(&storage, &"putInode".into())
+                            .ok()
+                            .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
+                        
+                        if let Some(func) = put_fn {
+                            let _ = func.call2(&storage, &path.into(), &inode_obj);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        Err(HalError::NotSupported)
+    }
+
+    fn bootstrap_storage_inode_count(&self) -> Result<u64, HalError> {
+        // Use ZosStorage.inodeCache.size from the in-memory cache
+        if let Some(window) = web_sys::window() {
+            let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+            if let Some(storage) = zos_storage {
+                if !storage.is_undefined() {
+                    // Get inodeCache.size
+                    let cache = js_sys::Reflect::get(&storage, &"inodeCache".into()).ok();
+                    if let Some(cache_obj) = cache {
+                        let size = js_sys::Reflect::get(&cache_obj, &"size".into()).ok();
+                        if let Some(size_val) = size {
+                            if let Some(n) = size_val.as_f64() {
+                                return Ok(n as u64);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(HalError::NotSupported)
+    }
+
+    fn bootstrap_storage_clear(&self) -> Result<(), HalError> {
+        // Call ZosStorage.clear() asynchronously
+        // Note: This returns immediately; the actual clear completes asynchronously.
+        // For bootstrap where waiting is required, use vfs::clear().await directly.
+        if let Some(window) = web_sys::window() {
+            let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+            if let Some(storage) = zos_storage {
+                if !storage.is_undefined() {
+                    let clear_fn = js_sys::Reflect::get(&storage, &"clear".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
+                    
+                    if let Some(func) = clear_fn {
+                        let _ = func.call0(&storage);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(HalError::NotSupported)
     }
 }

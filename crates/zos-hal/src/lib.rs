@@ -150,6 +150,173 @@ pub trait HAL: Send + Sync + 'static {
     fn set_message_callback(&self, _callback: Option<MessageCallback<Self::ProcessHandle>>) {
         // Default: no-op, use polling
     }
+
+    // === Async Platform Storage ===
+    // These methods start async storage operations and return immediately with a request_id.
+    // Results are delivered via push callbacks (see notify_storage_* methods).
+
+    /// Start async read from platform storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_storage_read_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `key` - Storage key to read
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_read_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async write to platform storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_storage_write_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `key` - Storage key to write
+    /// * `value` - Data to store
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_write_async(&self, _pid: u64, _key: &str, _value: &[u8]) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async delete from platform storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_storage_write_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `key` - Storage key to delete
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_delete_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async list keys with prefix (returns immediately)
+    ///
+    /// The result will be delivered via notify_storage_list_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `prefix` - Key prefix to match
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_list_async(&self, _pid: u64, _prefix: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async exists check (returns immediately)
+    ///
+    /// The result will be delivered via notify_storage_exists_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `key` - Storage key to check
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_exists_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Get the PID associated with a pending storage request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to look up
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request
+    /// * `None` - Request ID not found
+    fn get_storage_request_pid(&self, _request_id: StorageRequestId) -> Option<u64> {
+        None
+    }
+
+    /// Remove and return the PID for a completed storage request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to remove
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request (now removed)
+    /// * `None` - Request ID not found
+    fn take_storage_request_pid(&self, _request_id: StorageRequestId) -> Option<u64> {
+        None
+    }
+
+    // === Bootstrap Storage (Supervisor Only) ===
+    // These methods are used ONLY during supervisor initialization before processes exist.
+    // They provide direct storage access for bootstrap operations like creating the root
+    // filesystem structure. After Init starts, all storage access should go through
+    // processes using syscalls routed via HAL.
+
+    /// Initialize bootstrap storage (supervisor boot only).
+    ///
+    /// This initializes the underlying storage backend (e.g., IndexedDB) for
+    /// use during supervisor bootstrap. Must be called before other bootstrap
+    /// storage operations.
+    ///
+    /// # Returns
+    /// * `Ok(true)` - Storage initialized successfully
+    /// * `Err(HalError)` - Initialization failed
+    fn bootstrap_storage_init(&self) -> Result<bool, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Read an inode from bootstrap storage (supervisor boot only).
+    ///
+    /// # Arguments
+    /// * `path` - The filesystem path to read
+    ///
+    /// # Returns
+    /// * `Ok(Some(data))` - Inode data as JSON bytes
+    /// * `Ok(None)` - Path not found
+    /// * `Err(HalError)` - Read failed
+    fn bootstrap_storage_get_inode(&self, _path: &str) -> Result<Option<Vec<u8>>, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Write an inode to bootstrap storage (supervisor boot only).
+    ///
+    /// # Arguments
+    /// * `path` - The filesystem path
+    /// * `inode_json` - The inode data as JSON bytes
+    ///
+    /// # Returns
+    /// * `Ok(())` - Write successful
+    /// * `Err(HalError)` - Write failed
+    fn bootstrap_storage_put_inode(&self, _path: &str, _inode_json: &[u8]) -> Result<(), HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Get the count of inodes in storage (supervisor boot only).
+    ///
+    /// # Returns
+    /// * `Ok(count)` - Number of inodes
+    /// * `Err(HalError)` - Count failed
+    fn bootstrap_storage_inode_count(&self) -> Result<u64, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Clear all storage data (supervisor only, for testing/reset).
+    ///
+    /// # Returns
+    /// * `Ok(())` - Clear successful
+    /// * `Err(HalError)` - Clear failed
+    fn bootstrap_storage_clear(&self) -> Result<(), HalError> {
+        Err(HalError::NotSupported)
+    }
 }
 
 /// HAL errors
@@ -169,7 +336,12 @@ pub enum HalError {
     IoError,
     /// Invalid argument
     InvalidArgument,
+    /// Storage operation failed
+    StorageError,
 }
+
+/// Request ID for tracking async storage operations
+pub type StorageRequestId = u32;
 
 /// Process message types (used in IPC between HAL and processes)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

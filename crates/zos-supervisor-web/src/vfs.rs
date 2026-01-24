@@ -1,29 +1,48 @@
-//! VFS Storage - IndexedDB persistence for Virtual Filesystem
+//! Bootstrap VFS Storage - Internal module for supervisor bootstrap operations
+//!
+//! This module provides async access to ZosStorage for bootstrap operations.
+//! It is used ONLY during supervisor initialization before processes exist.
+//!
+//! ## Why This Module Exists
+//!
+//! The HAL trait methods are synchronous, but IndexedDB operations are async.
+//! This module bridges that gap by providing async wasm_bindgen extern functions
+//! that can be awaited during bootstrap.
+//!
+//! ## Access Patterns
+//!
+//! After bootstrap completes:
+//! - Process storage operations use syscalls which route through HAL
+//! - HAL sync methods (bootstrap_storage_*) use ZosStorage's in-memory cache
+//! - React UI reads from ZosStorage caches (read-only)
+//!
+//! This module is internal to zos-supervisor-web and should not be used
+//! outside of boot.rs bootstrap sequence.
 
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    /// VfsStorage JavaScript object for IndexedDB persistence
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    /// ZosStorage JavaScript object for IndexedDB persistence (bootstrap only)
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn init() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn clear() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn getInodeCount() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn putInode(path: &str, inode: JsValue) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn getInode(path: &str) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn putContent(path: &str, data: &[u8]) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = VfsStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorage)]
     pub async fn getContent(path: &str) -> JsValue;
 }
 

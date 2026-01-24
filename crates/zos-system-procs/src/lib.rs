@@ -94,21 +94,16 @@ pub const CMD_PONG_MODE: u32 = 0x3002;
 // Response Tags
 // ============================================================================
 
-/// Memory status response
-pub const MSG_MEMORY_STATUS: u32 = 0x4001;
-/// Sender statistics response
-pub const MSG_SENDER_STATS: u32 = 0x4002;
-/// Receiver statistics response
-pub const MSG_RECEIVER_STATS: u32 = 0x4003;
-/// Latency statistics response
-pub const MSG_LATENCY_STATS: u32 = 0x4004;
-
-/// Ping message
-pub const MSG_PING: u32 = 0x5001;
-/// Pong response
-pub const MSG_PONG: u32 = 0x5002;
-/// Data message (for sender/receiver tests)
-pub const MSG_DATA: u32 = 0x5003;
+// Re-export diagnostic message constants from zos-ipc (the single source of truth)
+pub use zos_process::diagnostics::{
+    MSG_MEMORY_STATUS,
+    MSG_SENDER_STATS,
+    MSG_RECEIVER_STATS,
+    MSG_LATENCY_STATS,
+    MSG_PING,
+    MSG_PONG,
+    MSG_DATA,
+};
 
 // ============================================================================
 // Statistics Structures

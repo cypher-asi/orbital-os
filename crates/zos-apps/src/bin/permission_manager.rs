@@ -28,29 +28,19 @@ use zos_apps::syscall;
 use zos_apps::{app_main, AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 
 // =============================================================================
-// Protocol Constants
+// Protocol Constants (from zos-ipc via zos-process)
 // =============================================================================
+// All IPC message constants are defined in zos-ipc as the single source of truth.
 
-/// Request a capability from PermissionManager
-/// Payload: [object_type: u8, permissions: u8, reason_len: u16, reason: [u8]]
-pub const MSG_REQUEST_CAPABILITY: u32 = 0x2010;
+pub use zos_apps::pm::{
+    MSG_REQUEST_CAPABILITY,
+    MSG_REVOKE_CAPABILITY,
+    MSG_LIST_MY_CAPS,
+    MSG_CAPABILITY_RESPONSE,
+    MSG_CAPS_LIST_RESPONSE,
+};
 
-/// Request capability revocation
-/// Payload: [slot: u32]
-pub const MSG_REVOKE_CAPABILITY: u32 = 0x2011;
-
-/// Query own capabilities
-/// Payload: (empty)
-pub const MSG_LIST_MY_CAPS: u32 = 0x2012;
-
-/// Response from PermissionManager
-/// Success: [1, slot: u32]
-/// Failure: [0, error_len: u16, error: [u8]]
-pub const MSG_CAPABILITY_RESPONSE: u32 = 0x2013;
-
-/// List response
-/// Payload: [count: u8, (slot: u32, type: u8, perms: u8)...]
-pub const MSG_CAPS_LIST_RESPONSE: u32 = 0x2014;
+pub use zos_apps::supervisor::MSG_SUPERVISOR_REVOKE_CAP;
 
 // =============================================================================
 // Object Types (mirrors zero-kernel)
@@ -356,6 +346,75 @@ impl PermissionManager {
         Ok(())
     }
 
+    /// Handle supervisor request to revoke a capability from a process.
+    ///
+    /// The supervisor sends this message when the UI requests capability revocation.
+    /// PM performs the revocation and notifies the affected process.
+    ///
+    /// Payload: [target_pid: u32, slot: u32, reason: u8]
+    fn handle_supervisor_revoke(&mut self, msg: &Message) -> Result<(), AppError> {
+        // Verify sender is supervisor (PID 0)
+        if msg.from_pid != 0 {
+            syscall::debug(&format!(
+                "PermMgr: SECURITY - Supervisor revoke request from non-supervisor PID {}",
+                msg.from_pid
+            ));
+            return Ok(());
+        }
+        
+        // Parse payload
+        if msg.data.len() < 9 {
+            syscall::debug("PermMgr: Invalid supervisor revoke payload (too short)");
+            return Ok(());
+        }
+        
+        let target_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
+        let slot = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]);
+        let reason = msg.data[8];
+        
+        syscall::debug(&format!(
+            "PermMgr: Supervisor revoke request for PID {} slot {} reason {}",
+            target_pid, slot, reason
+        ));
+        
+        // Perform the revocation via syscall
+        // Uses privileged cap_revoke_from to revoke from another process
+        match syscall::cap_revoke_from(target_pid, slot) {
+            Ok(()) => {
+                syscall::debug(&format!(
+                    "PermMgr: Successfully revoked cap from PID {} slot {}",
+                    target_pid, slot
+                ));
+                
+                // Remove from our tracking if we have it
+                for obj_type in 1..=8u8 {
+                    let key = (target_pid, obj_type);
+                    if let Some(grant) = self.granted_caps.get(&key) {
+                        if grant.slot == slot {
+                            self.granted_caps.remove(&key);
+                            break;
+                        }
+                    }
+                }
+                
+                // Notify the affected process via debug channel
+                // The supervisor or Init can route this notification
+                syscall::debug(&format!(
+                    "PERMMGR:REVOKED:{}:{}:{}",
+                    target_pid, slot, reason
+                ));
+            }
+            Err(e) => {
+                syscall::debug(&format!(
+                    "PermMgr: Revoke syscall failed for PID {} slot {}: {}",
+                    target_pid, slot, e
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+
     /// Send success response
     fn send_success_response(
         &self,
@@ -433,6 +492,7 @@ impl ZeroApp for PermissionManager {
             MSG_REQUEST_CAPABILITY => self.handle_cap_request(ctx, &msg),
             MSG_REVOKE_CAPABILITY => self.handle_cap_revoke(ctx, &msg),
             MSG_LIST_MY_CAPS => self.handle_list_caps(ctx, &msg),
+            MSG_SUPERVISOR_REVOKE_CAP => self.handle_supervisor_revoke(&msg),
             _ => {
                 syscall::debug(&format!(
                     "PermMgr: Unknown message tag 0x{:x} from PID {}",

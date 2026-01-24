@@ -7,6 +7,7 @@ members = [
     "crates/zos-hal",
     "crates/zos-identity",
     "crates/zos-init",
+    "crates/zos-ipc",
     "crates/zos-kernel",
     "crates/zos-process",
     "crates/zos-system-procs",
@@ -29,6 +30,7 @@ zos-desktop = { path = "crates/zos-desktop" }
 zos-hal = { path = "crates/zos-hal" }
 zos-identity = { path = "crates/zos-identity" }
 zos-init = { path = "crates/zos-init" }
+zos-ipc = { path = "crates/zos-ipc" }
 zos-kernel = { path = "crates/zos-kernel" }
 zos-process = { path = "crates/zos-process" }
 zos-system-procs = { path = "crates/zos-system-procs" }

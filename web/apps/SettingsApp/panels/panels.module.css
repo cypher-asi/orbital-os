@@ -17,10 +17,11 @@
 /* Menu content wrapper with bottom padding only */
 .menuContent {
   padding: 0 0 12px 0;
+  overflow: visible;
 }
 
-/* Remove left/right padding from all divs inside collapsible (GroupCollapsible content area) */
-.collapsibleSection :global(div) {
+/* Remove left/right padding from direct children of collapsible (GroupCollapsible content area) */
+.collapsibleSection > :global(div) > :global(div) {
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
@@ -138,6 +139,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
+  z-index: 100;
 }
 
 /* Drill content wrapper */
@@ -145,6 +148,14 @@
   padding: 0;
   height: 100%;
   overflow-y: auto;
+}
+
+/* Empty state wrapper - fills panel and centers content */
+.emptyStateWrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  justify-content: center;
 }
 
 /* Empty state for panels */
@@ -179,4 +190,464 @@
 
 .dangerCardItem svg {
   color: var(--color-danger, #ef4444);
+}
+
+/* =============================================================================
+   Identity Settings Panel Styles
+   ============================================================================= */
+
+/* Identity section container with padding */
+.identitySection {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Centered content wrapper - for hero screens that should be vertically centered */
+.centeredContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 16px;
+  gap: 12px;
+  text-align: center;
+}
+
+/* Hero section for Neural Key */
+.identityHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 16px;
+  gap: 12px;
+}
+
+.heroIcon {
+  color: var(--color-accent, #01f4cb);
+  opacity: 0.8;
+}
+
+.heroTitle {
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+}
+
+.heroDescription {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+/* Status hero (for active state) */
+.statusHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+.statusIconActive {
+  color: var(--color-success, #22c55e);
+  padding: 12px;
+  background: var(--color-success-muted, rgba(34, 197, 94, 0.1));
+  border-radius: 50%;
+}
+
+/* Button container */
+.buttonContainer {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.generateButton,
+.confirmButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Info card */
+.infoCard {
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+/* Warning card */
+.warningCard {
+  background: var(--color-warning-muted, rgba(245, 158, 11, 0.08));
+  border: 1px solid var(--color-warning, rgba(245, 158, 11, 0.25));
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+.warningCardItem {
+  color: var(--color-warning, #f59e0b);
+}
+
+.warningCardItem svg {
+  color: var(--color-warning, #f59e0b);
+}
+
+/* Shard list */
+.shardList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shardItem {
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.shardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.shardCode {
+  display: block;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-accent, #01f4cb);
+  background: var(--color-surface-dark, rgba(0, 0, 0, 0.2));
+  padding: 8px 12px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.copyButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Shards section padding */
+.shardsSectionPadding {
+  padding-top: 16px;
+  padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shardsSectionPadding > .buttonContainer {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+/* Copy all shards button container */
+.copyAllContainer {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 20px;
+}
+
+/* Individual shard item */
+.shardItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px !important;
+  margin-left: 20px;
+  margin-right: 20px;
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+}
+
+.shardInfo {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.shardCodeInline {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--color-accent, #01f4cb);
+  letter-spacing: 0.5px;
+}
+
+/* Key details */
+.keyDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.keyDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.keyDetailLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.keyDetailValue {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-primary, #fff);
+  word-break: break-all;
+}
+
+.neuralprintRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Machine card */
+.machineCard {
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.machineDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.machineDetailRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.machineDetailRow code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 10px;
+}
+
+.machineActions {
+  display: flex;
+  gap: 8px;
+}
+
+.lastSeen {
+  font-size: 11px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+/* =============================================================================
+   Machine Item - Single line layout to match other settings items
+   Icon | Name · Key | Copy | Current | Action
+   ============================================================================= */
+
+.machineItem {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 16px;
+  gap: 8px;
+  transition: background 0.15s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.machineItem:hover {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.04));
+}
+
+/* Raise z-index when dropdown is open (focus-within) */
+.machineItem:focus-within {
+  z-index: 100;
+}
+
+/* Icon section */
+.machineItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+}
+
+/* Content section - Single line: Name · Key */
+.machineItemContentSingle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Primary label (machine name) */
+.machineItemLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #fff);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Separator between name and key */
+.machineItemSeparator {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
+  flex-shrink: 0;
+}
+
+/* Key fingerprint (inline) */
+.machineItemKey {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  top: 2px;
+}
+
+/* Action section - ButtonMore */
+.machineItemAction {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.copyIconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  transition: all 0.15s ease;
+}
+
+.copyIconButton:hover {
+  background: var(--color-surface, rgba(255, 255, 255, 0.1));
+  color: var(--color-text-primary, #fff);
+}
+
+.copiedIcon {
+  color: var(--color-success, #22c55e);
+}
+
+/* Add form */
+.addForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.addFormButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.addButton {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Confirm buttons */
+.confirmButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+/* Verification flow */
+.verificationFlow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.verificationInput {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.verificationButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.errorText {
+  font-size: 12px;
+  color: var(--color-danger, #ef4444);
+}
+
+/* Disabled/Coming Soon items */
+.disabledIcon {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
+}
+
+.comingSoonLabel {
+  opacity: 0.5;
+}
+
+/* Loading state */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty state text */
+.emptyIcon {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
+}
+
+.emptyText {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.emptySubtext {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
 }

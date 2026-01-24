@@ -11,14 +11,12 @@ crate-type = ["rlib"]
 [features]
 default = []
 std = []
-wasm = ["wasm-bindgen", "js-sys"]
+# Note: Browser-specific IndexedDB access is now handled by ZosStorage (JS)
+# and accessed through HAL methods in zos-supervisor-web.
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# WASM-specific dependencies
-wasm-bindgen = { workspace = true, optional = true }
-js-sys = { workspace = true, optional = true }
+zos-process = { path = "../zos-process" }
 
 [dev-dependencies]

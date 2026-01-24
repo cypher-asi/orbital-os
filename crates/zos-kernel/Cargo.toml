@@ -12,6 +12,8 @@ std = []
 [dependencies]
 zos-axiom.workspace = true
 zos-hal.workspace = true
+zos-ipc.workspace = true
+zos-vfs.workspace = true
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]

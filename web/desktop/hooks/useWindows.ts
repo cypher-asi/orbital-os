@@ -1,104 +1,45 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useDesktopController, useSupervisor } from './useSupervisor';
+import { 
+  useWindowStore, 
+  selectWindows, 
+  selectFocusedId,
+  type WindowInfo,
+  type WindowData,
+  type WindowType,
+} from '../../stores';
 
 // =============================================================================
-// Window Types
+// Re-export Types from Store
 // =============================================================================
 
-/** Window type determines the chrome/presentation style */
-export type WindowType = 'standard' | 'widget';
+export type { WindowInfo, WindowData, WindowType };
 
-// Window info with screen-space rect (for React positioning)
-// Note: This is returned by Rust's tick_frame() in the unified render loop.
-// Components that need screen rects should receive them as props from Desktop.tsx,
-// NOT by polling independently (which causes animation jank).
-export interface WindowInfo {
-  id: number;
-  title: string;
-  appId: string;
-  /** Associated process ID (for terminal windows) */
-  processId?: number;
-  state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
-  windowType: WindowType;
-  focused: boolean;
-  zOrder: number;
-  opacity: number;
-  contentInteractive: boolean;
-  screenRect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+// =============================================================================
+// DEPRECATED POLLING HOOKS
+// =============================================================================
+// These hooks now use Zustand stores instead of polling.
+// The stores are updated by the unified render loop in Desktop.tsx.
+// =============================================================================
+
+/**
+ * Hook to get all windows data.
+ * 
+ * @deprecated Use `useWindowStore(selectWindows)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
+export function useWindows(): WindowInfo[] {
+  return useWindowStore(selectWindows);
 }
 
-// Basic window data (for taskbar, window lists - not animation-critical)
-export interface WindowData {
-  id: number;
-  title: string;
-  appId: string;
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
-  windowType: WindowType;
-  zOrder: number;
-  focused: boolean;
-}
-
-// =============================================================================
-// DEPRECATED: useWindowScreenRects
-// =============================================================================
-// This hook has been removed. Window screen rects are now provided by the
-// unified render loop in Desktop.tsx via Rust's tick_frame() method.
-// This ensures windows and background are always in sync during animations.
-// =============================================================================
-
-// Hook to get all windows data
-export function useWindows(): WindowData[] {
-  const desktop = useDesktopController();
-  const [windows, setWindows] = useState<WindowData[]>([]);
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      try {
-        const json = desktop.get_windows_json();
-        const parsed = JSON.parse(json) as WindowData[];
-        setWindows(parsed);
-      } catch (e) {
-        console.error('Failed to parse windows:', e);
-      }
-    };
-
-    // Update periodically
-    update();
-    const interval = setInterval(update, 100);
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return windows;
-}
-
-// Hook to get focused window ID
+/**
+ * Hook to get focused window ID.
+ * 
+ * @deprecated Use `useWindowStore(selectFocusedId)` directly for better performance.
+ * This hook is kept for backward compatibility.
+ */
 export function useFocusedWindow(): number | null {
-  const desktop = useDesktopController();
-  const [focusedId, setFocusedId] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!desktop) return;
-
-    const update = () => {
-      const id = desktop.get_focused_window();
-      setFocusedId(id !== undefined ? Number(id) : null);
-    };
-
-    update();
-    const interval = setInterval(update, 100);
-    return () => clearInterval(interval);
-  }, [desktop]);
-
-  return focusedId;
+  return useWindowStore(selectFocusedId);
 }
 
 // Module-level cache for terminal WASM binary

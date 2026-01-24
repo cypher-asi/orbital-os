@@ -221,7 +221,8 @@ impl TerminalInput {
 
 /// Console input message tag (from supervisor)
 /// This is the tag used when supervisor sends raw console input to terminal.
-pub const MSG_CONSOLE_INPUT: u32 = 0x0002;
+/// Re-exported from zos-ipc via zos-process.
+pub use zos_process::MSG_CONSOLE_INPUT;
 
 #[cfg(test)]
 mod tests {

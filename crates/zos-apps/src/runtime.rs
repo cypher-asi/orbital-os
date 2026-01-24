@@ -90,7 +90,7 @@ impl AppRuntime {
             // Poll for incoming messages
             if let Some(slot) = self.input_slot {
                 while let Some(msg) = syscall::receive(slot) {
-                    let message = Message::new(msg.tag, msg.from_pid, msg.data);
+                    let message = Message::new(msg.tag, msg.from_pid, msg.cap_slots, msg.data);
                     if let Err(e) = app.on_message(&ctx, message) {
                         syscall::debug(&format!("Message handling error: {}", e));
                     }

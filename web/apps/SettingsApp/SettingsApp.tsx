@@ -5,6 +5,7 @@ import { GeneralPanel } from './panels/GeneralPanel';
 import { IdentitySettingsPanel } from './panels/IdentitySettingsPanel';
 import { PermissionsPanel } from './panels/PermissionsPanel';
 import { ThemePanel } from './panels/ThemePanel';
+import { useSettingsStore, selectTimeFormat24h, selectTimezone } from '../../stores';
 import styles from './SettingsApp.module.css';
 
 // Custom event type for settings navigation
@@ -25,29 +26,9 @@ export function setPendingSettingsNavigation(section: SettingsArea) {
 // Settings areas
 type SettingsArea = 'general' | 'identity' | 'permissions' | 'theme';
 
-interface SettingsState {
-  activeArea: SettingsArea;
-  // General
-  timeFormat24h: boolean;
-  timezone: string;
-  // Identity summary
-  hasNeuralKey: boolean;
-  machineKeyCount: number;
-  linkedAccountCount: number;
-}
-
-const DEFAULT_STATE: SettingsState = {
-  activeArea: 'general',
-  timeFormat24h: false,
-  timezone: 'UTC',
-  hasNeuralKey: false,
-  machineKeyCount: 0,
-  linkedAccountCount: 0,
-};
-
 // Area labels
 const AREA_LABELS: Record<SettingsArea, string> = {
-  general: 'General',
+  general: 'Time',
   identity: 'Identity',
   permissions: 'Permissions',
   theme: 'Theme',
@@ -58,10 +39,20 @@ const AREA_LABELS: Record<SettingsArea, string> = {
  *
  * Uses ZUI components: Panel, Navigator, PanelDrill
  * Layout: Split-pane with left navigation and right PanelDrill content
+ *
+ * Time settings are managed via the global settingsStore which syncs with
+ * the time_service WASM process for persistence.
  */
 export function SettingsApp() {
-  const [state, setState] = useState<SettingsState>(DEFAULT_STATE);
-  
+  // Navigation state (local to this component)
+  const [activeArea, setActiveArea] = useState<SettingsArea>('identity');
+
+  // Time settings from global store (synced with time_service)
+  const timeFormat24h = useSettingsStore(selectTimeFormat24h);
+  const timezone = useSettingsStore(selectTimezone);
+  const setTimeFormat24h = useSettingsStore((state) => state.setTimeFormat24h);
+  const setTimezone = useSettingsStore((state) => state.setTimezone);
+
   // Use ref for pushPanel to avoid circular dependency in content creation
   const pushPanelRef = useRef<(item: PanelDrillItem) => void>(() => {});
 
@@ -72,62 +63,43 @@ export function SettingsApp() {
       case 'general':
         return (
           <GeneralPanel
-            timeFormat24h={state.timeFormat24h}
-            timezone={state.timezone}
-            onTimeFormatChange={(value) =>
-              setState((prev) => ({ ...prev, timeFormat24h: value }))
-            }
-            onTimezoneChange={(value) =>
-              setState((prev) => ({ ...prev, timezone: value }))
-            }
+            timeFormat24h={timeFormat24h}
+            timezone={timezone}
+            onTimeFormatChange={setTimeFormat24h}
+            onTimezoneChange={setTimezone}
           />
         );
       case 'identity':
-        return (
-          <IdentitySettingsPanel
-            hasNeuralKey={state.hasNeuralKey}
-            machineKeyCount={state.machineKeyCount}
-            linkedAccountCount={state.linkedAccountCount}
-          />
-        );
+        // Use ref to avoid recreating when pushPanel changes
+        return <IdentitySettingsPanel onDrillDown={(item) => pushPanelRef.current(item)} />;
       case 'permissions':
         // Use ref to avoid recreating when pushPanel changes
         return <PermissionsPanel onDrillDown={(item) => pushPanelRef.current(item)} />;
       case 'theme':
         return <ThemePanel />;
     }
-  }, [state.timeFormat24h, state.timezone, state.hasNeuralKey, state.machineKeyCount, state.linkedAccountCount]);
+  }, [timeFormat24h, timezone, setTimeFormat24h, setTimezone]);
 
   // Initialize stack with root item - content created once on mount
+  // We use a ref to track initialization and update once store values are available
   const [stack, setStack] = useState<PanelDrillItem[]>(() => [{
-    id: 'general',
-    label: AREA_LABELS.general,
-    content: (
-      <GeneralPanel
-        timeFormat24h={DEFAULT_STATE.timeFormat24h}
-        timezone={DEFAULT_STATE.timezone}
-        onTimeFormatChange={(value) =>
-          setState((prev) => ({ ...prev, timeFormat24h: value }))
-        }
-        onTimezoneChange={(value) =>
-          setState((prev) => ({ ...prev, timezone: value }))
-        }
-      />
-    ),
+    id: 'identity',
+    label: AREA_LABELS.identity,
+    content: null, // Will be populated in useEffect
   }]);
 
   // Navigation items
   const navItems: NavigatorItem[] = useMemo(
     () => [
       {
-        id: 'general',
-        label: 'General',
-        icon: <Clock size={14} />,
-      },
-      {
         id: 'identity',
         label: 'Identity',
         icon: <User size={14} />,
+      },
+      {
+        id: 'general',
+        label: 'Time',
+        icon: <Clock size={14} />,
       },
       {
         id: 'permissions',
@@ -156,7 +128,7 @@ export function SettingsApp() {
   // Handle area selection from left menu - reset stack to new section
   const handleAreaSelect = useCallback((id: string) => {
     const area = id as SettingsArea;
-    setState((prev) => ({ ...prev, activeArea: area }));
+    setActiveArea(area);
     // Reset stack to just the new section's root item
     setStack([{
       id: area,
@@ -185,7 +157,7 @@ export function SettingsApp() {
       }
       return prev;
     });
-  }, [state.timeFormat24h, state.timezone, state.hasNeuralKey, state.machineKeyCount, state.linkedAccountCount, createContentForArea]);
+  }, [timeFormat24h, timezone, createContentForArea]);
 
   // Listen for external navigation events (e.g., from Identity Panel)
   useEffect(() => {
@@ -204,6 +176,21 @@ export function SettingsApp() {
       window.removeEventListener('settings:navigate', handleNavigateEvent);
     };
   }, [handleAreaSelect]);
+
+  // Listen for panel drill back navigation events
+  useEffect(() => {
+    const handleBackEvent = () => {
+      setStack(prev => {
+        if (prev.length <= 1) return prev;
+        return prev.slice(0, -1);
+      });
+    };
+
+    window.addEventListener('paneldrill:back', handleBackEvent);
+    return () => {
+      window.removeEventListener('paneldrill:back', handleBackEvent);
+    };
+  }, []);
 
   // Check for pending navigation on mount (handles race condition when Settings is opened)
   // Note: We intentionally use a ref to capture handleAreaSelect to avoid re-running
@@ -225,7 +212,7 @@ export function SettingsApp() {
       <div className={styles.sidebar}>
         <Navigator
           items={navItems}
-          value={state.activeArea}
+          value={activeArea}
           onChange={handleAreaSelect}
           background="none"
           border="none"
@@ -238,7 +225,7 @@ export function SettingsApp() {
           stack={stack}
           onNavigate={handleNavigate}
           showBreadcrumb={true}
-          variant="default"
+          border="none"
           className={styles.panelDrill}
         />
       </div>

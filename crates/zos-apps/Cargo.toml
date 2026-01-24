@@ -31,14 +31,22 @@ path = "src/bin/identity_service.rs"
 name = "settings"
 path = "src/bin/settings.rs"
 
+[[bin]]
+name = "vfs_service"
+path = "src/bin/vfs_service.rs"
+
+[[bin]]
+name = "time_service"
+path = "src/bin/time_service.rs"
+
 [dependencies]
 zos-process = { path = "../zos-process" }
 zos-identity = { path = "../zos-identity" }
+zos-vfs = { path = "../zos-vfs" }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-zos-vfs = { path = "../zos-vfs" }
 
 [features]
 default = []

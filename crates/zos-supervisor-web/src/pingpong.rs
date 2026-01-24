@@ -1,6 +1,28 @@
 //! Ping-Pong Test State Machine
 //!
 //! Automated IPC latency testing between worker processes.
+//!
+//! # Deprecated API Usage
+//!
+//! This module uses the deprecated `send_to_process()` kernel method to send
+//! commands to test processes. This bypasses capability checks and violates
+//! the capability-based security model.
+//!
+//! ## Why This Is Still Here
+//!
+//! The pingpong test was written before the Init-driven spawn protocol was
+//! implemented. It uses `send_to_process()` because:
+//! 1. The supervisor doesn't have capability slots to the test processes' endpoints
+//! 2. Setting up proper capability routing would require changes to the test setup
+//!
+//! ## Migration Plan
+//!
+//! To fix this properly, the pingpong test should:
+//! 1. Grant supervisor capabilities to test process endpoints during spawn
+//! 2. Use `kernel.ipc_send()` with proper capability slots
+//! 3. Or route commands through Init using MSG_SUPERVISOR_IPC_DELIVERY
+//!
+//! This is tracked as technical debt to be addressed in a future cleanup.
 
 use zos_kernel::ProcessId;
 
@@ -203,6 +225,7 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             let ponger = ProcessId(ponger_pid);
 
             // Send exit commands
+            // NOTE: Uses deprecated send_to_process() - see module docs for migration plan
             let _ = ctx
                 .kernel
                 .send_to_process(ProcessId(2), pinger, CMD_EXIT, vec![]);
@@ -211,6 +234,8 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
                 .send_to_process(ProcessId(2), ponger, CMD_EXIT, vec![]);
 
             // Kill processes in kernel
+            // NOTE: Direct kernel.kill_process() for test cleanup.
+            // In production code, this should route through Init.
             ctx.kernel.kill_process(pinger);
             ctx.kernel.kill_process(ponger);
 

@@ -14,5 +14,7 @@ std = []
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
+zos-process = { path = "../zos-process" }
 
 [dev-dependencies]

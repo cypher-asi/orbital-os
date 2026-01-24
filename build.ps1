@@ -97,6 +97,9 @@ function Build-Processes {
         Copy-Item "$releaseDir\clock.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\calculator.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\settings.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\identity_service.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\vfs_service.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\time_service.wasm" "$ProjectRoot\web\processes\" -Force
         
         Write-Host "Process binaries built successfully!" -ForegroundColor Green
     }
@@ -132,6 +135,7 @@ switch ($Target.ToLower()) {
         Write-Host "`nBuild complete! Run '.\build.ps1 dev' or 'cargo run -p dev-server' to start." -ForegroundColor Green
     }
     "web" {
+        Build-Processes
         Build-WebModules
     }
     "processes" {

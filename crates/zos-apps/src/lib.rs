@@ -45,6 +45,10 @@ pub use runtime::AppRuntime;
 // Re-export syscall interface from zos-process
 pub use zos_process as syscall;
 
+// Re-export IPC protocol modules from zos-process (which re-exports from zos-ipc)
+// This allows apps to use consistent message constants.
+pub use zos_process::{pm, supervisor, init, kernel, permission, storage};
+
 /// Generate the entry point and runtime setup for a Zero app.
 ///
 /// This macro eliminates boilerplate by generating:

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Card, CardItem, Text, Input, Label, Spinner, ButtonCollapsible } from '@cypher-asi/zui';
 import { User, LogIn, LogOut, Key, Clock, Copy, Check, Shield } from 'lucide-react';
 import { useZeroIdAuth } from '../../../desktop/hooks/useZeroIdAuth';
+import { useCopyToClipboard } from '../../../desktop/hooks/useCopyToClipboard';
 import styles from './ZeroIdLoginPanel.module.css';
 
 export function ZeroIdLoginPanel() {
@@ -21,7 +22,7 @@ export function ZeroIdLoginPanel() {
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [showTokens, setShowTokens] = useState(false);
-  const [copiedToken, setCopiedToken] = useState<'access' | 'refresh' | null>(null);
+  const { copy, isCopied } = useCopyToClipboard();
 
   const handleLogin = async () => {
     setLocalError(null);
@@ -62,24 +63,6 @@ export function ZeroIdLoginPanel() {
       await refreshToken();
     } catch (err) {
       // Error is already set in the hook
-    }
-  };
-
-  const handleCopyToken = async (type: 'access' | 'refresh') => {
-    if (!remoteAuthState) return;
-    
-    const token = type === 'access' 
-      ? remoteAuthState.accessToken 
-      : remoteAuthState.refreshToken;
-    
-    if (!token) return;
-
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopiedToken(type);
-      setTimeout(() => setCopiedToken(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
     }
   };
 
@@ -130,10 +113,10 @@ export function ZeroIdLoginPanel() {
                   <code>{truncateToken(remoteAuthState.accessToken)}</code>
                   <Button
                     variant="ghost"
-                    onClick={() => handleCopyToken('access')}
+                    onClick={() => copy(remoteAuthState.accessToken, 'access')}
                     className={styles.copyButton}
                   >
-                    {copiedToken === 'access' ? (
+                    {isCopied('access') ? (
                       <Check size={12} className={styles.checkIcon} />
                     ) : (
                       <Copy size={12} />
@@ -149,10 +132,10 @@ export function ZeroIdLoginPanel() {
                     <code>{truncateToken(remoteAuthState.refreshToken)}</code>
                     <Button
                       variant="ghost"
-                      onClick={() => handleCopyToken('refresh')}
+                      onClick={() => copy(remoteAuthState.refreshToken!, 'refresh')}
                       className={styles.copyButton}
                     >
-                      {copiedToken === 'refresh' ? (
+                      {isCopied('refresh') ? (
                         <Check size={12} className={styles.checkIcon} />
                       ) : (
                         <Copy size={12} />

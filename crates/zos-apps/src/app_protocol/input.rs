@@ -141,6 +141,14 @@ impl InputEvent {
             _ => None,
         }
     }
+
+    /// Get the text content if this is a text input event
+    pub fn text_content(&self) -> Option<&str> {
+        match self {
+            InputEvent::TextInput { text } => Some(text),
+            _ => None,
+        }
+    }
 }
 
 /// Modifier key flags

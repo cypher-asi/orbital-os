@@ -2,6 +2,7 @@
 //!
 //! Provides JSON-serialized metrics and process data for the dashboard.
 
+use zos_hal::HAL;
 use zos_kernel::ProcessId;
 use wasm_bindgen::prelude::*;
 
@@ -14,6 +15,15 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn get_uptime_ms(&self) -> f64 {
         self.kernel.uptime_nanos() as f64 / 1_000_000.0
+    }
+
+    /// Get wall-clock time in milliseconds since Unix epoch
+    ///
+    /// This is real time-of-day (not monotonic) from the HAL.
+    /// Used by the DateTime component in the taskbar.
+    #[wasm_bindgen]
+    pub fn get_wallclock_ms(&self) -> f64 {
+        self.kernel.hal().wallclock_ms() as f64
     }
 
     /// Get process count (including supervisor)
@@ -272,24 +282,15 @@ impl Supervisor {
     }
 
     /// Get recent IPC traffic as JSON for dashboard
+    ///
+    /// NOTE: IPC traffic logging has been moved out of the kernel as part of
+    /// the invariant compliance refactor. Traffic can be reconstructed from
+    /// the SysLog (kernel.syslog()) which records all syscalls including IPC.
+    /// A userspace Monitor service should be used for detailed traffic analysis.
     #[wasm_bindgen]
-    pub fn get_ipc_traffic_json(&self, count: usize) -> String {
-        let traffic: Vec<_> = self
-            .kernel
-            .get_recent_ipc_traffic(count)
-            .iter()
-            .map(|entry| {
-                serde_json::json!({
-                    "from": entry.from.0,
-                    "to": entry.to.0,
-                    "endpoint": entry.endpoint.0,
-                    "tag": entry.tag,
-                    "size": entry.size,
-                    "timestamp": entry.timestamp
-                })
-            })
-            .collect();
-        serde_json::to_string(&traffic).unwrap_or_else(|_| "[]".to_string())
+    pub fn get_ipc_traffic_json(&self, _count: usize) -> String {
+        // Return empty array - traffic monitoring moved to userspace/SysLog
+        "[]".to_string()
     }
 
     /// Get system metrics as JSON for dashboard

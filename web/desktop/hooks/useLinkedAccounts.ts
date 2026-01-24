@@ -1,15 +1,15 @@
 import { useState, useCallback } from 'react';
-import { useIdentity, type UserId } from './useIdentity';
+import { useIdentityStore, selectCurrentUser } from '../../stores';
 
 // =============================================================================
-// Linked Account Types (mirrors zos-identity/src/keystore.rs and ipc.rs)
+// Linked Accounts Types (mirrors zos-identity/src/keystore.rs)
 // =============================================================================
 
 /**
  * Types of linkable credentials.
  * Corresponds to `CredentialType` in zos-identity/src/keystore.rs
  */
-export type CredentialType = 'Email' | 'Phone' | 'OAuth' | 'WebAuthn';
+export type CredentialType = 'email' | 'phone' | 'oauth' | 'webauthn';
 
 /**
  * A linked external credential.
@@ -17,9 +17,9 @@ export type CredentialType = 'Email' | 'Phone' | 'OAuth' | 'WebAuthn';
  */
 export interface LinkedCredential {
   /** Credential type */
-  credentialType: CredentialType;
+  type: CredentialType;
   /** Credential value (email address, phone number, etc.) */
-  value: string;
+  identifier: string;
   /** Whether this credential is verified */
   verified: boolean;
   /** When the credential was linked */
@@ -31,22 +31,15 @@ export interface LinkedCredential {
 }
 
 /**
- * Result of successful email attachment.
- * Corresponds to `AttachEmailSuccess` in zos-identity/src/ipc.rs
- */
-export interface AttachEmailSuccess {
-  /** Verification required? */
-  verificationRequired: boolean;
-  /** Verification code sent to email (in dev mode only) */
-  verificationCode: string | null;
-}
-
-/**
  * Linked Accounts state
  */
 export interface LinkedAccountsState {
-  /** List of linked credentials */
+  /** Linked credentials */
   credentials: LinkedCredential[];
+  /** Email pending verification (if any) */
+  pendingEmail: string | null;
+  /** Verification error message */
+  verificationError: string | null;
   /** Loading state */
   isLoading: boolean;
   /** Error message */
@@ -59,44 +52,16 @@ export interface LinkedAccountsState {
 export interface UseLinkedAccountsReturn {
   /** Current state */
   state: LinkedAccountsState;
-  /** Get all linked credentials */
-  getCredentials: () => Promise<LinkedCredential[]>;
-  /** Get credentials by type */
-  getCredentialsByType: (type: CredentialType) => LinkedCredential[];
-  /** Get primary credential of a type */
-  getPrimaryCredential: (type: CredentialType) => LinkedCredential | null;
-  /** Attach an email credential */
-  attachEmail: (email: string) => Promise<AttachEmailSuccess>;
-  /** Verify an email credential */
+  /** Attach an email (initiates verification) */
+  attachEmail: (email: string) => Promise<{ verificationRequired: boolean }>;
+  /** Verify email with code */
   verifyEmail: (email: string, code: string) => Promise<void>;
-  /** Remove a credential */
-  removeCredential: (type: CredentialType, value: string) => Promise<void>;
-  /** Set a credential as primary */
-  setPrimaryCredential: (type: CredentialType, value: string) => Promise<void>;
+  /** Cancel pending email verification */
+  cancelEmailVerification: () => void;
+  /** Unlink an account */
+  unlinkAccount: (type: CredentialType) => Promise<void>;
   /** Refresh state */
   refresh: () => Promise<void>;
-}
-
-// =============================================================================
-// IPC Message Types (from zos-identity/src/ipc.rs)
-// =============================================================================
-
-// user_msg::MSG_ATTACH_EMAIL = 0x7040
-// user_msg::MSG_ATTACH_EMAIL_RESPONSE = 0x7041
-// user_msg::MSG_GET_CREDENTIALS = 0x7042
-// user_msg::MSG_GET_CREDENTIALS_RESPONSE = 0x7043
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function generateMockVerificationCode(): string {
-  return Math.random().toString().slice(2, 8);
-}
-
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
 }
 
 // =============================================================================
@@ -105,44 +70,50 @@ function isValidEmail(email: string): boolean {
 
 const INITIAL_STATE: LinkedAccountsState = {
   credentials: [],
+  pendingEmail: null,
+  verificationError: null,
   isLoading: false,
   error: null,
 };
 
 // =============================================================================
 // Hook Implementation
+// 
+// NOTE: This is currently a frontend-only implementation.
+// In production, this would integrate with a credential verification service
+// via the supervisor API. The backend types are defined in zos-identity but
+// the IPC handlers are not yet implemented.
 // =============================================================================
 
 export function useLinkedAccounts(): UseLinkedAccountsReturn {
-  const identity = useIdentity();
+  const currentUser = useIdentityStore(selectCurrentUser);
   const [state, setState] = useState<LinkedAccountsState>(INITIAL_STATE);
 
-  const getCredentials = useCallback(async (): Promise<LinkedCredential[]> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
+  const attachEmail = useCallback(async (email: string): Promise<{ verificationRequired: boolean }> => {
+    if (!currentUser?.id) {
       throw new Error('No user logged in');
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TODO: Call supervisor IPC with MSG_GET_CREDENTIALS (0x7042)
-      // Request: GetCredentialsRequest { user_id: UserId, credential_type: Option<CredentialType> }
-      // Response: GetCredentialsResponse { credentials: Vec<LinkedCredential> }
-      //
-      // The identity service will read credentials from:
-      // /home/{user_id}/.zos/credentials/credentials.json
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
+      // TODO: Call supervisor API to initiate email verification
+      // This would typically:
+      // 1. Generate a verification code
+      // 2. Send it to the email address
+      // 3. Store the pending verification state
+      
+      // For now, just set the pending email state
       setState(prev => ({
         ...prev,
+        pendingEmail: email,
+        verificationError: null,
         isLoading: false,
       }));
 
-      return state.credentials;
+      return { verificationRequired: true };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to get credentials';
+      const errorMsg = err instanceof Error ? err.message : 'Failed to initiate email verification';
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -150,184 +121,90 @@ export function useLinkedAccounts(): UseLinkedAccountsReturn {
       }));
       throw err;
     }
-  }, [identity?.state.currentUser?.id, state.credentials]);
-
-  const getCredentialsByType = useCallback((type: CredentialType): LinkedCredential[] => {
-    return state.credentials.filter(c => c.credentialType === type);
-  }, [state.credentials]);
-
-  const getPrimaryCredential = useCallback((type: CredentialType): LinkedCredential | null => {
-    return state.credentials.find(c => c.credentialType === type && c.isPrimary) || null;
-  }, [state.credentials]);
-
-  const attachEmail = useCallback(async (email: string): Promise<AttachEmailSuccess> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
-
-    if (!isValidEmail(email)) {
-      throw new Error('Invalid email format');
-    }
-
-    // Check if email already linked
-    const existing = state.credentials.find(
-      c => c.credentialType === 'Email' && c.value.toLowerCase() === email.toLowerCase()
-    );
-    if (existing) {
-      throw new Error('Email already linked to this account');
-    }
-
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      // TODO: Call supervisor IPC with MSG_ATTACH_EMAIL (0x7040)
-      // Request: AttachEmailRequest { user_id: UserId, email: String }
-      // Response: AttachEmailResponse { result: Result<AttachEmailSuccess, CredentialError> }
-      //
-      // The identity service will:
-      // 1. Validate email format
-      // 2. Check email not already linked
-      // 3. Generate verification code
-      // 4. Send verification email (or return code in dev mode)
-      // 5. Store unverified credential
-
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      const now = Date.now();
-      const isFirstEmail = !state.credentials.some(c => c.credentialType === 'Email');
-
-      const newCredential: LinkedCredential = {
-        credentialType: 'Email',
-        value: email,
-        verified: false, // Will be verified after code confirmation
-        linkedAt: now,
-        verifiedAt: null,
-        isPrimary: isFirstEmail, // First email becomes primary
-      };
-
-      setState(prev => ({
-        ...prev,
-        credentials: [...prev.credentials, newCredential],
-        isLoading: false,
-      }));
-
-      // In dev mode, return the verification code
-      return {
-        verificationRequired: true,
-        verificationCode: generateMockVerificationCode(), // Only in dev mode
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to attach email';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
-    }
-  }, [identity?.state.currentUser?.id, state.credentials]);
+  }, [currentUser?.id]);
 
   const verifyEmail = useCallback(async (email: string, code: string): Promise<void> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
+    if (!currentUser?.id) {
       throw new Error('No user logged in');
     }
 
-    const credential = state.credentials.find(
-      c => c.credentialType === 'Email' && c.value.toLowerCase() === email.toLowerCase()
-    );
-    if (!credential) {
-      throw new Error('Email not found');
+    if (!state.pendingEmail || state.pendingEmail !== email) {
+      throw new Error('No pending verification for this email');
     }
 
-    if (credential.verified) {
-      throw new Error('Email already verified');
+    // Validate code format
+    if (!/^\d{6}$/.test(code)) {
+      setState(prev => ({
+        ...prev,
+        verificationError: 'Invalid code format. Please enter 6 digits.',
+      }));
+      throw new Error('Invalid code format');
     }
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState(prev => ({ ...prev, isLoading: true, verificationError: null }));
 
     try {
-      // TODO: Call supervisor IPC to verify email
-      // This would validate the code against stored verification data
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Mock: Accept any 6-digit code
-      if (code.length !== 6 || !/^\d+$/.test(code)) {
-        throw new Error('Invalid verification code');
-      }
-
+      // TODO: Call supervisor API to verify the code
+      // This would typically:
+      // 1. Check the code against the stored verification code
+      // 2. Mark the credential as verified
+      // 3. Store the credential in the user's credential store
+      
+      // For now, accept any valid 6-digit code
       const now = Date.now();
+      const newCredential: LinkedCredential = {
+        type: 'email',
+        identifier: email,
+        verified: true,
+        linkedAt: now,
+        verifiedAt: now,
+        isPrimary: true,
+      };
 
       setState(prev => ({
         ...prev,
-        credentials: prev.credentials.map(c =>
-          c.credentialType === 'Email' && c.value.toLowerCase() === email.toLowerCase()
-            ? { ...c, verified: true, verifiedAt: now }
-            : c
-        ),
+        credentials: [...prev.credentials.filter(c => c.type !== 'email'), newCredential],
+        pendingEmail: null,
+        verificationError: null,
         isLoading: false,
       }));
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to verify email';
+      const errorMsg = err instanceof Error ? err.message : 'Verification failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: errorMsg,
+        verificationError: errorMsg,
       }));
       throw err;
     }
-  }, [identity?.state.currentUser?.id, state.credentials]);
+  }, [currentUser?.id, state.pendingEmail]);
 
-  const removeCredential = useCallback(async (type: CredentialType, value: string): Promise<void> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
+  const cancelEmailVerification = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      pendingEmail: null,
+      verificationError: null,
+    }));
+  }, []);
+
+  const unlinkAccount = useCallback(async (type: CredentialType): Promise<void> => {
+    if (!currentUser?.id) {
       throw new Error('No user logged in');
-    }
-
-    const credential = state.credentials.find(
-      c => c.credentialType === type && c.value === value
-    );
-    if (!credential) {
-      throw new Error('Credential not found');
-    }
-
-    // Check if this is the only credential of this type and it's primary
-    const sameTypeCredentials = state.credentials.filter(c => c.credentialType === type);
-    if (sameTypeCredentials.length === 1 && credential.isPrimary) {
-      // Allowed - removes the only credential
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TODO: Call supervisor IPC to remove credential
-      // Update credentials.json in VFS
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      setState(prev => {
-        const newCredentials = prev.credentials.filter(
-          c => !(c.credentialType === type && c.value === value)
-        );
-
-        // If we removed the primary, make the first remaining one primary
-        if (credential.isPrimary) {
-          const firstOfType = newCredentials.find(c => c.credentialType === type);
-          if (firstOfType) {
-            firstOfType.isPrimary = true;
-          }
-        }
-
-        return {
-          ...prev,
-          credentials: newCredentials,
-          isLoading: false,
-        };
-      });
+      // TODO: Call supervisor API to unlink the credential
+      // This would remove it from the user's credential store in VFS
+      
+      setState(prev => ({
+        ...prev,
+        credentials: prev.credentials.filter(c => c.type !== type),
+        isLoading: false,
+      }));
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to remove credential';
+      const errorMsg = err instanceof Error ? err.message : 'Failed to unlink account';
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -335,73 +212,26 @@ export function useLinkedAccounts(): UseLinkedAccountsReturn {
       }));
       throw err;
     }
-  }, [identity?.state.currentUser?.id, state.credentials]);
-
-  const setPrimaryCredential = useCallback(async (type: CredentialType, value: string): Promise<void> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
-
-    const credential = state.credentials.find(
-      c => c.credentialType === type && c.value === value
-    );
-    if (!credential) {
-      throw new Error('Credential not found');
-    }
-
-    if (!credential.verified) {
-      throw new Error('Cannot set unverified credential as primary');
-    }
-
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      // TODO: Call supervisor IPC to update credentials
-      // Update credentials.json in VFS
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      setState(prev => ({
-        ...prev,
-        credentials: prev.credentials.map(c => ({
-          ...c,
-          isPrimary: c.credentialType === type
-            ? c.value === value
-            : c.isPrimary,
-        })),
-        isLoading: false,
-      }));
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to set primary credential';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
-    }
-  }, [identity?.state.currentUser?.id, state.credentials]);
+  }, [currentUser?.id]);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const userId = identity?.state.currentUser?.id;
-    if (!userId) {
+    if (!currentUser?.id) {
       setState(INITIAL_STATE);
       return;
     }
 
-    await getCredentials();
-  }, [identity?.state.currentUser?.id, getCredentials]);
+    // TODO: Call supervisor API to fetch credentials from VFS
+    // Path: /home/{user_id}/.zos/credentials/credentials.json
+    
+    // For now, keep current state
+  }, [currentUser?.id]);
 
   return {
     state,
-    getCredentials,
-    getCredentialsByType,
-    getPrimaryCredential,
     attachEmail,
     verifyEmail,
-    removeCredential,
-    setPrimaryCredential,
+    cancelEmailVerification,
+    unlinkAccount,
     refresh,
   };
 }

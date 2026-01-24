@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext } from 'react';
+import { useCallback, createContext, useContext } from 'react';
 import { useSupervisor } from './useSupervisor';
 import {
   OBJECT_TYPE,
@@ -7,45 +7,21 @@ import {
   type Permissions,
   type CapabilityRequest,
 } from '../../apps/shared/app-protocol';
+import {
+  usePermissionStore,
+  selectPendingRequest,
+  selectAllGrantedCapabilities,
+  selectPermissionIsLoading,
+  type AppManifest,
+  type CapabilityInfo,
+  type PermissionRequest,
+} from '../../stores';
 
 // =============================================================================
-// Types
+// Re-export Types from Store
 // =============================================================================
 
-/**
- * App manifest for permission dialog
- */
-export interface AppManifest {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  capabilities: CapabilityRequest[];
-  isFactory?: boolean;
-}
-
-/**
- * Information about a granted capability
- */
-export interface CapabilityInfo {
-  slot: number;
-  objectType: ObjectType;
-  permissions: Permissions;
-}
-
-/**
- * Permission request state
- */
-export interface PermissionRequest {
-  /** App requesting permissions */
-  app: AppManifest;
-  /** Process ID of the app */
-  pid: number;
-  /** Callback when user approves */
-  onApprove: (approved: CapabilityRequest[]) => void;
-  /** Callback when user denies */
-  onDeny: () => void;
-}
+export type { AppManifest, CapabilityInfo, PermissionRequest };
 
 /**
  * Permissions hook state
@@ -85,7 +61,7 @@ export interface UsePermissionsActions {
 }
 
 // =============================================================================
-// Hook Implementation
+// Hook Implementation (now backed by Zustand store)
 // =============================================================================
 
 /**
@@ -96,15 +72,18 @@ export interface UsePermissionsActions {
  * - Granting permissions (via Init)
  * - Revoking permissions (via Init)
  * - Tracking granted capabilities
+ * 
+ * @deprecated Use `usePermissionStore` directly for better performance.
+ * This hook is kept for backward compatibility.
  */
 export function usePermissions(): UsePermissionsState & UsePermissionsActions {
   const supervisor = useSupervisor();
-
-  const [pendingRequest, setPendingRequest] = useState<PermissionRequest | null>(null);
-  const [grantedCapabilities, setGrantedCapabilities] = useState<Map<number, CapabilityInfo[]>>(
-    new Map()
-  );
-  const [isLoading, setIsLoading] = useState(false);
+  const store = usePermissionStore();
+  
+  // Get state from store via selectors
+  const pendingRequest = usePermissionStore(selectPendingRequest);
+  const grantedCapabilities = usePermissionStore(selectAllGrantedCapabilities);
+  const isLoading = usePermissionStore(selectPermissionIsLoading);
 
   /**
    * Request permissions for an app - shows the permission dialog
@@ -125,31 +104,27 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
             permissions: { read: true, write: true, grant: false },
           },
         ];
-        setGrantedCapabilities((prev) => {
-          const next = new Map(prev);
-          next.set(pid, factoryCaps);
-          return next;
-        });
+        store.grantCapabilities(pid, factoryCaps);
         onComplete?.(true);
         return;
       }
 
       // For third-party apps, show the permission dialog
-      setPendingRequest({
+      store.setPendingRequest({
         app,
         pid,
         onApprove: async (approved) => {
-          setPendingRequest(null);
+          store.setPendingRequest(null);
           const success = await grantPermissionsInternal(pid, approved);
           onComplete?.(success);
         },
         onDeny: () => {
-          setPendingRequest(null);
+          store.setPendingRequest(null);
           onComplete?.(false);
         },
       });
     },
-    []
+    [store]
   );
 
   /**
@@ -164,7 +139,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
       return false;
     }
 
-    setIsLoading(true);
+    store.setLoading(true);
 
     try {
       const grantedCaps: CapabilityInfo[] = [];
@@ -213,20 +188,15 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         });
       }
 
-      // Update local tracking
-      setGrantedCapabilities((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(pid) || [];
-        next.set(pid, [...existing, ...grantedCaps]);
-        return next;
-      });
+      // Update store
+      store.grantCapabilities(pid, grantedCaps);
 
       return true;
     } catch (error) {
       console.error('Failed to grant permissions:', error);
       return false;
     } finally {
-      setIsLoading(false);
+      store.setLoading(false);
     }
   };
 
@@ -237,7 +207,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
     async (pid: number, capabilities: CapabilityRequest[]): Promise<boolean> => {
       return grantPermissionsInternal(pid, capabilities);
     },
-    [supervisor]
+    [supervisor, store]
   );
 
   /**
@@ -250,11 +220,11 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         return false;
       }
 
-      setIsLoading(true);
+      store.setLoading(true);
 
       try {
-        // Find the capability slot for this object type from local tracking
-        const caps = grantedCapabilities.get(pid) || [];
+        // Find the capability slot for this object type from store
+        const caps = store.getGrantedCaps(pid);
         const cap = caps.find((c) => c.objectType === objectType);
         
         if (!cap) {
@@ -267,16 +237,8 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         const success = supervisor.revoke_capability(BigInt(pid), cap.slot);
         
         if (success) {
-          // Update local tracking
-          setGrantedCapabilities((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(pid) || [];
-            next.set(
-              pid,
-              existing.filter((c) => c.objectType !== objectType)
-            );
-            return next;
-          });
+          // Update store
+          store.revokeCapability(pid, objectType);
         }
 
         return success;
@@ -284,10 +246,10 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         console.error('Failed to revoke permission:', error);
         return false;
       } finally {
-        setIsLoading(false);
+        store.setLoading(false);
       }
     },
-    [supervisor, grantedCapabilities]
+    [supervisor, store]
   );
 
   /**
@@ -295,7 +257,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
    */
   const revokeAllPermissions = useCallback(
     async (pid: number): Promise<boolean> => {
-      const caps = grantedCapabilities.get(pid) || [];
+      const caps = store.getGrantedCaps(pid);
       let allSuccess = true;
 
       for (const cap of caps) {
@@ -307,27 +269,24 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
 
       return allSuccess;
     },
-    [grantedCapabilities, revokePermission]
+    [store, revokePermission]
   );
 
   /**
    * Clear pending request
    */
   const clearPendingRequest = useCallback(() => {
-    if (pendingRequest) {
-      pendingRequest.onDeny();
-    }
-    setPendingRequest(null);
-  }, [pendingRequest]);
+    store.clearPendingRequest();
+  }, [store]);
 
   /**
    * Get granted capabilities for a process
    */
   const getGrantedCaps = useCallback(
     (pid: number): CapabilityInfo[] => {
-      return grantedCapabilities.get(pid) || [];
+      return store.getGrantedCaps(pid);
     },
-    [grantedCapabilities]
+    [store]
   );
 
   return {
