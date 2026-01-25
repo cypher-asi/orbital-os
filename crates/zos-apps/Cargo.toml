@@ -25,7 +25,7 @@ path = "src/bin/permission_manager.rs"
 
 [[bin]]
 name = "identity_service"
-path = "src/bin/identity_service.rs"
+path = "src/bin/identity_service/main.rs"
 
 [[bin]]
 name = "settings"
