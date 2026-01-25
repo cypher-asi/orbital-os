@@ -4,11 +4,17 @@
 //! VFS operations now go through the VFS IPC service, which maintains the
 //! thin-supervisor architecture principle.
 
-use crate::constants::error;
-#[allow(unused_imports, deprecated)]
-use crate::constants::syscall::{
-    SYS_VFS_DELETE, SYS_VFS_EXISTS, SYS_VFS_LIST, SYS_VFS_MKDIR, SYS_VFS_READ, SYS_VFS_WRITE,
-};
+extern crate alloc;
+use alloc::string::ToString;
+use crate::error;
+// Note: VFS syscalls are deprecated and not moved to zos-kernel
+// These remain here for backward compatibility only
+pub const SYS_VFS_READ: u32 = 0x80;
+pub const SYS_VFS_WRITE: u32 = 0x81;
+pub const SYS_VFS_MKDIR: u32 = 0x82;
+pub const SYS_VFS_LIST: u32 = 0x83;
+pub const SYS_VFS_DELETE: u32 = 0x84;
+pub const SYS_VFS_EXISTS: u32 = 0x85;
 use alloc::string::String;
 use alloc::vec::Vec;
 

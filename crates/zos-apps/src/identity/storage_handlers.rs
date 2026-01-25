@@ -25,7 +25,13 @@ pub enum StorageHandlerResult {
         next_op: PendingStorageOp,
     },
     /// Need to start another storage read operation
-    ContinueRead { key: String, next_op: PendingStorageOp },
+    ContinueRead {
+        key: String,
+        next_op: PendingStorageOp,
+    },
     /// Need to start another storage delete operation
-    ContinueDelete { key: String, next_op: PendingStorageOp },
+    ContinueDelete {
+        key: String,
+        next_op: PendingStorageOp,
+    },
 }

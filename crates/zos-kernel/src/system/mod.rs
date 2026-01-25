@@ -134,10 +134,22 @@ impl<H: HAL> System<H> {
         }
 
         // 4. Get rich result and response data
-        let (rich_result, response_data) =
-            metrics::get_syscall_rich_result(&mut self.kernel, sender, syscall_num, args, data, result, timestamp);
+        let (rich_result, response_data, additional_commits) = metrics::get_syscall_rich_result(
+            &mut self.kernel,
+            sender,
+            syscall_num,
+            args,
+            data,
+            result,
+            timestamp,
+        );
 
-        // 5. Log response to SysLog
+        // 5. Record additional commits from formatters (e.g., IPC receive)
+        for ct in additional_commits {
+            self.axiom.append_internal_commit(ct, timestamp);
+        }
+
+        // 6. Log response to SysLog
         self.axiom
             .syslog_mut()
             .log_response(sender.0, req_id, result, timestamp);
@@ -173,9 +185,16 @@ impl<H: HAL> System<H> {
     }
 
     /// Record a process fault and terminate it.
-    pub fn fault_process(&mut self, pid: ProcessId, reason: u32, description: alloc::string::String) {
+    pub fn fault_process(
+        &mut self,
+        pid: ProcessId,
+        reason: u32,
+        description: alloc::string::String,
+    ) {
         let timestamp = self.uptime_nanos();
-        let commits = self.kernel.fault_process(pid, reason, description, timestamp);
+        let commits = self
+            .kernel
+            .fault_process(pid, reason, description, timestamp);
         self.record_commits(commits, timestamp);
     }
 
@@ -194,7 +213,10 @@ impl<H: HAL> System<H> {
     // ========================================================================
 
     /// Create an endpoint and log the mutation.
-    pub fn create_endpoint(&mut self, owner: ProcessId) -> Result<(EndpointId, CapSlot), KernelError> {
+    pub fn create_endpoint(
+        &mut self,
+        owner: ProcessId,
+    ) -> Result<(EndpointId, CapSlot), KernelError> {
         let timestamp = self.uptime_nanos();
         let (result, commits) = self.kernel.create_endpoint(owner, timestamp);
         self.record_commits(commits, timestamp);
@@ -229,9 +251,9 @@ impl<H: HAL> System<H> {
         perms: Permissions,
     ) -> Result<CapSlot, KernelError> {
         let timestamp = self.uptime_nanos();
-        let (result, commits) =
-            self.kernel
-                .grant_capability(from_pid, from_slot, to_pid, perms, timestamp);
+        let (result, commits) = self
+            .kernel
+            .grant_capability(from_pid, from_slot, to_pid, perms, timestamp);
         self.record_commits(commits, timestamp);
         result
     }
@@ -246,7 +268,11 @@ impl<H: HAL> System<H> {
     ) -> Result<CapSlot, KernelError> {
         let timestamp = self.uptime_nanos();
         let (result, commits) = self.kernel.grant_capability_to_endpoint(
-            owner_pid, endpoint_id, to_pid, perms, timestamp,
+            owner_pid,
+            endpoint_id,
+            to_pid,
+            perms,
+            timestamp,
         );
         self.record_commits(commits, timestamp);
         result
@@ -306,7 +332,9 @@ impl<H: HAL> System<H> {
         new_perms: Permissions,
     ) -> Result<CapSlot, KernelError> {
         let timestamp = self.uptime_nanos();
-        let (result, commits) = self.kernel.derive_capability(pid, slot, new_perms, timestamp);
+        let (result, commits) = self
+            .kernel
+            .derive_capability(pid, slot, new_perms, timestamp);
         self.record_commits(commits, timestamp);
         result
     }
@@ -329,7 +357,9 @@ impl<H: HAL> System<H> {
         data: Vec<u8>,
     ) -> Result<(), KernelError> {
         let timestamp = self.uptime_nanos();
-        let (result, commit) = self.kernel.ipc_send(from_pid, endpoint_slot, tag, data, timestamp);
+        let (result, commit) = self
+            .kernel
+            .ipc_send(from_pid, endpoint_slot, tag, data, timestamp);
         if let Some(c) = commit {
             self.axiom.append_internal_commit(c.commit_type, timestamp);
         }
@@ -346,9 +376,14 @@ impl<H: HAL> System<H> {
         cap_slots: &[CapSlot],
     ) -> Result<(), KernelError> {
         let timestamp = self.uptime_nanos();
-        let (result, commits) =
-            self.kernel
-                .ipc_send_with_caps(from_pid, endpoint_slot, tag, data, cap_slots, timestamp);
+        let (result, commits) = self.kernel.ipc_send_with_caps(
+            from_pid,
+            endpoint_slot,
+            tag,
+            data,
+            cap_slots,
+            timestamp,
+        );
         self.record_commits(commits, timestamp);
         result
     }
@@ -370,7 +405,9 @@ impl<H: HAL> System<H> {
         endpoint_slot: CapSlot,
     ) -> Result<Option<(Message, Vec<CapSlot>)>, KernelError> {
         let timestamp = self.uptime_nanos();
-        let (result, commits) = self.kernel.ipc_receive_with_caps(pid, endpoint_slot, timestamp);
+        let (result, commits) = self
+            .kernel
+            .ipc_receive_with_caps(pid, endpoint_slot, timestamp);
         self.record_commits(commits, timestamp);
         result
     }
@@ -393,7 +430,9 @@ impl<H: HAL> System<H> {
     /// 1. Use `create_endpoint()` to create endpoints
     /// 2. Use `grant_capability()` to share endpoint access
     /// 3. Use `ipc_send()` with the granted capability slot
-    #[deprecated(note = "Use ipc_send with proper capabilities instead. See method docs for migration path.")]
+    #[deprecated(
+        note = "Use ipc_send with proper capabilities instead. See method docs for migration path."
+    )]
     pub fn send_to_process(
         &mut self,
         from_pid: ProcessId,
@@ -402,7 +441,8 @@ impl<H: HAL> System<H> {
         data: Vec<u8>,
     ) -> Result<(), KernelError> {
         let timestamp = self.uptime_nanos();
-        self.kernel.send_to_process(from_pid, to_pid, tag, data, timestamp)
+        self.kernel
+            .send_to_process(from_pid, to_pid, tag, data, timestamp)
     }
 
     // ========================================================================
@@ -476,7 +516,8 @@ impl<H: HAL> System<H> {
     /// Record commits to the axiom gateway.
     fn record_commits(&mut self, commits: Vec<Commit>, timestamp: u64) {
         for commit in commits {
-            self.axiom.append_internal_commit(commit.commit_type, timestamp);
+            self.axiom
+                .append_internal_commit(commit.commit_type, timestamp);
         }
     }
 }
@@ -510,10 +551,10 @@ fn execute_syscall_kernel_fn<H: HAL>(
 ) -> (i64, Vec<CommitType>) {
     match syscall_num {
         0x00..=0x07 => execute_basic_syscall(core, syscall_num, sender, args),
-        0x11..=0x15 => {
-            execute_process_syscall(core, syscall_num, sender, args, data, timestamp)
+        0x11..=0x15 => execute_process_syscall(core, syscall_num, sender, args, data, timestamp),
+        0x30 | 0x31 | 0x35 => {
+            execute_capability_syscall(core, syscall_num, sender, args, timestamp)
         }
-        0x30 | 0x31 | 0x35 => execute_capability_syscall(core, syscall_num, sender, args, timestamp),
         0x40 | 0x41 => execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp),
         0x70..=0x74 => execute_storage_syscall(core, syscall_num, sender, data),
         0x90 => execute_network_syscall(core, sender, data),
@@ -611,7 +652,8 @@ fn execute_capability_syscall<H: HAL>(
         }
         0x35 => {
             let (result, commits) = core.create_endpoint(sender, timestamp);
-            let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
+            let commit_types: Vec<CommitType> =
+                commits.into_iter().map(|c| c.commit_type).collect();
             match result {
                 Ok((eid, _slot)) => (eid.0 as i64, commit_types),
                 Err(_) => (-1, commit_types),

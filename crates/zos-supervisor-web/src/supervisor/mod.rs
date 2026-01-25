@@ -58,9 +58,9 @@ mod storage;
 
 use std::collections::HashMap;
 
+use wasm_bindgen::prelude::*;
 use zos_hal::HAL;
 use zos_kernel::{ProcessId, System};
-use wasm_bindgen::prelude::*;
 
 use crate::hal::WasmHal;
 use crate::pingpong::PingPongTestState;
@@ -127,7 +127,7 @@ pub struct Supervisor {
     supervisor_pid: ProcessId,
     /// Whether supervisor kernel process has been initialized
     supervisor_initialized: bool,
-    
+
     // ==========================================================================
     // Generic IPC response callback - event-based, no storage needed
     // ==========================================================================
@@ -184,7 +184,7 @@ impl Supervisor {
     }
 
     /// Set callback for console output (legacy - routes all output to single callback)
-    /// 
+    ///
     /// For process isolation, use `register_console_callback(pid, callback)` instead.
     #[wasm_bindgen]
     pub fn set_console_callback(&mut self, callback: js_sys::Function) {
@@ -196,26 +196,35 @@ impl Supervisor {
             let _ = callback.call1(&this, &arg);
         }
         self.console_callback = Some(callback);
-        log(&format!("[supervisor] Console callback set (legacy), flushed {} buffered messages", buffered_count));
+        log(&format!(
+            "[supervisor] Console callback set (legacy), flushed {} buffered messages",
+            buffered_count
+        ));
     }
 
     /// Register a console callback for a specific process
-    /// 
+    ///
     /// Each terminal window should register its own callback with its process PID.
     /// Console output from that process will be routed only to its registered callback.
     #[wasm_bindgen]
     pub fn register_console_callback(&mut self, pid: u64, callback: js_sys::Function) {
-        log(&format!("[supervisor] Registered console callback for PID {}", pid));
+        log(&format!(
+            "[supervisor] Registered console callback for PID {}",
+            pid
+        ));
         self.console_callbacks.insert(pid, callback);
     }
 
     /// Unregister the console callback for a specific process
-    /// 
+    ///
     /// Called when a terminal window is unmounted to clean up.
     #[wasm_bindgen]
     pub fn unregister_console_callback(&mut self, pid: u64) {
         if self.console_callbacks.remove(&pid).is_some() {
-            log(&format!("[supervisor] Unregistered console callback for PID {}", pid));
+            log(&format!(
+                "[supervisor] Unregistered console callback for PID {}",
+                pid
+            ));
         }
     }
 
@@ -226,7 +235,7 @@ impl Supervisor {
     }
 
     /// Write to console (calls JS callback, or buffers if not set yet)
-    /// 
+    ///
     /// This writes to the legacy global console callback (for system messages).
     /// For process-specific output, use write_console_to_process().
     pub(crate) fn write_console(&mut self, text: &str) {
@@ -241,7 +250,7 @@ impl Supervisor {
     }
 
     /// Write console output to a specific process's callback
-    /// 
+    ///
     /// If no per-process callback is registered, falls back to the legacy global callback.
     fn write_console_to_process(&mut self, pid: u64, text: &str) {
         // Try per-process callback first
@@ -282,10 +291,13 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn send_input_to_process(&mut self, pid: u64, input: &str) {
         let process_id = ProcessId(pid);
-        
+
         // Verify process exists
         if self.system.get_process(process_id).is_none() {
-            log(&format!("[supervisor] send_input_to_process: PID {} not found", pid));
+            log(&format!(
+                "[supervisor] send_input_to_process: PID {} not found",
+                pid
+            ));
             return;
         }
 
@@ -302,7 +314,7 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         // Send console input via capability-checked IPC
         let supervisor_pid = ProcessId(0);
         match self.system.ipc_send(
@@ -341,7 +353,7 @@ impl Supervisor {
         // Use canonical constants from zos-ipc (the single source of truth)
         use zos_ipc::revoke_reason::EXPLICIT as REVOKE_REASON_EXPLICIT;
         use zos_ipc::supervisor::MSG_SUPERVISOR_REVOKE_CAP;
-        
+
         let pm_slot = match self.pm_endpoint_slot {
             Some(s) => s,
             None => {
@@ -352,16 +364,19 @@ impl Supervisor {
                 return false;
             }
         };
-        
+
         // Build message for PM: [target_pid: u32, cap_slot: u32, reason: u8]
         let mut payload = Vec::with_capacity(9);
         payload.extend_from_slice(&(pid as u32).to_le_bytes());
         payload.extend_from_slice(&slot.to_le_bytes());
         payload.push(REVOKE_REASON_EXPLICIT);
-        
+
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, pm_slot, MSG_SUPERVISOR_REVOKE_CAP, payload) {
+
+        match self
+            .system
+            .ipc_send(supervisor_pid, pm_slot, MSG_SUPERVISOR_REVOKE_CAP, payload)
+        {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Sent revoke request to PM for PID {} slot {}",
@@ -387,7 +402,7 @@ impl Supervisor {
     pub fn send_input(&mut self, input: &str) {
         // Find the terminal process
         let terminal_pid = self.find_terminal_pid();
-        
+
         if let Some(pid) = terminal_pid {
             self.send_input_to_process(pid.0, input);
         } else {
@@ -396,7 +411,7 @@ impl Supervisor {
             self.write_console("[supervisor] Terminal not ready - waiting for process spawn\n");
         }
     }
-    
+
     /// Progress the ping-pong test state machine
     fn progress_pingpong_test(&mut self) {
         use crate::pingpong::{progress_pingpong_test, PingPongContext};
@@ -465,7 +480,7 @@ impl Supervisor {
 
         count
     }
-    
+
     /// Process a syscall internally through the Axiom gateway.
     ///
     /// This method routes all syscalls through `kernel.execute_raw_syscall()`
@@ -506,6 +521,15 @@ impl Supervisor {
         let args4 = [args[0], args[1], args[2], 0];
         let (result, _rich_result, response_data) =
             self.system.process_syscall(pid, syscall_num, args4, data);
+
+        // DEBUG: Log response data for syscall 0x41 (IPC_RECEIVE)
+        if syscall_num == 0x41 && result == 1 {
+            log(&format!(
+                "[supervisor] DEBUG: process_syscall returned {} bytes for IPC_RECEIVE (result={})",
+                response_data.len(),
+                result
+            ));
+        }
 
         // Always write response data (even if empty) to clear stale data from previous syscalls.
         // This prevents the process from reading leftover data from a prior syscall
@@ -574,6 +598,11 @@ impl Supervisor {
             self.handle_init_endpoint_response(rest);
         } else if let Some(rest) = msg.strip_prefix("CAP:RESPONSE:") {
             self.handle_init_cap_response(rest);
+        } else if msg.starts_with("AGENT_LOG:") {
+            // #region agent log - debug mode instrumentation passthrough
+            log(&format!("[AGENT_LOG] PID {} | {}", pid.0, msg));
+            // #endregion
+            self.handle_debug_console_output(pid, msg);
         } else {
             self.handle_debug_console_output(pid, msg);
         }
@@ -631,8 +660,7 @@ impl Supervisor {
 
         let success = bytes[0];
         let endpoint_id = u64::from_le_bytes([
-            bytes[1], bytes[2], bytes[3], bytes[4],
-            bytes[5], bytes[6], bytes[7], bytes[8],
+            bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8],
         ]);
         let slot = u32::from_le_bytes([bytes[9], bytes[10], bytes[11], bytes[12]]);
 
@@ -689,7 +717,10 @@ impl Supervisor {
         let target_pid: u64 = match pid_str.parse() {
             Ok(p) => p,
             Err(_) => {
-                log(&format!("[supervisor] INIT:KILL_OK: invalid PID '{}'", pid_str));
+                log(&format!(
+                    "[supervisor] INIT:KILL_OK: invalid PID '{}'",
+                    pid_str
+                ));
                 return;
             }
         };
@@ -805,10 +836,10 @@ impl Supervisor {
     pub fn kill_process(&mut self, pid: u64) {
         let process_id = ProcessId(pid);
         log(&format!("[supervisor] Killing process {}", pid));
-        
+
         // Clean up supervisor state for this process
         self.cleanup_process_state(pid);
-        
+
         // Route through Init for non-Init processes
         if pid == 1 {
             // Direct kill for Init only (Init cannot kill itself)
@@ -818,7 +849,7 @@ impl Supervisor {
 
         self.kill_process_via_init(process_id);
     }
-    
+
     /// Route a kill request through Init via MSG_SUPERVISOR_KILL_PROCESS.
     ///
     /// Init receives the request and invokes SYS_KILL syscall, which is
@@ -831,14 +862,19 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         use zos_ipc::supervisor::MSG_SUPERVISOR_KILL_PROCESS;
-        
+
         // Build message for Init: [target_pid: u32]
         let payload = (target_pid.0 as u32).to_le_bytes().to_vec();
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_KILL_PROCESS, payload) {
+
+        match self.system.ipc_send(
+            supervisor_pid,
+            init_slot,
+            MSG_SUPERVISOR_KILL_PROCESS,
+            payload,
+        ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Sent kill request for PID {} to Init (awaiting INIT:KILL_OK)",
@@ -855,7 +891,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Directly kill a process via kernel call (bootstrap-only exception).
     ///
     /// # Invariant Exception
@@ -888,12 +924,18 @@ impl Supervisor {
     fn cleanup_process_state(&mut self, pid: u64) {
         // Remove console callback for this process
         if self.console_callbacks.remove(&pid).is_some() {
-            log(&format!("[supervisor] Cleaned up console callback for PID {}", pid));
+            log(&format!(
+                "[supervisor] Cleaned up console callback for PID {}",
+                pid
+            ));
         }
-        
+
         // Remove terminal endpoint capability slot
         if self.terminal_endpoint_slots.remove(&pid).is_some() {
-            log(&format!("[supervisor] Cleaned up terminal endpoint slot for PID {}", pid));
+            log(&format!(
+                "[supervisor] Cleaned up terminal endpoint slot for PID {}",
+                pid
+            ));
         }
     }
 
@@ -929,7 +971,7 @@ impl Supervisor {
                 self.kill_process_via_init(*pid);
             }
         }
-        
+
         // Kill Init last (direct call since Init can't kill itself)
         for pid in &pids {
             if pid.0 == 1 {
@@ -1040,9 +1082,9 @@ impl Supervisor {
                 return "error:no_init_capability".to_string();
             }
         };
-        
+
         use zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY;
-        
+
         // Build message for Init: [target_pid: u32, endpoint_slot: u32, tag: u32, data_len: u16, data: [u8]]
         let data_bytes = data.as_bytes();
         let mut payload = Vec::with_capacity(14 + data_bytes.len());
@@ -1051,14 +1093,21 @@ impl Supervisor {
         payload.extend_from_slice(&tag.to_le_bytes());
         payload.extend_from_slice(&(data_bytes.len() as u16).to_le_bytes());
         payload.extend_from_slice(data_bytes);
-        
+
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
+
+        match self.system.ipc_send(
+            supervisor_pid,
+            init_slot,
+            MSG_SUPERVISOR_IPC_DELIVERY,
+            payload,
+        ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed {} bytes to {} service PID {} via Init",
-                    data.len(), service_name, pid.0
+                    data.len(),
+                    service_name,
+                    pid.0
                 ));
                 request_id
             }

@@ -7,8 +7,8 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use zos_identity::ipc::{NeuralKeyGenerated, ZidTokens};
 use zos_identity::ipc::CreateMachineKeyRequest;
+use zos_identity::ipc::{NeuralKeyGenerated, ZidTokens};
 use zos_identity::keystore::{CredentialType, MachineKeyRecord};
 
 /// Tracks pending storage operations awaiting results.
@@ -20,6 +20,19 @@ pub enum PendingStorageOp {
     // =========================================================================
     // Neural Key operations
     // =========================================================================
+    /// Check if identity directory exists before generating neural key
+    CheckIdentityDirectory {
+        client_pid: u32,
+        user_id: u128,
+        cap_slots: Vec<u32>,
+    },
+    /// Create identity directory structure
+    CreateIdentityDirectory {
+        client_pid: u32,
+        user_id: u128,
+        cap_slots: Vec<u32>,
+        directories: Vec<String>,
+    },
     /// Check if identity key exists (for generate)
     CheckKeyExists {
         client_pid: u32,
@@ -41,7 +54,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Get identity key for retrieval
-    GetIdentityKey { client_pid: u32, cap_slots: Vec<u32> },
+    GetIdentityKey {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
 
     // =========================================================================
     // Neural Key recovery operations
@@ -64,8 +80,8 @@ pub enum PendingStorageOp {
     // =========================================================================
     // Machine Key operations
     // =========================================================================
-    /// Check identity key exists (for create machine key)
-    CheckIdentityForMachine {
+    /// Read identity key (for create machine key - need stored pubkey for verification)
+    ReadIdentityForMachine {
         client_pid: u32,
         request: CreateMachineKeyRequest,
         cap_slots: Vec<u32>,
@@ -108,7 +124,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Delete machine key inode (step 2 - then send response)
-    DeleteMachineKeyInode { client_pid: u32, cap_slots: Vec<u32> },
+    DeleteMachineKeyInode {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
     /// Read machine key for rotation
     ReadMachineForRotate {
         client_pid: u32,
@@ -131,7 +150,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Read single machine key by ID
-    ReadSingleMachineKey { client_pid: u32, cap_slots: Vec<u32> },
+    ReadSingleMachineKey {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
 
     // =========================================================================
     // Credential operations
@@ -144,7 +166,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Get credentials (read credential store)
-    GetCredentials { client_pid: u32, cap_slots: Vec<u32> },
+    GetCredentials {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
     /// Read credentials for unlink
     ReadCredentialsForUnlink {
         client_pid: u32,
@@ -160,7 +185,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Write unlinked credential inode (step 2)
-    WriteUnlinkedCredentialInode { client_pid: u32, cap_slots: Vec<u32> },
+    WriteUnlinkedCredentialInode {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
     /// Write email credential content after ZID success (step 1)
     WriteEmailCredentialContent {
         client_pid: u32,
@@ -169,7 +197,10 @@ pub enum PendingStorageOp {
         cap_slots: Vec<u32>,
     },
     /// Write email credential inode after ZID success (step 2)
-    WriteEmailCredentialInode { client_pid: u32, cap_slots: Vec<u32> },
+    WriteEmailCredentialInode {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
 
     // =========================================================================
     // ZID session operations
@@ -216,6 +247,35 @@ pub enum PendingStorageOp {
         tokens: ZidTokens,
         cap_slots: Vec<u32>,
     },
+
+    // =========================================================================
+    // Identity Preferences operations
+    // =========================================================================
+    /// Read identity preferences from VFS
+    ReadIdentityPreferences {
+        client_pid: u32,
+        user_id: u128,
+        cap_slots: Vec<u32>,
+    },
+    /// Read preferences before updating (for set default key scheme)
+    ReadPreferencesForUpdate {
+        client_pid: u32,
+        user_id: u128,
+        new_key_scheme: zos_identity::KeyScheme,
+        cap_slots: Vec<u32>,
+    },
+    /// Write updated preferences content
+    WritePreferencesContent {
+        client_pid: u32,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+        cap_slots: Vec<u32>,
+    },
+    /// Write preferences inode (final step)
+    WritePreferencesInode {
+        client_pid: u32,
+        cap_slots: Vec<u32>,
+    },
 }
 
 /// Tracks pending network operations awaiting results.
@@ -227,7 +287,7 @@ pub enum PendingNetworkOp {
         user_id: u128,
         zid_endpoint: String,
         /// Machine key for signing the challenge
-        machine_key: MachineKeyRecord,
+        machine_key: Box<MachineKeyRecord>,
         cap_slots: Vec<u32>,
     },
     /// Submit signed challenge to ZID server (network request)
@@ -250,5 +310,59 @@ pub enum PendingNetworkOp {
         user_id: u128,
         zid_endpoint: String,
         cap_slots: Vec<u32>,
+        /// Derived identity ID for storage
+        identity_id: u128,
+        /// Derived machine ID for storage
+        machine_id: u128,
+        /// Identity signing public key (for storage)
+        identity_signing_public_key: [u8; 32],
+        /// Machine signing public key (for storage)
+        machine_signing_public_key: [u8; 32],
+        /// Machine encryption public key (for storage)
+        machine_encryption_public_key: [u8; 32],
+        /// Machine signing seed (for keypair reconstruction)
+        machine_signing_sk: [u8; 32],
+        /// Machine encryption seed (for keypair reconstruction)
+        machine_encryption_sk: [u8; 32],
+    },
+    /// Request challenge after identity creation (for chained login)
+    /// Identity creation returns {identity_id, machine_id, namespace_id} without tokens.
+    /// We need to chain into login flow to get tokens.
+    RequestZidChallengeAfterEnroll {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        cap_slots: Vec<u32>,
+        /// Machine ID for storage (our local u128 ID)
+        machine_id: u128,
+        /// Identity signing public key (for storage)
+        identity_signing_public_key: [u8; 32],
+        /// Machine signing public key (for storage)
+        machine_signing_public_key: [u8; 32],
+        /// Machine encryption public key (for storage)
+        machine_encryption_public_key: [u8; 32],
+        /// Machine signing seed (for keypair reconstruction and signing challenge)
+        machine_signing_sk: [u8; 32],
+        /// Machine encryption seed (for keypair reconstruction)
+        machine_encryption_sk: [u8; 32],
+    },
+    /// Submit login after identity creation (final step to get tokens)
+    SubmitZidLoginAfterEnroll {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        cap_slots: Vec<u32>,
+        /// Machine ID for storage
+        machine_id: u128,
+        /// Identity signing public key (for storage)
+        identity_signing_public_key: [u8; 32],
+        /// Machine signing public key (for storage)
+        machine_signing_public_key: [u8; 32],
+        /// Machine encryption public key (for storage)
+        machine_encryption_public_key: [u8; 32],
+        /// Machine signing seed (for storage)
+        machine_signing_sk: [u8; 32],
+        /// Machine encryption seed (for storage)
+        machine_encryption_sk: [u8; 32],
     },
 }

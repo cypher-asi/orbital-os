@@ -1,0 +1,89 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: #0a0a12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.progressSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.percentage {
+  font-size: 18px;
+  font-weight: 500;
+  color: #e0e0e0;
+  letter-spacing: 0.5px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.progressBar {
+  width: 340px;
+  padding: 2px;
+}
+
+.progressTrack {
+  position: relative;
+  width: 100%;
+  height: 24px;
+  background: #2a2a2a;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 
+    0 0 20px rgba(1, 244, 203, 0.3),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.progressFill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(
+    45deg,
+    #404040 25%,
+    transparent 25%,
+    transparent 50%,
+    #404040 50%,
+    #404040 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 20px 20px;
+  background-color: #606060;
+  transition: width 0.3s ease-out;
+  box-shadow: 
+    0 0 15px rgba(96, 96, 96, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.status {
+  font-size: 14px;
+  font-weight: 300;
+  color: #888;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.statusError {
+  composes: status;
+  color: #f87171;
+  font-weight: 400;
+}

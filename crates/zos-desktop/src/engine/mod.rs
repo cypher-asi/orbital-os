@@ -8,21 +8,21 @@
 //! - `animation`: Camera animation
 //! - `rendering`: Screen coordinate calculations
 
-mod transitions;
-mod input;
-mod windows;
-mod void_mode;
 mod animation;
+mod input;
 mod rendering;
+mod transitions;
+mod void_mode;
+mod windows;
 
-use std::collections::HashMap;
 use crate::desktop::{DesktopManager, VoidState};
 use crate::input::InputRouter;
 use crate::math::{Camera, Rect, Size};
 use crate::transition::{CameraAnimation, Crossfade};
-use crate::viewport::Viewport;
 use crate::view_mode::ViewMode;
+use crate::viewport::Viewport;
 use crate::window::{WindowId, WindowManager, WindowState};
+use std::collections::HashMap;
 
 pub use rendering::WindowScreenRect;
 
@@ -86,7 +86,8 @@ impl DesktopEngine {
         let screen_size = Size::new(width, height);
         self.viewport.screen_size = screen_size;
         self.void_state.set_screen_size(screen_size);
-        self.desktops.set_desktop_size(Size::new(width.max(1920.0), height.max(1080.0)));
+        self.desktops
+            .set_desktop_size(Size::new(width.max(1920.0), height.max(1080.0)));
 
         // Only create first desktop if none exists yet (idempotent for React StrictMode)
         if self.desktops.desktops().is_empty() {
@@ -105,7 +106,8 @@ impl DesktopEngine {
 
         let min_width = width.max(1920.0);
         let min_height = height.max(1080.0);
-        self.desktops.set_desktop_size(Size::new(min_width, min_height));
+        self.desktops
+            .set_desktop_size(Size::new(min_width, min_height));
     }
 
     /// Pan the viewport
@@ -142,7 +144,8 @@ impl DesktopEngine {
                 self.commit_viewport_to_desktop();
             }
             ViewMode::Void => {
-                self.viewport.zoom_at_clamped(factor, anchor_x, anchor_y, 0.1, 1.0);
+                self.viewport
+                    .zoom_at_clamped(factor, anchor_x, anchor_y, 0.1, 1.0);
             }
         }
     }
@@ -150,7 +153,8 @@ impl DesktopEngine {
     /// Commit viewport state to active desktop
     pub(crate) fn commit_viewport_to_desktop(&mut self) {
         if let ViewMode::Desktop { index } = self.view_mode {
-            self.desktops.save_desktop_camera(index, self.viewport.center, self.viewport.zoom);
+            self.desktops
+                .save_desktop_camera(index, self.viewport.center, self.viewport.zoom);
         }
     }
 

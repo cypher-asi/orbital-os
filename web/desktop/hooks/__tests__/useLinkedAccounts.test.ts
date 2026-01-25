@@ -10,8 +10,9 @@ const mockCurrentUser = { id: '12345', displayName: 'Test User' };
 let mockSelectCurrentUser = vi.fn(() => mockCurrentUser);
 
 vi.mock('../../../stores', () => ({
-  useIdentityStore: (selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown) =>
-    selector({ currentUser: mockSelectCurrentUser() }),
+  useIdentityStore: (
+    selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown
+  ) => selector({ currentUser: mockSelectCurrentUser() }),
   selectCurrentUser: (state: { currentUser: typeof mockCurrentUser | null }) => state.currentUser,
 }));
 

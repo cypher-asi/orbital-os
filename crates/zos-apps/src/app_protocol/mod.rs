@@ -27,8 +27,8 @@ pub use clock::ClockState;
 pub use input::InputEvent;
 pub use settings::{SettingsArea, SettingsState};
 pub use terminal::{
-    InputAction, TerminalInput, TerminalState, MSG_CONSOLE_INPUT,
-    TYPE_TERMINAL_INPUT, TYPE_TERMINAL_STATE,
+    InputAction, TerminalInput, TerminalState, MSG_CONSOLE_INPUT, TYPE_TERMINAL_INPUT,
+    TYPE_TERMINAL_STATE,
 };
 pub use wire::{decode_envelope, encode_envelope, Envelope, PROTOCOL_VERSION};
 

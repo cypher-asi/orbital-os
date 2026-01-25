@@ -13,10 +13,7 @@
  * - hooks/useBackgroundMenu.ts - Background menu state
  */
 
-import {
-  SupervisorProvider,
-  DesktopControllerProvider,
-} from '../../desktop/hooks/useSupervisor';
+import { SupervisorProvider, DesktopControllerProvider } from '../../desktop/hooks/useSupervisor';
 import { DesktopWithPermissions } from './DesktopWithPermissions';
 import type { DesktopProps } from './types';
 

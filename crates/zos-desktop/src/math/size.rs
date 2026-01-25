@@ -1,7 +1,7 @@
 //! 2D size type for dimensions
 
-use serde::{Deserialize, Serialize};
 use super::Vec2;
+use serde::{Deserialize, Serialize};
 
 /// 2D size for width and height
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

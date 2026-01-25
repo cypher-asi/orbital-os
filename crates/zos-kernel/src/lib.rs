@@ -49,14 +49,15 @@ mod replay;
 pub use capability::{axiom_check, AxiomError, Capability, CapabilitySpace, Permissions};
 pub use error::KernelError;
 pub use ipc::{
-    Endpoint, EndpointDetail, EndpointInfo, MAX_CAPS_PER_MESSAGE, MAX_MESSAGE_SIZE, Message,
-    MessageSummary, TransferredCap,
+    Endpoint, EndpointDetail, EndpointInfo, Message, MessageSummary, TransferredCap,
+    MAX_CAPS_PER_MESSAGE, MAX_MESSAGE_SIZE,
 };
 pub use syscall::{
     CapInfo, RevokeNotification, Syscall, SyscallResult, MSG_CAP_REVOKED, MSG_CONSOLE_INPUT,
     SYS_CALL, SYS_CAP_DELETE, SYS_CAP_DERIVE, SYS_CAP_GRANT, SYS_CAP_INSPECT, SYS_CAP_LIST,
     SYS_CAP_REVOKE, SYS_CONSOLE_WRITE, SYS_CREATE_ENDPOINT, SYS_DEBUG, SYS_DELETE_ENDPOINT,
-    SYS_EXIT, SYS_KILL, SYS_PS, SYS_RECV, SYS_REPLY, SYS_SEND, SYS_SEND_CAP, SYS_TIME, SYS_YIELD,
+    SYS_EXIT, SYS_KILL, SYS_PS, SYS_RECV, SYS_REPLY, SYS_SEND, SYS_SEND_CAP, SYS_TIME,
+    SYS_WALLCLOCK, SYS_YIELD,
 };
 pub use types::{
     CapSlot, EndpointId, EndpointMetrics, ObjectType, Process, ProcessId, ProcessMetrics,

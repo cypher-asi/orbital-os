@@ -1,7 +1,7 @@
 //! Window configuration for creation
 
-use crate::math::{Size, Vec2};
 use super::WindowType;
+use crate::math::{Size, Vec2};
 
 /// Configuration for creating a window
 #[derive(Clone, Debug, Default)]

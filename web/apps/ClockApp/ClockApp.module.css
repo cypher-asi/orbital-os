@@ -4,8 +4,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  background: transparent !important;
-  border: none !important;
+  width: 100%;
 }
 
 /* Main clock panel */
@@ -16,19 +15,18 @@
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 32px 24px !important;
+  padding: 32px 24px;
 }
 
 /* Icon container */
 .iconPanel {
   width: 64px;
   height: 64px;
-  border-radius: 50% !important;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-accent-subtle, rgba(1, 244, 203, 0.1)) !important;
-  border: none !important;
+  background: var(--color-accent-subtle, rgba(1, 244, 203, 0.1));
 }
 
 .icon {
@@ -37,9 +35,9 @@
 
 /* Time display - large monospace */
 .time {
-  font-size: 48px !important;
-  font-weight: 300 !important;
-  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace) !important;
+  font-size: 48px;
+  font-weight: 300;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
   letter-spacing: 2px;
   line-height: 1.2;
 }
@@ -48,11 +46,7 @@
 .infoRow {
   display: flex;
   gap: 8px;
-  padding-top: 16px !important;
+  padding-top: 16px;
   margin-top: 8px;
   border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-  background: transparent !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
 }

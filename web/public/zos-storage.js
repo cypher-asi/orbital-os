@@ -143,6 +143,55 @@ const ZosStorage = {
     console.log(
       `[ZosStorage] Caches populated: ${this.pathCache.size} paths, ${this.inodeCache.size} inodes, ${this.contentCache.size} content entries`
     );
+    
+    // Log a few sample paths for debugging if any exist
+    if (this.pathCache.size > 0) {
+      const samplePaths = Array.from(this.pathCache).slice(0, 5);
+      console.log('[ZosStorage] Sample paths:', samplePaths);
+    }
+  },
+
+  /**
+   * Refresh caches from IndexedDB.
+   * Call this after external writes or to sync cache with persisted state.
+   * @returns {Promise<void>}
+   */
+  async refreshCaches() {
+    if (!this.db) {
+      console.warn('[ZosStorage] Cannot refresh caches - not initialized');
+      return;
+    }
+    console.log('[ZosStorage] Refreshing caches from IndexedDB...');
+    await this.populateCaches();
+  },
+
+  /**
+   * Clear all data from IndexedDB and caches.
+   * Use this to reset storage to a clean state.
+   * @returns {Promise<void>}
+   */
+  async clearAll() {
+    if (!this.db) {
+      throw new Error('ZosStorage not initialized');
+    }
+    
+    console.log('[ZosStorage] Clearing all data...');
+    
+    // Clear IndexedDB stores
+    await new Promise((resolve, reject) => {
+      const tx = this.db.transaction([this.INODES_STORE, this.CONTENT_STORE], 'readwrite');
+      tx.objectStore(this.INODES_STORE).clear();
+      tx.objectStore(this.CONTENT_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+    
+    // Clear caches
+    this.pathCache.clear();
+    this.inodeCache.clear();
+    this.contentCache.clear();
+    
+    console.log('[ZosStorage] All data cleared');
   },
 
   // ==========================================================================
@@ -580,6 +629,9 @@ const ZosStorage = {
       return;
     }
 
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
+
     try {
       await this.init();
 
@@ -605,14 +657,15 @@ const ZosStorage = {
         }
       }
 
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
       if (data) {
-        this.supervisor.notify_storage_read_complete(requestId, data);
+        setTimeout(() => supervisor.notify_storage_read_complete(requestId, data), 0);
       } else {
-        this.supervisor.notify_storage_not_found(requestId);
+        setTimeout(() => supervisor.notify_storage_not_found(requestId), 0);
       }
     } catch (e) {
       console.error(`[ZosStorage] startRead error: ${e.message}`);
-      this.supervisor.notify_storage_error(requestId, e.message);
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
     }
   },
 
@@ -624,14 +677,27 @@ const ZosStorage = {
    * @param {Uint8Array} value - Data to store
    */
   async startWrite(requestId, key, value) {
-    console.log(
-      `[ZosStorage] startWrite: request_id=${requestId}, key=${key}, len=${value.length}`
-    );
+    // Log writes with stack trace context for debugging duplicate writes
+    const isDirectory = key.includes('inode:') && !key.includes('.json');
+    if (isDirectory) {
+      console.warn(
+        `[ZosStorage] DIRECTORY WRITE: request_id=${requestId}, key=${key}, len=${value.length}`
+      );
+      // Log a shortened stack trace to help identify the source
+      console.trace('[ZosStorage] Directory write stack trace');
+    } else {
+      console.log(
+        `[ZosStorage] startWrite: request_id=${requestId}, key=${key}, len=${value.length}`
+      );
+    }
 
     if (!this.supervisor) {
       console.error('[ZosStorage] startWrite: supervisor not initialized');
       return;
     }
+
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
 
     try {
       await this.init();
@@ -651,10 +717,15 @@ const ZosStorage = {
         await this.putInode(key, inode);
       }
 
-      this.supervisor.notify_storage_write_complete(requestId);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow.
+      // The supervisor may still be borrowed from the call that initiated this
+      // storage operation, so we use setTimeout to ensure the callback happens
+      // after the current Rust call stack completes.
+      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
     } catch (e) {
       console.error(`[ZosStorage] startWrite error: ${e.message}`);
-      this.supervisor.notify_storage_error(requestId, e.message);
+      // Defer error callback for the same reason
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
     }
   },
 
@@ -672,6 +743,9 @@ const ZosStorage = {
       return;
     }
 
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
+
     try {
       await this.init();
 
@@ -685,10 +759,11 @@ const ZosStorage = {
         await this.deleteInode(key);
       }
 
-      this.supervisor.notify_storage_write_complete(requestId);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
     } catch (e) {
       console.error(`[ZosStorage] startDelete error: ${e.message}`);
-      this.supervisor.notify_storage_error(requestId, e.message);
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
     }
   },
 
@@ -706,6 +781,9 @@ const ZosStorage = {
       return;
     }
 
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
+
     try {
       await this.init();
 
@@ -719,10 +797,11 @@ const ZosStorage = {
       const keys = children.map((inode) => inode.path);
       const keysJson = JSON.stringify(keys);
 
-      this.supervisor.notify_storage_list_complete(requestId, keysJson);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      setTimeout(() => supervisor.notify_storage_list_complete(requestId, keysJson), 0);
     } catch (e) {
       console.error(`[ZosStorage] startList error: ${e.message}`);
-      this.supervisor.notify_storage_error(requestId, e.message);
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
     }
   },
 
@@ -739,6 +818,9 @@ const ZosStorage = {
       console.error('[ZosStorage] startExists: supervisor not initialized');
       return;
     }
+
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
 
     try {
       await this.init();
@@ -769,10 +851,11 @@ const ZosStorage = {
         }
       }
 
-      this.supervisor.notify_storage_exists_complete(requestId, exists);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      setTimeout(() => supervisor.notify_storage_exists_complete(requestId, exists), 0);
     } catch (e) {
       console.error(`[ZosStorage] startExists error: ${e.message}`);
-      this.supervisor.notify_storage_error(requestId, e.message);
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
     }
   },
 };

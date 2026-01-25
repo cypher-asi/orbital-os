@@ -62,6 +62,8 @@ pub enum KeyError {
     InsufficientShards,
     /// Invalid shard data
     InvalidShard(String),
+    /// Neural Key verification failed - reconstructed key doesn't match stored identity
+    NeuralKeyMismatch,
 }
 
 /// Errors from credential operations.

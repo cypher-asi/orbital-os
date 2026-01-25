@@ -24,7 +24,7 @@ export default defineConfig({
     // Required headers for SharedArrayBuffer (used by Web Workers)
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
     // Ensure proper MIME types for WASM
     fs: {

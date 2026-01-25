@@ -109,11 +109,15 @@ impl super::Supervisor {
         match syscall_num {
             0 => SyscallResult::Ok(0), // NOP
             1 => self.handle_legacy_sys_debug(process_id, data),
-            2 => self.system.handle_syscall(process_id, Syscall::CreateEndpoint),
+            2 => self
+                .system
+                .handle_syscall(process_id, Syscall::CreateEndpoint),
             3 => self.handle_legacy_send(process_id, args, data),
             4 => self.handle_legacy_receive(process_id, args),
             5 => self.system.handle_syscall(process_id, Syscall::ListCaps),
-            6 => self.system.handle_syscall(process_id, Syscall::ListProcesses),
+            6 => self
+                .system
+                .handle_syscall(process_id, Syscall::ListProcesses),
             7 => self.handle_legacy_exit(process_id, args[0]),
             8 => self.system.handle_syscall(process_id, Syscall::GetTime),
             9 => SyscallResult::Ok(0), // SYS_YIELD
@@ -184,7 +188,11 @@ impl super::Supervisor {
         self.system.handle_syscall(process_id, syscall)
     }
 
-    fn handle_legacy_exit(&mut self, process_id: ProcessId, exit_code: u32) -> zos_kernel::SyscallResult {
+    fn handle_legacy_exit(
+        &mut self,
+        process_id: ProcessId,
+        exit_code: u32,
+    ) -> zos_kernel::SyscallResult {
         let result = self.handle_sys_exit(process_id, exit_code);
         zos_kernel::SyscallResult::Ok(result as u64)
     }

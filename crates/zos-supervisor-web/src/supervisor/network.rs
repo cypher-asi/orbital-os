@@ -16,7 +16,12 @@ extern "C" {
 
 impl super::Supervisor {
     /// Internal handler for network result.
-    pub(super) fn on_network_result_internal(&mut self, request_id: u32, pid: u64, result: JsValue) {
+    pub(super) fn on_network_result_internal(
+        &mut self,
+        request_id: u32,
+        pid: u64,
+        result: JsValue,
+    ) {
         log(&format!(
             "[supervisor] onNetworkResult: request_id={}, pid={}",
             request_id, pid
@@ -70,7 +75,7 @@ impl super::Supervisor {
         const INPUT_ENDPOINT_SLOT: u32 = 1;
         // MSG_NET_RESULT = 0x9002
         const MSG_NET_RESULT: u32 = 0x9002;
-        
+
         self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, MSG_NET_RESULT, payload);
     }
 }

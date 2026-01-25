@@ -1,8 +1,8 @@
 //! Input router state machine
 
+use super::DragState;
 use crate::math::{Size, Vec2};
 use crate::window::{WindowId, WindowRegion};
-use super::DragState;
 
 /// Input router managing drag state
 pub struct InputRouter {
@@ -36,7 +36,10 @@ impl InputRouter {
 
     /// Start canvas pan operation
     pub fn start_pan(&mut self, start: Vec2, start_center: Vec2) {
-        self.drag = Some(DragState::PanCanvas { start, start_center });
+        self.drag = Some(DragState::PanCanvas {
+            start,
+            start_center,
+        });
     }
 
     /// Start window move operation
@@ -85,7 +88,10 @@ mod tests {
 
         router.start_pan(Vec2::new(100.0, 100.0), Vec2::new(0.0, 0.0));
         assert!(router.is_dragging());
-        assert!(matches!(router.drag_state(), Some(DragState::PanCanvas { .. })));
+        assert!(matches!(
+            router.drag_state(),
+            Some(DragState::PanCanvas { .. })
+        ));
 
         router.end_drag();
         assert!(!router.is_dragging());
@@ -97,7 +103,7 @@ mod tests {
 
         router.start_window_move(1, Vec2::new(10.0, 10.0));
         assert!(router.is_dragging());
-        
+
         if let Some(DragState::MoveWindow { window_id, .. }) = router.drag_state() {
             assert_eq!(*window_id, 1);
         } else {
@@ -116,8 +122,11 @@ mod tests {
             Size::new(400.0, 300.0),
             Vec2::new(500.0, 400.0),
         );
-        
+
         assert!(router.is_dragging());
-        assert!(matches!(router.drag_state(), Some(DragState::ResizeWindow { .. })));
+        assert!(matches!(
+            router.drag_state(),
+            Some(DragState::ResizeWindow { .. })
+        ));
     }
 }

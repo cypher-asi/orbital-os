@@ -32,6 +32,9 @@ import {
   type UnlinkCredentialResponse,
   type ZidLoginResponse,
   type ZidEnrollMachineResponse,
+  type IdentityPreferences,
+  type GetIdentityPreferencesResponse,
+  type SetDefaultKeySchemeResponse,
 } from './types';
 
 import {
@@ -149,7 +152,10 @@ export class IdentityServiceClient {
    * @param shards - At least 3 Shamir shards
    * @returns NeuralKeyGenerated with new shards and public identifiers
    */
-  async recoverNeuralKey(userId: bigint | string, shards: NeuralShard[]): Promise<NeuralKeyGenerated> {
+  async recoverNeuralKey(
+    userId: bigint | string,
+    shards: NeuralShard[]
+  ): Promise<NeuralKeyGenerated> {
     const response = await this.request<RecoverNeuralKeyResponse>(MSG.RECOVER_NEURAL_KEY, {
       user_id: formatUserIdForRust(userId),
       shards,
@@ -177,25 +183,31 @@ export class IdentityServiceClient {
   /**
    * Create a new machine key record for a user.
    *
-   * The service generates keys from entropy - no public keys needed in request.
+   * Machine keys are derived from the user's Neural Key using 3 Shamir shards.
    *
    * @param userId - User ID (as bigint)
    * @param machineName - Human-readable machine name
    * @param capabilities - Machine capabilities
    * @param keyScheme - Key scheme to use (defaults to 'classical')
+   * @param shards - Neural shards for key derivation (at least 3 required)
    * @returns The created MachineKeyRecord with derived keys
    */
   async createMachineKey(
     userId: bigint | string,
     machineName: string,
     capabilities: MachineKeyCapabilities,
-    keyScheme?: KeyScheme
+    keyScheme?: KeyScheme,
+    shards?: NeuralShard[]
   ): Promise<MachineKeyRecord> {
+    if (!shards || shards.length < 3) {
+      throw new IdentityServiceError('At least 3 Neural shards are required to create a machine key');
+    }
     const response = await this.request<CreateMachineKeyResponse>(MSG.CREATE_MACHINE_KEY, {
       user_id: formatUserIdForRust(userId),
       machine_name: machineName,
       capabilities,
       key_scheme: keyScheme ?? 'classical',
+      shards,
     });
     return this.unwrapResult(response.result);
   }
@@ -373,6 +385,36 @@ export class IdentityServiceClient {
       zid_endpoint: zidEndpoint,
     });
     return this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Identity Preferences
+  // ===========================================================================
+
+  /**
+   * Get identity preferences from VFS
+   * @param userId - User ID
+   * @returns IdentityPreferences containing default key scheme
+   */
+  async getIdentityPreferences(userId: bigint | string): Promise<IdentityPreferences> {
+    const response = await this.request<GetIdentityPreferencesResponse>(
+      MSG.GET_IDENTITY_PREFERENCES,
+      { user_id: formatUserIdForRust(userId) }
+    );
+    return response.preferences;
+  }
+
+  /**
+   * Set default key scheme preference in VFS
+   * @param userId - User ID
+   * @param keyScheme - Key scheme to set as default
+   */
+  async setDefaultKeyScheme(userId: bigint | string, keyScheme: KeyScheme): Promise<void> {
+    const response = await this.request<SetDefaultKeySchemeResponse>(MSG.SET_DEFAULT_KEY_SCHEME, {
+      user_id: formatUserIdForRust(userId),
+      key_scheme: keyScheme,
+    });
+    this.unwrapResult(response.result);
   }
 
   // ===========================================================================

@@ -124,7 +124,7 @@ impl DesktopController {
     }
 
     /// Set the process ID for a window
-    /// 
+    ///
     /// Links a window to its associated process for:
     /// - Automatic process termination when window closes
     /// - Per-process console output routing
@@ -197,20 +197,7 @@ impl DesktopController {
 
         let windows: Vec<serde_json::Value> = windows_vec
             .iter()
-            .map(|w| {
-                serde_json::json!({
-                    "id": w.id,
-                    "title": w.title,
-                    "appId": w.app_id,
-                    "processId": w.process_id,
-                    "position": { "x": w.position.x, "y": w.position.y },
-                    "size": { "width": w.size.width, "height": w.size.height },
-                    "state": window_state_to_str(w.state),
-                    "windowType": window_type_to_str(w.window_type),
-                    "zOrder": w.z_order,
-                    "focused": focused_id == Some(w.id)
-                })
-            })
+            .map(|w| window_to_json(w, focused_id))
             .collect();
         serde_json::to_string(&windows).unwrap_or_else(|_| "[]".to_string())
     }
@@ -259,12 +246,12 @@ impl DesktopController {
     #[wasm_bindgen]
     pub fn create_desktop(&mut self, name: &str) -> u32 {
         let desktop_id = self.engine.create_desktop(name);
-        
+
         // Automatically switch to the newly created desktop
         if let Some(index) = self.engine.desktops.index_of(desktop_id) {
             self.engine.switch_desktop(index, date_now());
         }
-        
+
         desktop_id
     }
 
@@ -289,7 +276,8 @@ impl DesktopController {
     /// Set background for a desktop
     #[wasm_bindgen]
     pub fn set_desktop_background(&mut self, desktop_index: u32, background: &str) {
-        self.engine.set_desktop_background(desktop_index as usize, background);
+        self.engine
+            .set_desktop_background(desktop_index as usize, background);
     }
 
     /// Get all desktops as JSON
@@ -513,7 +501,10 @@ impl DesktopController {
 }
 
 /// Build JSON for a single window screen rect
-fn build_window_rect_json(r: &crate::engine::WindowScreenRect, z_order: usize) -> serde_json::Value {
+fn build_window_rect_json(
+    r: &crate::engine::WindowScreenRect,
+    z_order: usize,
+) -> serde_json::Value {
     serde_json::json!({
         "id": r.id,
         "title": r.title,
@@ -531,6 +522,21 @@ fn build_window_rect_json(r: &crate::engine::WindowScreenRect, z_order: usize) -
             "width": r.screen_rect.width,
             "height": r.screen_rect.height
         }
+    })
+}
+
+fn window_to_json(window: &crate::window::Window, focused_id: Option<u64>) -> serde_json::Value {
+    serde_json::json!({
+        "id": window.id,
+        "title": window.title,
+        "appId": window.app_id,
+        "processId": window.process_id,
+        "position": { "x": window.position.x, "y": window.position.y },
+        "size": { "width": window.size.width, "height": window.size.height },
+        "state": window_state_to_str(window.state),
+        "windowType": window_type_to_str(window.window_type),
+        "zOrder": window.z_order,
+        "focused": focused_id == Some(window.id)
     })
 }
 

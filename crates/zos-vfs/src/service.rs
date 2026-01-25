@@ -82,12 +82,12 @@ pub trait VfsService {
 
     /// Get user home directory path.
     fn get_home_dir(&self, user_id: UserId) -> String {
-        alloc::format!("/home/{:032x}", user_id)
+        alloc::format!("/home/{}", user_id)
     }
 
     /// Get user's .zos directory path.
     fn get_zos_dir(&self, user_id: UserId) -> String {
-        alloc::format!("/home/{:032x}/.zos", user_id)
+        alloc::format!("/home/{}/.zos", user_id)
     }
 
     /// Resolve a path (follow symlinks, normalize).

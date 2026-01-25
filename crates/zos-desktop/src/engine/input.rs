@@ -1,9 +1,9 @@
 //! Input handling for pointer events and drag operations
 
+use super::DesktopEngine;
 use crate::input::{DragState, InputResult};
 use crate::math::Vec2;
 use crate::window::{WindowId, WindowRegion};
-use super::DesktopEngine;
 
 impl DesktopEngine {
     /// Start move drag
@@ -15,14 +15,22 @@ impl DesktopEngine {
             None => return,
         };
 
-        let canvas_pos = self.viewport.screen_to_canvas(Vec2::new(screen_x, screen_y));
+        let canvas_pos = self
+            .viewport
+            .screen_to_canvas(Vec2::new(screen_x, screen_y));
         let offset = canvas_pos - window_position;
         self.windows.focus(id);
         self.input.start_window_move(id, offset);
     }
 
     /// Start resize drag
-    pub fn start_resize_drag(&mut self, id: WindowId, direction: &str, screen_x: f32, screen_y: f32) {
+    pub fn start_resize_drag(
+        &mut self,
+        id: WindowId,
+        direction: &str,
+        screen_x: f32,
+        screen_y: f32,
+    ) {
         self.camera_animation = None;
 
         let handle = match direction {
@@ -38,13 +46,23 @@ impl DesktopEngine {
         };
 
         if let Some(window) = self.windows.get(id) {
-            let canvas_pos = self.viewport.screen_to_canvas(Vec2::new(screen_x, screen_y));
-            self.input.start_window_resize(id, handle, window.position, window.size, canvas_pos);
+            let canvas_pos = self
+                .viewport
+                .screen_to_canvas(Vec2::new(screen_x, screen_y));
+            self.input
+                .start_window_resize(id, handle, window.position, window.size, canvas_pos);
         }
     }
 
     /// Handle pointer down
-    pub fn handle_pointer_down(&mut self, x: f32, y: f32, button: u8, ctrl: bool, shift: bool) -> InputResult {
+    pub fn handle_pointer_down(
+        &mut self,
+        x: f32,
+        y: f32,
+        button: u8,
+        ctrl: bool,
+        shift: bool,
+    ) -> InputResult {
         let screen_pos = Vec2::new(x, y);
         let canvas_pos = self.viewport.screen_to_canvas(screen_pos);
 
@@ -68,10 +86,14 @@ impl DesktopEngine {
         let active_windows = &self.desktops.active_desktop().windows;
         let zoom = self.viewport.zoom;
 
-        let (window_id, region) = match self.windows.region_at_filtered(canvas_pos, Some(active_windows), zoom) {
-            Some(hit) => hit,
-            None => return InputResult::Unhandled,
-        };
+        let (window_id, region) =
+            match self
+                .windows
+                .region_at_filtered(canvas_pos, Some(active_windows), zoom)
+            {
+                Some(hit) => hit,
+                None => return InputResult::Unhandled,
+            };
 
         match region {
             WindowRegion::CloseButton => {
@@ -86,15 +108,9 @@ impl DesktopEngine {
                 self.maximize_window(window_id);
                 InputResult::Handled
             }
-            WindowRegion::TitleBar => {
-                self.handle_title_bar_click(window_id, canvas_pos)
-            }
-            WindowRegion::Content => {
-                self.handle_content_click(window_id, canvas_pos)
-            }
-            handle if handle.is_resize() => {
-                self.handle_resize_click(window_id, handle, canvas_pos)
-            }
+            WindowRegion::TitleBar => self.handle_title_bar_click(window_id, canvas_pos),
+            WindowRegion::Content => self.handle_content_click(window_id, canvas_pos),
+            handle if handle.is_resize() => self.handle_resize_click(window_id, handle, canvas_pos),
             _ => InputResult::Unhandled,
         }
     }
@@ -104,7 +120,8 @@ impl DesktopEngine {
         self.camera_animation = None;
         self.focus_window(window_id);
         if let Some(window) = self.windows.get(window_id) {
-            self.input.start_window_move(window_id, canvas_pos - window.position);
+            self.input
+                .start_window_move(window_id, canvas_pos - window.position);
         }
         InputResult::Handled
     }
@@ -112,7 +129,7 @@ impl DesktopEngine {
     /// Handle click on content area
     fn handle_content_click(&mut self, window_id: WindowId, canvas_pos: Vec2) -> InputResult {
         self.focus_window(window_id);
-        
+
         let window = match self.windows.get(window_id) {
             Some(w) => w,
             None => return InputResult::Unhandled,
@@ -122,7 +139,8 @@ impl DesktopEngine {
         // If content_interactive is true, forward events to the app
         if !window.content_interactive {
             self.camera_animation = None;
-            self.input.start_window_move(window_id, canvas_pos - window.position);
+            self.input
+                .start_window_move(window_id, canvas_pos - window.position);
             InputResult::Handled
         } else {
             let local = canvas_pos - window.position;
@@ -135,11 +153,22 @@ impl DesktopEngine {
     }
 
     /// Handle click on resize handle
-    fn handle_resize_click(&mut self, window_id: WindowId, handle: WindowRegion, canvas_pos: Vec2) -> InputResult {
+    fn handle_resize_click(
+        &mut self,
+        window_id: WindowId,
+        handle: WindowRegion,
+        canvas_pos: Vec2,
+    ) -> InputResult {
         self.camera_animation = None;
         self.focus_window(window_id);
         if let Some(window) = self.windows.get(window_id) {
-            self.input.start_window_resize(window_id, handle, window.position, window.size, canvas_pos);
+            self.input.start_window_resize(
+                window_id,
+                handle,
+                window.position,
+                window.size,
+                canvas_pos,
+            );
         }
         InputResult::Handled
     }
@@ -155,7 +184,10 @@ impl DesktopEngine {
         };
 
         match drag_state {
-            DragState::PanCanvas { start, start_center } => {
+            DragState::PanCanvas {
+                start,
+                start_center,
+            } => {
                 let delta = screen_pos - *start;
                 self.viewport.center = *start_center - delta / self.viewport.zoom;
                 InputResult::Handled
@@ -166,9 +198,16 @@ impl DesktopEngine {
                 self.move_window(wid, new_pos.x, new_pos.y);
                 InputResult::Handled
             }
-            DragState::ResizeWindow { window_id, handle, start_pos, start_size, start_mouse } => {
+            DragState::ResizeWindow {
+                window_id,
+                handle,
+                start_pos,
+                start_size,
+                start_mouse,
+            } => {
                 let delta = canvas_pos - *start_mouse;
-                let (new_pos, new_size) = crate::input::calculate_resize(*handle, *start_pos, *start_size, delta);
+                let (new_pos, new_size) =
+                    crate::input::calculate_resize(*handle, *start_pos, *start_size, delta);
                 let wid = *window_id;
                 self.move_window(wid, new_pos.x, new_pos.y);
                 self.resize_window(wid, new_size.width, new_size.height);
@@ -231,7 +270,7 @@ mod tests {
         let mut engine = create_test_engine();
 
         let result = engine.handle_pointer_down(500.0, 500.0, 1, false, false);
-        
+
         assert!(matches!(result, InputResult::Handled));
         assert!(engine.input.is_dragging());
     }
@@ -241,7 +280,7 @@ mod tests {
         let mut engine = create_test_engine();
 
         let result = engine.handle_pointer_down(500.0, 500.0, 0, true, false);
-        
+
         assert!(matches!(result, InputResult::Handled));
         assert!(engine.input.is_dragging());
     }
@@ -251,7 +290,7 @@ mod tests {
         let mut engine = create_test_engine();
 
         let result = engine.handle_pointer_down(500.0, 500.0, 0, false, true);
-        
+
         assert!(matches!(result, InputResult::Handled));
         assert!(engine.input.is_dragging());
     }
@@ -262,7 +301,7 @@ mod tests {
 
         // Left click on empty area
         let result = engine.handle_pointer_down(100.0, 100.0, 0, false, false);
-        
+
         assert!(matches!(result, InputResult::Unhandled));
     }
 
@@ -274,13 +313,15 @@ mod tests {
 
         // Start pan
         engine.handle_pointer_down(500.0, 500.0, 1, false, false);
-        
+
         // Move pointer
         engine.handle_pointer_move(600.0, 600.0);
 
         // Center should have moved
-        assert!((engine.viewport.center.x - initial_center.x).abs() > 0.001 ||
-                (engine.viewport.center.y - initial_center.y).abs() > 0.001);
+        assert!(
+            (engine.viewport.center.x - initial_center.x).abs() > 0.001
+                || (engine.viewport.center.y - initial_center.y).abs() > 0.001
+        );
     }
 
     #[test]
@@ -293,7 +334,7 @@ mod tests {
 
         // End drag
         let result = engine.handle_pointer_up();
-        
+
         assert!(matches!(result, InputResult::Handled));
         assert!(!engine.input.is_dragging());
     }
@@ -306,7 +347,7 @@ mod tests {
 
         // Zoom in
         let result = engine.handle_wheel(0.0, -100.0, 960.0, 540.0, true);
-        
+
         assert!(matches!(result, InputResult::Handled));
         assert!(engine.viewport.zoom > initial_zoom);
     }
@@ -316,7 +357,7 @@ mod tests {
         let mut engine = create_test_engine();
 
         let result = engine.handle_wheel(0.0, -100.0, 960.0, 540.0, false);
-        
+
         assert!(matches!(result, InputResult::Unhandled));
     }
 
@@ -344,13 +385,17 @@ mod tests {
     #[test]
     fn test_resize_drag_directions() {
         let directions = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
-        
+
         for dir in directions {
             let mut engine = create_test_engine();
             let id = create_test_window(&mut engine, 100.0, 100.0);
 
             engine.start_resize_drag(id, dir, 500.0, 500.0);
-            assert!(engine.input.is_dragging(), "Failed to start resize for direction: {}", dir);
+            assert!(
+                engine.input.is_dragging(),
+                "Failed to start resize for direction: {}",
+                dir
+            );
             engine.input.end_drag();
         }
     }
@@ -376,7 +421,7 @@ mod tests {
 
         // Start pan - should cancel animation
         engine.handle_pointer_down(500.0, 500.0, 1, false, false);
-        
+
         assert!(engine.camera_animation.is_none());
     }
 }

@@ -117,7 +117,7 @@ impl AppContext {
     /// For system apps: `/system/apps/{app_id}/data`
     pub fn data_dir(&self) -> String {
         if let Some(user_id) = self.user.user_id {
-            alloc::format!("/home/{:032x}/Apps/{}/data", user_id, self.app_id)
+            alloc::format!("/home/{}/Apps/{}/data", user_id, self.app_id)
         } else {
             alloc::format!("/system/apps/{}/data", self.app_id)
         }
@@ -129,7 +129,7 @@ impl AppContext {
     /// For system apps: `/system/apps/{app_id}/config`
     pub fn config_dir(&self) -> String {
         if let Some(user_id) = self.user.user_id {
-            alloc::format!("/home/{:032x}/Apps/{}/config", user_id, self.app_id)
+            alloc::format!("/home/{}/Apps/{}/config", user_id, self.app_id)
         } else {
             alloc::format!("/system/apps/{}/config", self.app_id)
         }
@@ -141,7 +141,7 @@ impl AppContext {
     /// For system apps: `/tmp/apps/{app_id}/cache`
     pub fn cache_dir(&self) -> String {
         if let Some(user_id) = self.user.user_id {
-            alloc::format!("/home/{:032x}/Apps/{}/cache", user_id, self.app_id)
+            alloc::format!("/home/{}/Apps/{}/cache", user_id, self.app_id)
         } else {
             alloc::format!("/tmp/apps/{}/cache", self.app_id)
         }
@@ -149,7 +149,9 @@ impl AppContext {
 
     /// Get the user's home directory path (if user context).
     pub fn home_dir(&self) -> Option<String> {
-        self.user.user_id.map(|id| alloc::format!("/home/{:032x}", id))
+        self.user
+            .user_id
+            .map(|id| alloc::format!("/home/{}", id))
     }
 
     /// Check if this app is running as a system process.
@@ -192,7 +194,12 @@ pub struct Message {
 impl Message {
     /// Create a new message
     pub fn new(tag: u32, from_pid: u32, cap_slots: Vec<u32>, data: Vec<u8>) -> Self {
-        Self { tag, from_pid, cap_slots, data }
+        Self {
+            tag,
+            from_pid,
+            cap_slots,
+            data,
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Panel, Text, Label } from '@cypher-asi/zui';
+import { Text, Label } from '@cypher-asi/zui';
 import { Clock } from 'lucide-react';
 import { decodeClockState, ClockState } from '../_wire-format/app-protocol';
 import styles from './ClockApp.module.css';
@@ -64,12 +64,12 @@ export function ClockApp() {
     handleMessage;
 
   return (
-    <Panel className={styles.container}>
-      <Panel variant="glass" className={styles.clockPanel}>
+    <div className={styles.container}>
+      <div className={styles.clockPanel}>
         {/* Icon */}
-        <Panel variant="default" className={styles.iconPanel}>
+        <div className={styles.iconPanel}>
           <Clock size={32} className={styles.icon} />
-        </Panel>
+        </div>
 
         {/* Time Display */}
         <Text as="div" size="lg" className={styles.time}>
@@ -82,15 +82,15 @@ export function ClockApp() {
         </Text>
 
         {/* Timezone Info */}
-        <Panel className={styles.infoRow}>
+        <div className={styles.infoRow}>
           <Label size="xs">{state.timezone}</Label>
           {state.is24Hour && (
             <Label size="xs" variant="success">
               24h
             </Label>
           )}
-        </Panel>
-      </Panel>
-    </Panel>
+        </div>
+      </div>
+    </div>
   );
 }

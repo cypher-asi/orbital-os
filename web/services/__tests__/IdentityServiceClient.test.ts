@@ -269,19 +269,28 @@ describe('IdentityServiceClient', () => {
   });
 
   describe('createMachineKey', () => {
-    it('should send correct IPC message with capabilities', async () => {
+    // Test shards for Neural key derivation
+    const testShards = [
+      { index: 1, hex: 'abc123def456abc123def456abc123def456' },
+      { index: 2, hex: 'def456abc789def456abc789def456abc789' },
+      { index: 3, hex: '789012345abc789012345abc789012345abc' },
+    ];
+
+    it('should send correct IPC message with capabilities and shards', async () => {
       const userId = BigInt(12345);
       const machineName = 'My Laptop';
       const capabilities: MachineKeyCapabilities = {
-        can_authenticate: true,
-        can_encrypt: true,
-        can_sign_messages: false,
-        can_authorize_machines: false,
-        can_revoke_machines: false,
+        capabilities: ['AUTHENTICATE', 'ENCRYPT'],
         expires_at: null,
       };
 
-      const promise = client.createMachineKey(userId, machineName, capabilities);
+      const promise = client.createMachineKey(
+        userId,
+        machineName,
+        capabilities,
+        undefined,
+        testShards
+      );
 
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
@@ -295,6 +304,7 @@ describe('IdentityServiceClient', () => {
       expect(requestData.user_id).toBe('0x00000000000000000000000000003039');
       expect(requestData.machine_name).toBe(machineName);
       expect(requestData.capabilities).toEqual(capabilities);
+      expect(requestData.shards).toEqual(testShards);
 
       // Simulate success response
       const response = {
@@ -319,6 +329,37 @@ describe('IdentityServiceClient', () => {
 
       const result = await promise;
       expect(result.machine_name).toBe(machineName);
+    });
+
+    it('should throw error when shards are missing', async () => {
+      const userId = BigInt(12345);
+      const machineName = 'My Laptop';
+      const capabilities: MachineKeyCapabilities = {
+        capabilities: ['AUTHENTICATE', 'ENCRYPT'],
+        expires_at: null,
+      };
+
+      await expect(
+        client.createMachineKey(userId, machineName, capabilities, undefined, undefined)
+      ).rejects.toBeInstanceOf(IdentityServiceError);
+    });
+
+    it('should throw error when insufficient shards provided', async () => {
+      const userId = BigInt(12345);
+      const machineName = 'My Laptop';
+      const capabilities: MachineKeyCapabilities = {
+        capabilities: ['AUTHENTICATE', 'ENCRYPT'],
+        expires_at: null,
+      };
+
+      const insufficientShards = [
+        { index: 1, hex: 'abc123' },
+        { index: 2, hex: 'def456' },
+      ];
+
+      await expect(
+        client.createMachineKey(userId, machineName, capabilities, undefined, insufficientShards)
+      ).rejects.toBeInstanceOf(IdentityServiceError);
     });
   });
 
@@ -404,7 +445,10 @@ describe('IdentityServiceClient', () => {
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
         MSG.REVOKE_MACHINE_KEY,
-        JSON.stringify({ user_id: '0x00000000000000000000000000003039', machine_id: '0x000000000000000000000000000181cd' })
+        JSON.stringify({
+          user_id: '0x00000000000000000000000000003039',
+          machine_id: '0x000000000000000000000000000181cd',
+        })
       );
 
       const response = {

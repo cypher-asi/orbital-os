@@ -65,7 +65,9 @@ impl WindowRegion {
         match self {
             WindowRegion::TitleBar => "move",
             WindowRegion::Content => "default",
-            WindowRegion::CloseButton | WindowRegion::MinimizeButton | WindowRegion::MaximizeButton => "pointer",
+            WindowRegion::CloseButton
+            | WindowRegion::MinimizeButton
+            | WindowRegion::MaximizeButton => "pointer",
             WindowRegion::ResizeN | WindowRegion::ResizeS => "ns-resize",
             WindowRegion::ResizeE | WindowRegion::ResizeW => "ew-resize",
             WindowRegion::ResizeNE | WindowRegion::ResizeSW => "nesw-resize",

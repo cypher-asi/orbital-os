@@ -47,7 +47,7 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
     handleBackgroundSelect,
     closeBackgroundMenu,
     handleBackgroundReady,
-  } = useBackgroundMenu({ backgroundRef, workspaceInfoRef });
+  } = useBackgroundMenu({ desktop, backgroundRef, workspaceInfoRef });
 
   // Pointer event handlers
   const {

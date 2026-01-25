@@ -60,6 +60,11 @@ web-sys = { version = "0.3", features = [
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
+# zid-crypto and its WASM-compatible dependencies
+zid-crypto = { path = "../zero-id/crates/zid-crypto" }
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { version = "1.6", features = ["v4", "serde", "js"] }
+
 # Dev server dependencies
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }

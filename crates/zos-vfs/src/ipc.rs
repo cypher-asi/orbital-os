@@ -1,6 +1,9 @@
 //! IPC protocol definitions for the VFS layer.
 //!
 //! Defines message types for inter-process communication.
+//!
+//! Note: VFS message constants are defined in `zos-ipc` as the single source of truth.
+//! This module re-exports them for backward compatibility and provides request/response types.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -10,71 +13,17 @@ use crate::error::VfsError;
 use crate::storage::{StorageQuota, StorageUsage};
 use crate::types::{DirEntry, FilePermissions, Inode, UserId};
 
-/// VFS service IPC message types.
+/// VFS service IPC message types - re-exported from zos-ipc.
+///
+/// This module re-exports the VFS constants from zos-ipc which is the single
+/// source of truth for all IPC protocol constants. This ensures Invariant 32:
+/// "Single Source of Truth for All Constants".
 pub mod vfs_msg {
-    // Directory Operations
-    /// Create directory request
-    pub const MSG_VFS_MKDIR: u32 = 0x8000;
-    /// Create directory response
-    pub const MSG_VFS_MKDIR_RESPONSE: u32 = 0x8001;
-    /// Remove directory request
-    pub const MSG_VFS_RMDIR: u32 = 0x8002;
-    /// Remove directory response
-    pub const MSG_VFS_RMDIR_RESPONSE: u32 = 0x8003;
-    /// Read directory request
-    pub const MSG_VFS_READDIR: u32 = 0x8004;
-    /// Read directory response
-    pub const MSG_VFS_READDIR_RESPONSE: u32 = 0x8005;
-
-    // File Operations
-    /// Write file request
-    pub const MSG_VFS_WRITE: u32 = 0x8010;
-    /// Write file response
-    pub const MSG_VFS_WRITE_RESPONSE: u32 = 0x8011;
-    /// Read file request
-    pub const MSG_VFS_READ: u32 = 0x8012;
-    /// Read file response
-    pub const MSG_VFS_READ_RESPONSE: u32 = 0x8013;
-    /// Delete file request
-    pub const MSG_VFS_UNLINK: u32 = 0x8014;
-    /// Delete file response
-    pub const MSG_VFS_UNLINK_RESPONSE: u32 = 0x8015;
-    /// Rename file request
-    pub const MSG_VFS_RENAME: u32 = 0x8016;
-    /// Rename file response
-    pub const MSG_VFS_RENAME_RESPONSE: u32 = 0x8017;
-    /// Copy file request
-    pub const MSG_VFS_COPY: u32 = 0x8018;
-    /// Copy file response
-    pub const MSG_VFS_COPY_RESPONSE: u32 = 0x8019;
-
-    // Metadata Operations
-    /// Stat request
-    pub const MSG_VFS_STAT: u32 = 0x8020;
-    /// Stat response
-    pub const MSG_VFS_STAT_RESPONSE: u32 = 0x8021;
-    /// Exists request
-    pub const MSG_VFS_EXISTS: u32 = 0x8022;
-    /// Exists response
-    pub const MSG_VFS_EXISTS_RESPONSE: u32 = 0x8023;
-    /// Change permissions request
-    pub const MSG_VFS_CHMOD: u32 = 0x8024;
-    /// Change permissions response
-    pub const MSG_VFS_CHMOD_RESPONSE: u32 = 0x8025;
-    /// Change owner request
-    pub const MSG_VFS_CHOWN: u32 = 0x8026;
-    /// Change owner response
-    pub const MSG_VFS_CHOWN_RESPONSE: u32 = 0x8027;
-
-    // Quota Operations
-    /// Get usage request
-    pub const MSG_VFS_GET_USAGE: u32 = 0x8030;
-    /// Get usage response
-    pub const MSG_VFS_GET_USAGE_RESPONSE: u32 = 0x8031;
-    /// Get quota request
-    pub const MSG_VFS_GET_QUOTA: u32 = 0x8032;
-    /// Get quota response
-    pub const MSG_VFS_GET_QUOTA_RESPONSE: u32 = 0x8033;
+    // Re-export all VFS constants from zos-ipc
+    pub use zos_ipc::vfs_dir::*;
+    pub use zos_ipc::vfs_file::*;
+    pub use zos_ipc::vfs_meta::*;
+    pub use zos_ipc::vfs_quota::*;
 }
 
 // ============================================================================
@@ -316,11 +265,11 @@ mod tests {
     #[test]
     fn test_message_constants() {
         // Ensure VFS messages are in the 0x8000 range
-        assert!(vfs_msg::MSG_VFS_MKDIR >= 0x8000);
-        assert!(vfs_msg::MSG_VFS_GET_QUOTA_RESPONSE < 0x9000);
+        const { assert!(vfs_msg::MSG_VFS_MKDIR >= 0x8000) };
+        const { assert!(vfs_msg::MSG_VFS_GET_QUOTA_RESPONSE < 0x9000) };
 
         // Ensure no overlap with identity messages (0x7000 range)
-        assert!(vfs_msg::MSG_VFS_MKDIR > 0x7FFF);
+        const { assert!(vfs_msg::MSG_VFS_MKDIR > 0x7FFF) };
     }
 
     #[test]

@@ -8,7 +8,13 @@
 
 import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
-import { TimeServiceClient, DEFAULT_TIME_SETTINGS, type Supervisor } from '../services';
+import {
+  TimeServiceClient,
+  DEFAULT_TIME_SETTINGS,
+  IdentityServiceClient,
+  type Supervisor,
+  type KeyScheme,
+} from '../services';
 
 // =============================================================================
 // Constants
@@ -24,6 +30,15 @@ export const DEFAULT_RPC_ENDPOINT = '127.0.0.1:9999';
 /** Settings navigation areas */
 export type SettingsArea = 'general' | 'identity' | 'network' | 'permissions' | 'theme';
 
+/** Settings sub-panel identifiers for deep-linking */
+export type SettingsSubPanel = 'neural-key' | 'machine-keys' | 'linked-accounts';
+
+/** Pending navigation state - supports deep-linking to sub-panels */
+export interface PendingNavigation {
+  area: SettingsArea;
+  subPanel?: SettingsSubPanel;
+}
+
 interface SettingsStoreState {
   // Time settings
   timeFormat24h: boolean;
@@ -32,24 +47,33 @@ interface SettingsStoreState {
   // Network settings
   rpcEndpoint: string;
 
+  // Identity preferences
+  defaultKeyScheme: KeyScheme;
+  isLoadingPreferences: boolean;
+
   // Navigation state (replaces module-level pendingNavigation)
-  pendingNavigation: SettingsArea | null;
+  pendingNavigation: PendingNavigation | null;
 
   // Loading state
   isLoading: boolean;
   isSynced: boolean;
   error: string | null;
 
-  // Internal: Service client reference
+  // Internal: Service client references
   _serviceClient: TimeServiceClient | null;
+  _identityClient: IdentityServiceClient | null;
 
   // Actions
   setTimeFormat24h: (value: boolean) => Promise<void>;
   setTimezone: (value: string) => Promise<void>;
   setRpcEndpoint: (value: string) => void;
 
+  // Identity preferences actions
+  loadIdentityPreferences: (userId: bigint) => Promise<void>;
+  setDefaultKeyScheme: (userId: bigint, scheme: KeyScheme) => Promise<void>;
+
   // Navigation actions
-  setPendingNavigation: (section: SettingsArea) => void;
+  setPendingNavigation: (navigation: PendingNavigation) => void;
   clearPendingNavigation: () => void;
 
   // Service sync
@@ -69,6 +93,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
         timeFormat24h: DEFAULT_TIME_SETTINGS.time_format_24h,
         timezone: DEFAULT_TIME_SETTINGS.timezone,
         rpcEndpoint: DEFAULT_RPC_ENDPOINT,
+        defaultKeyScheme: 'Classical',
+        isLoadingPreferences: false,
 
         // Navigation state
         pendingNavigation: null,
@@ -78,10 +104,11 @@ export const useSettingsStore = create<SettingsStoreState>()(
         error: null,
 
         _serviceClient: null,
+        _identityClient: null,
 
         // Navigation actions
-        setPendingNavigation: (section: SettingsArea) => {
-          set({ pendingNavigation: section });
+        setPendingNavigation: (navigation: PendingNavigation) => {
+          set({ pendingNavigation: navigation });
         },
 
         clearPendingNavigation: () => {
@@ -90,11 +117,54 @@ export const useSettingsStore = create<SettingsStoreState>()(
 
         // Initialize with supervisor reference
         initializeService: (supervisor: Supervisor) => {
-          const client = new TimeServiceClient(supervisor);
-          set({ _serviceClient: client });
+          const timeClient = new TimeServiceClient(supervisor);
+          const identityClient = new IdentityServiceClient(supervisor);
+          set({ _serviceClient: timeClient, _identityClient: identityClient });
 
           // Sync from service on initialization
           get().syncFromService();
+        },
+
+        // Load identity preferences from VFS
+        loadIdentityPreferences: async (userId: bigint) => {
+          const client = get()._identityClient;
+          if (!client) {
+            console.log('[SettingsStore] No identity client available');
+            return;
+          }
+
+          set({ isLoadingPreferences: true });
+          try {
+            const prefs = await client.getIdentityPreferences(userId);
+            set({ defaultKeyScheme: prefs.default_key_scheme, isLoadingPreferences: false });
+            console.log('[SettingsStore] Loaded identity preferences:', prefs);
+          } catch (err) {
+            console.error('[SettingsStore] Failed to load preferences:', err);
+            set({ isLoadingPreferences: false });
+          }
+        },
+
+        // Set default key scheme in VFS
+        setDefaultKeyScheme: async (userId: bigint, scheme: KeyScheme) => {
+          const client = get()._identityClient;
+          if (!client) {
+            console.log('[SettingsStore] No identity client available');
+            return;
+          }
+
+          const prevScheme = get().defaultKeyScheme;
+          // Optimistic update
+          set({ defaultKeyScheme: scheme });
+
+          try {
+            await client.setDefaultKeyScheme(userId, scheme);
+            console.log('[SettingsStore] Updated default key scheme:', scheme);
+          } catch (err) {
+            console.error('[SettingsStore] Failed to set default key scheme:', err);
+            // Revert on error
+            set({ defaultKeyScheme: prevScheme });
+            throw err;
+          }
         },
 
         // Sync settings from service

@@ -1,7 +1,7 @@
 //! Camera type for viewport transformations
 
-use serde::{Deserialize, Serialize};
 use super::{Rect, Size, Vec2};
+use serde::{Deserialize, Serialize};
 
 /// Camera state representing a viewport position and zoom level
 ///

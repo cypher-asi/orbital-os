@@ -3,47 +3,43 @@
 //! The TimeService manages time-related settings. It:
 //! - Stores user time format preferences (12h/24h)
 //! - Stores user timezone preferences
-//! - Persists settings to VFS (via async storage syscalls)
+//! - Persists settings via VFS service IPC (async pattern)
 //!
 //! # Protocol
 //!
 //! Apps communicate with TimeService via IPC:
 //!
-//! - `MSG_GET_TIME_SETTINGS (0x8001)`: Get current time settings
-//! - `MSG_SET_TIME_SETTINGS (0x8002)`: Update time settings
+//! - `MSG_GET_TIME_SETTINGS (0x8100)`: Get current time settings
+//! - `MSG_SET_TIME_SETTINGS (0x8102)`: Update time settings
 //!
 //! # Storage Access
 //!
-//! This service uses async storage syscalls (routed through supervisor to IndexedDB)
-//! instead of blocking VfsClient to avoid IPC deadlock.
+//! This service uses VFS IPC (async pattern) to persist settings.
+//! All storage operations flow through VFS Service (PID 4) per Invariant 31.
 
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use zos_apps::manifest::TIME_SERVICE_MANIFEST;
 use zos_apps::syscall;
+use zos_apps::vfs_async;
 use zos_apps::{app_main, AppContext, AppError, ControlFlow, Message, ZeroApp};
-use zos_process::{storage_result, MSG_STORAGE_RESULT};
+use zos_vfs::ipc::vfs_msg;
 
 // =============================================================================
-// IPC Message Tags
+// IPC Message Tags (re-exported from zos-ipc for single source of truth)
 // =============================================================================
 
-/// Message tags for time service
+/// Message tags for time service - re-exported from zos-ipc.
+///
+/// Note: Constants are defined in zos-ipc as the single source of truth
+/// per Invariant 32. This module re-exports for local convenience.
 pub mod time_msg {
-    /// Request current time settings
-    pub const MSG_GET_TIME_SETTINGS: u32 = 0x8001;
-    /// Response with time settings
-    pub const MSG_GET_TIME_SETTINGS_RESPONSE: u32 = 0x8002;
-    /// Set time settings
-    pub const MSG_SET_TIME_SETTINGS: u32 = 0x8003;
-    /// Response confirming settings update
-    pub const MSG_SET_TIME_SETTINGS_RESPONSE: u32 = 0x8004;
+    pub use zos_ipc::time::*;
 }
 
 // =============================================================================
@@ -101,10 +97,13 @@ impl TimeSettings {
 }
 
 // =============================================================================
-// Pending Storage Operations
+// Pending VFS Operations
 // =============================================================================
 
-/// Tracks pending storage operations awaiting results
+/// Tracks pending VFS operations awaiting responses.
+///
+/// Note: VFS IPC doesn't use request IDs like storage syscalls. For the Time Service's
+/// simple case (at most one pending read or write), we track by operation type.
 #[derive(Clone)]
 enum PendingOp {
     /// Reading settings for get request
@@ -132,8 +131,8 @@ pub struct TimeService {
     registered: bool,
     /// Current time settings (cached in memory)
     settings: TimeSettings,
-    /// Pending storage operations: request_id -> operation context
-    pending_ops: BTreeMap<u32, PendingOp>,
+    /// Pending VFS operation (at most one at a time for this simple service)
+    pending_op: Option<PendingOp>,
     /// Whether settings have been loaded from storage
     settings_loaded: bool,
 }
@@ -146,7 +145,7 @@ impl Default for TimeService {
                 time_format_24h: false,
                 timezone: String::from("UTC"),
             },
-            pending_ops: BTreeMap::new(),
+            pending_op: None,
             settings_loaded: false,
         }
     }
@@ -154,50 +153,34 @@ impl Default for TimeService {
 
 impl TimeService {
     // =========================================================================
-    // Storage syscall helpers (async, non-blocking)
+    // VFS IPC helpers (async, non-blocking) - Invariant 31 compliant
     // =========================================================================
 
-    /// Start async storage read and track the pending operation
-    fn start_storage_read(&mut self, key: &str, pending_op: PendingOp) -> Result<(), AppError> {
-        match syscall::storage_read_async(key) {
-            Ok(request_id) => {
-                syscall::debug(&format!(
-                    "TimeService: storage_read_async({}) -> request_id={}",
-                    key, request_id
-                ));
-                self.pending_ops.insert(request_id, pending_op);
-                Ok(())
-            }
-            Err(e) => {
-                syscall::debug(&format!("TimeService: storage_read_async failed: {}", e));
-                Err(AppError::IpcError(format!("Storage read failed: {}", e)))
-            }
-        }
+    /// Start async VFS read and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    fn start_vfs_read(&mut self, path: &str, pending_op: PendingOp) -> Result<(), AppError> {
+        syscall::debug(&format!("TimeService: sending VFS read request for {}", path));
+        vfs_async::send_read_request(path)?;
+        self.pending_op = Some(pending_op);
+        Ok(())
     }
 
-    /// Start async storage write and track the pending operation
-    fn start_storage_write(
+    /// Start async VFS write and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    fn start_vfs_write(
         &mut self,
-        key: &str,
+        path: &str,
         value: &[u8],
         pending_op: PendingOp,
     ) -> Result<(), AppError> {
-        match syscall::storage_write_async(key, value) {
-            Ok(request_id) => {
-                syscall::debug(&format!(
-                    "TimeService: storage_write_async({}, {} bytes) -> request_id={}",
-                    key,
-                    value.len(),
-                    request_id
-                ));
-                self.pending_ops.insert(request_id, pending_op);
-                Ok(())
-            }
-            Err(e) => {
-                syscall::debug(&format!("TimeService: storage_write_async failed: {}", e));
-                Err(AppError::IpcError(format!("Storage write failed: {}", e)))
-            }
-        }
+        syscall::debug(&format!(
+            "TimeService: sending VFS write request for {} ({} bytes)",
+            path,
+            value.len()
+        ));
+        vfs_async::send_write_request(path, value)?;
+        self.pending_op = Some(pending_op);
+        Ok(())
     }
 
     // =========================================================================
@@ -222,10 +205,9 @@ impl TimeService {
             );
         }
 
-        // Otherwise, start async read
-        let key = format!("content:{}", TimeSettings::storage_path());
-        self.start_storage_read(
-            &key,
+        // Otherwise, start async VFS read
+        self.start_vfs_read(
+            TimeSettings::storage_path(),
             PendingOp::GetSettings {
                 client_pid: msg.from_pid,
                 cap_slots: msg.cap_slots.clone(),
@@ -247,7 +229,11 @@ impl TimeService {
             None => {
                 syscall::debug("TimeService: Failed to parse settings from request");
                 // Send error response
-                return self.send_error_response(msg.from_pid, &msg.cap_slots, "Invalid settings format");
+                return self.send_error_response(
+                    msg.from_pid,
+                    &msg.cap_slots,
+                    "Invalid settings format",
+                );
             }
         };
 
@@ -256,11 +242,10 @@ impl TimeService {
             new_settings.time_format_24h, new_settings.timezone
         ));
 
-        // Write to storage
-        let key = format!("content:{}", TimeSettings::storage_path());
+        // Write via VFS IPC
         let value = new_settings.to_json();
-        self.start_storage_write(
-            &key,
+        self.start_vfs_write(
+            TimeSettings::storage_path(),
             &value,
             PendingOp::WriteSettings {
                 client_pid: msg.from_pid,
@@ -271,41 +256,24 @@ impl TimeService {
     }
 
     // =========================================================================
-    // Storage result handler
+    // VFS Response Handlers
     // =========================================================================
 
-    /// Handle MSG_STORAGE_RESULT - async storage operation completed
-    fn handle_storage_result(&mut self, _ctx: &AppContext, msg: &Message) -> Result<(), AppError> {
-        // Parse storage result
-        // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
-        if msg.data.len() < 9 {
-            syscall::debug("TimeService: storage result too short");
-            return Ok(());
-        }
+    /// Handle VFS read response (MSG_VFS_READ_RESPONSE)
+    fn handle_vfs_read_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        syscall::debug("TimeService: Handling VFS read response");
 
-        let request_id = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
-        let result_type = msg.data[4];
-        let data_len =
-            u32::from_le_bytes([msg.data[5], msg.data[6], msg.data[7], msg.data[8]]) as usize;
-        let data = if data_len > 0 && msg.data.len() >= 9 + data_len {
-            &msg.data[9..9 + data_len]
-        } else {
-            &[]
-        };
-
-        syscall::debug(&format!(
-            "TimeService: storage result request_id={}, type={}, data_len={}",
-            request_id, result_type, data_len
-        ));
-
-        // Look up pending operation
-        let pending_op = match self.pending_ops.remove(&request_id) {
+        // Take the pending operation
+        let pending_op = match self.pending_op.take() {
             Some(op) => op,
             None => {
-                syscall::debug(&format!("TimeService: unknown request_id {}", request_id));
+                syscall::debug("TimeService: VFS read response but no pending operation");
                 return Ok(());
             }
         };
+
+        // Parse VFS response
+        let result = vfs_async::parse_read_response(&msg.data);
 
         // Dispatch based on operation type
         match pending_op {
@@ -313,11 +281,13 @@ impl TimeService {
                 client_pid,
                 cap_slots,
             } => {
-                let settings = if result_type == storage_result::READ_OK {
-                    TimeSettings::from_json(data).unwrap_or_default()
-                } else {
-                    // Not found or error - return defaults
-                    TimeSettings::default()
+                let settings = match result {
+                    Ok(data) => TimeSettings::from_json(&data).unwrap_or_default(),
+                    Err(e) => {
+                        syscall::debug(&format!("TimeService: VFS read failed: {}", e));
+                        // Not found or error - return defaults
+                        TimeSettings::default()
+                    }
                 };
 
                 // Update cache
@@ -332,41 +302,77 @@ impl TimeService {
                 )
             }
 
+            PendingOp::InitialLoad => {
+                match result {
+                    Ok(data) => {
+                        if let Some(settings) = TimeSettings::from_json(&data) {
+                            syscall::debug(&format!(
+                                "TimeService: Loaded settings: time_format_24h={}, timezone={}",
+                                settings.time_format_24h, settings.timezone
+                            ));
+                            self.settings = settings;
+                        }
+                    }
+                    Err(_) => {
+                        syscall::debug("TimeService: No stored settings found, using defaults");
+                    }
+                }
+                self.settings_loaded = true;
+                Ok(())
+            }
+
+            _ => {
+                syscall::debug("TimeService: Unexpected pending operation for read response");
+                Ok(())
+            }
+        }
+    }
+
+    /// Handle VFS write response (MSG_VFS_WRITE_RESPONSE)
+    fn handle_vfs_write_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        syscall::debug("TimeService: Handling VFS write response");
+
+        // Take the pending operation
+        let pending_op = match self.pending_op.take() {
+            Some(op) => op,
+            None => {
+                syscall::debug("TimeService: VFS write response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_write_response(&msg.data);
+
+        // Dispatch based on operation type
+        match pending_op {
             PendingOp::WriteSettings {
                 client_pid,
                 settings,
                 cap_slots,
             } => {
-                if result_type == storage_result::WRITE_OK {
-                    syscall::debug("TimeService: Settings written successfully");
-                    // Update cache
-                    self.settings = settings.clone();
-                    self.settings_loaded = true;
-                    self.send_settings_response(
-                        client_pid,
-                        &cap_slots,
-                        &settings,
-                        time_msg::MSG_SET_TIME_SETTINGS_RESPONSE,
-                    )
-                } else {
-                    syscall::debug("TimeService: Settings write failed");
-                    self.send_error_response(client_pid, &cap_slots, "Write failed")
+                match result {
+                    Ok(()) => {
+                        syscall::debug("TimeService: Settings written successfully");
+                        // Update cache
+                        self.settings = settings.clone();
+                        self.settings_loaded = true;
+                        self.send_settings_response(
+                            client_pid,
+                            &cap_slots,
+                            &settings,
+                            time_msg::MSG_SET_TIME_SETTINGS_RESPONSE,
+                        )
+                    }
+                    Err(e) => {
+                        syscall::debug(&format!("TimeService: VFS write failed: {}", e));
+                        self.send_error_response(client_pid, &cap_slots, "Write failed")
+                    }
                 }
             }
 
-            PendingOp::InitialLoad => {
-                if result_type == storage_result::READ_OK {
-                    if let Some(settings) = TimeSettings::from_json(data) {
-                        syscall::debug(&format!(
-                            "TimeService: Loaded settings: time_format_24h={}, timezone={}",
-                            settings.time_format_24h, settings.timezone
-                        ));
-                        self.settings = settings;
-                    }
-                } else {
-                    syscall::debug("TimeService: No stored settings found, using defaults");
-                }
-                self.settings_loaded = true;
+            _ => {
+                syscall::debug("TimeService: Unexpected pending operation for write response");
                 Ok(())
             }
         }
@@ -426,9 +432,10 @@ impl TimeService {
 
         // Try to send via transferred reply capability first
         if let Some(&reply_slot) = cap_slots.first() {
-            match syscall::send(reply_slot, time_msg::MSG_SET_TIME_SETTINGS_RESPONSE, &json) {
-                Ok(()) => return Ok(()),
-                Err(_) => {}
+            if let Ok(()) =
+                syscall::send(reply_slot, time_msg::MSG_SET_TIME_SETTINGS_RESPONSE, &json)
+            {
+                return Ok(());
             }
         }
 
@@ -463,14 +470,17 @@ impl ZeroApp for TimeService {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         // Send to init's endpoint
-        let _ = syscall::send(syscall::INIT_ENDPOINT_SLOT, syscall::MSG_REGISTER_SERVICE, &data);
+        let _ = syscall::send(
+            syscall::INIT_ENDPOINT_SLOT,
+            syscall::MSG_REGISTER_SERVICE,
+            &data,
+        );
         self.registered = true;
 
         syscall::debug("TimeService: Registered with init");
 
-        // Load settings from storage on startup
-        let key = format!("content:{}", TimeSettings::storage_path());
-        let _ = self.start_storage_read(&key, PendingOp::InitialLoad);
+        // Load settings via VFS on startup (Invariant 31 compliant)
+        let _ = self.start_vfs_read(TimeSettings::storage_path(), PendingOp::InitialLoad);
 
         Ok(())
     }
@@ -486,9 +496,14 @@ impl ZeroApp for TimeService {
         ));
 
         match msg.tag {
-            MSG_STORAGE_RESULT => self.handle_storage_result(ctx, &msg),
+            // VFS responses (Invariant 31 compliant - storage via VFS IPC)
+            vfs_msg::MSG_VFS_READ_RESPONSE => self.handle_vfs_read_response(&msg),
+            vfs_msg::MSG_VFS_WRITE_RESPONSE => self.handle_vfs_write_response(&msg),
+            
+            // Time service protocol
             time_msg::MSG_GET_TIME_SETTINGS => self.handle_get_time_settings(ctx, &msg),
             time_msg::MSG_SET_TIME_SETTINGS => self.handle_set_time_settings(ctx, &msg),
+            
             _ => {
                 syscall::debug(&format!(
                     "TimeService: Unknown message tag 0x{:x} from PID {}",

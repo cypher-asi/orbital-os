@@ -341,6 +341,124 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
       * After Init starts, all storage access goes through processes
     * The vfs module is internal to zos-supervisor-web
 
+31. **Storage Hierarchy Enforcement**
+
+    All disk read/write operations must flow through the following hierarchy:
+
+    ```
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    Application/Service                       │
+    │                   (identity, time, apps)                     │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ VFS IPC Protocol
+                         │ (MSG_VFS_READ, MSG_VFS_WRITE, etc.)
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    VFS Service (PID 4)                       │
+    │              ONLY process with storage syscalls              │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ Storage Syscalls
+                         │ (SYS_STORAGE_READ, SYS_STORAGE_WRITE)
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    Supervisor (Main Thread)                  │
+    │              system.process_syscall(pid, syscall)            │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ Axiom Gateway Entry Point
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                   Axiom (Verification Layer)                 │
+    │    - Logs request to SysLog                                  │
+    │    - Verifies sender identity                                │
+    │    - Calls kernel function                                   │
+    │    - Records commits to CommitLog                            │
+    │    - Logs response to SysLog                                 │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ kernel_fn callback
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                 Kernel (Execution Layer)                     │
+    │    execute_storage_read/write(core, sender, data)           │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ HAL trait call
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                         HAL (WasmHal)                        │
+    │    do_storage_read_async(pid, key) → request_id             │
+    │    - Generates unique request_id                             │
+    │    - Tracks pending_requests[request_id] = pid               │
+    │    - Calls JavaScript FFI                                    │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ JavaScript FFI call
+                         │ (returns request_id immediately)
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                  ZosStorage (JavaScript)                     │
+    │    startRead(request_id, key)                                │
+    │    - Async IndexedDB operation                               │
+    │    - supervisor.notify_storage_read_complete(request_id)     │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ IndexedDB async operation
+                         ▼
+                    IndexedDB
+    ```
+
+    **Layer Responsibilities:**
+
+    * **Services/Apps**: All processes needing disk storage MUST use VFS IPC protocol
+    * **VFS Service**: The ONLY process authorized to make storage syscalls
+    * **Supervisor**: Routes syscalls through Axiom gateway
+    * **Axiom**: Verification and audit layer - logs all requests/responses, records commits
+    * **Kernel**: Executes storage syscall logic, calls HAL methods
+    * **HAL**: Platform abstraction - tracks pending requests, calls JavaScript
+    * **ZosStorage**: Single JavaScript object interfacing with IndexedDB
+
+    **Rationale:**
+
+    * Single point of control for all disk I/O
+    * Enables consistent permission checking, quota enforcement, encryption
+    * Simplifies audit trail for data access
+    * Allows VFS to implement filesystem semantics (paths, directories, metadata)
+
+    **Async Pattern:**
+
+    VFS IPC is non-blocking and event-driven with two separate paths:
+
+    **Request Path (Synchronous but Non-Blocking):**
+
+    1. VFS calls `storage_read_async()` syscall
+    2. Flows through: Supervisor → Axiom → Kernel → HAL → ZosStorage.startRead()
+    3. Returns `request_id` immediately (e.g., 42)
+    4. VFS stores `pending_ops[42] = {client_pid, path}`
+    5. VFS yields (returns from message handler)
+
+    **Callback Path (Asynchronous IPC Message):**
+
+    1. IndexedDB operation completes (10ms, 100ms, whatever)
+    2. ZosStorage calls `supervisor.notify_storage_read_complete(42, data)`
+    3. Supervisor routes `MSG_STORAGE_RESULT` via IPC to VFS
+    4. VFS receives IPC message, looks up `pending_ops[42]`
+    5. VFS sends `MSG_VFS_READ_RESPONSE` to original client
+
+    **Critical:** The callback does NOT go back through Axiom/Kernel - it's delivered as a standard IPC message.
+
+    This push-based async pattern prevents deadlock:
+
+    * No process blocks waiting for I/O
+    * Request returns immediately with tracking ID
+    * Callback arrives as separate IPC message (push notification)
+    * Services maintain pending operation context keyed by request_id
+    * Multiple storage operations can be in-flight simultaneously
+
+    **Exception:** Bootstrap operations before VFS Service exists may use HAL's `bootstrap_storage_*` methods (see invariant 30).
+
 ---
 
 ## 11. Target Capabilities
@@ -376,6 +494,47 @@ This single rule:
 
 ---
 
+## 12. Protocol Constants Consolidation
+
+31. **Single Source of Truth for All Constants**
+
+    * The `zos-ipc` crate is the **single source of truth** for:
+      * Syscall numbers (Process → Kernel operations)
+      * IPC message tags (Process ↔ Process communication)
+      * Protocol constants, ranges, and enumerations
+    * No duplicate constant definitions are allowed anywhere else
+    * Both `zos-kernel` and `zos-process` re-export from `zos-ipc`
+
+32. **Constant Organization in zos-ipc**
+
+    * **Syscalls** (`zos_ipc::syscall` module):
+      * 0x01-0x0F: Misc (debug, time, info)
+      * 0x10-0x1F: Process (create, exit, kill)
+      * 0x30-0x3F: Capability (grant, revoke, inspect)
+      * 0x40-0x4F: IPC (send, receive, call, reply)
+      * 0x50-0x5F: System (list processes)
+      * 0x70-0x7F: Platform Storage (async ops)
+      * 0x90-0x9F: Network (async HTTP)
+    * **IPC Messages** (various modules):
+      * 0x0001-0x000F: Console/System
+      * 0x1000-0x100F: Init service
+      * 0x2000-0x200F: Supervisor → Init
+      * 0x2010-0x201F: PermissionManager
+      * 0x3000-0x30FF: Kernel notifications
+      * 0x7000-0x70FF: Identity service
+      * 0x8000-0x80FF: VFS service
+      * 0x9000-0x901F: Network service
+
+    **Rationale:**
+    
+    * Eliminates duplicate definitions across crates
+    * Single point to update when adding new syscalls/messages
+    * Prevents constant value conflicts
+    * Makes protocol versioning and evolution easier
+    * Both syscalls and IPC messages are part of the kernel interface
+
+---
+
 ## Appendix: Current Implementation Violations
 
 The following are known violations in the current codebase that must be fixed to comply with these invariants:
@@ -386,7 +545,9 @@ The following are known violations in the current codebase that must be fixed to
 | ~~`kernel.deliver_console_input()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Use IPC with capability granted by Init~~ |
 | ~~`kernel.deliver_supervisor_ipc()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Method removed; routes via Init~~ |
 | ~~Kernel owns Axiom~~ | `zos-kernel/src/kernel.rs` | 1, 9 | **FIXED** | ~~System struct separates Axiom and KernelCore~~ |
-| Direct `kernel.kill_process()` | `zos-supervisor-web/src/supervisor/mod.rs` | 13, 16 | **NOT FIXED** | Route kill requests through Init via `MSG_SUPERVISOR_KILL_PROCESS` |
+| ~~Direct `kernel.kill_process()`~~ | `zos-supervisor-web/src/supervisor/mod.rs` | 13, 16 | **FIXED** | ~~All kills route via `MSG_SUPERVISOR_KILL_PROCESS` (Init PID 1 exception documented)~~ |
+| `identity_service` direct storage syscalls | `zos-apps/src/bin/identity_service/service.rs` (lines 41, 66) | 31 | **OPEN** | Refactor to use VFS IPC protocol for all storage operations |
+| `time_service` direct storage syscalls | `zos-apps/src/bin/time_service.rs` (lines 162, 185) | 31 | **OPEN** | Refactor to use VFS IPC protocol for all storage operations |
 
 ### Architectural Changes
 
@@ -407,15 +568,16 @@ The old `Kernel` wrapper is deprecated and will be removed in a future version. 
 
 3. **`kernel.deliver_supervisor_ipc()`**: Method removed. IPC delivery now routes through Init via `MSG_SUPERVISOR_IPC_DELIVERY (0x2003)`.
 
-### Remaining Violation
+### Init (PID 1) Exception
 
-**Direct `kernel.kill_process()` calls**: The supervisor still directly calls `kernel.kill_process()` in multiple locations:
+**Direct `kernel.kill_process()` for Init**: The supervisor has a `kill_process_direct()` method that is used **only** for:
 
-- `crates/zos-supervisor-web/src/supervisor/mod.rs` (multiple locations)
-- `crates/zos-supervisor-web/src/supervisor/spawn.rs`
-- `crates/zos-supervisor-web/src/pingpong.rs`
+1. Terminating Init itself (PID 1) - Init cannot kill itself via IPC
+2. Bootstrap failures before Init is fully spawned
 
-**Required Fix**: Route kill requests through Init via `MSG_SUPERVISOR_KILL_PROCESS (0x2002)`, which already exists. The Init process already has a handler (`handle_supervisor_kill_process`) that invokes `syscall::kill()`.
+This is an **architectural necessity**, not a violation. Init is the IPC routing hub and cannot route messages to itself. All other process kills properly route through Init via `MSG_SUPERVISOR_KILL_PROCESS (0x2002)`.
+
+**Implementation**: All kill requests use `kill_process_via_init()` which sends IPC to Init, except for the documented Init edge case. This ensures proper audit logging via SysLog for all killable processes.
 
 ---
 

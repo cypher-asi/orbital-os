@@ -1,42 +1,40 @@
 //! Cryptographic helpers for identity service
 //!
-//! This module provides simplified crypto operations for WASM environments.
-//! In production, these would be replaced with proper cryptographic libraries.
+//! This module re-exports canonical crypto from zos-identity::crypto
+//! and provides Zero OS-specific utility functions.
 
 extern crate alloc;
 
 use alloc::format;
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
-use zos_identity::ipc::NeuralShard;
 use zos_identity::KeyError;
 
-use crate::syscall;
+// Re-export canonical crypto from zos-identity
+pub use zos_identity::crypto::{
+    canonicalize_challenge,
+    canonicalize_enrollment_message,
+    canonicalize_identity_creation_message,
+    derive_identity_signing_keypair,
+    derive_machine_keypair_with_scheme,
+    sign_message,
+    verify_signature,
+    Ed25519KeyPair as IdentityKeypair,
+    KeyScheme,
+    MachineKeyPair,
+    NeuralKey,
+};
 
-/// Generate random bytes using the kernel's entropy sources.
-///
-/// Uses wallclock and PID for entropy source in WASM.
-/// In production, this would use a proper getrandom syscall.
-pub fn generate_random_bytes(len: usize) -> Vec<u8> {
-    let mut bytes = vec![0u8; len];
-    let time = syscall::get_wallclock();
-    let pid = syscall::get_pid();
-
-    // Simple PRNG seeded with time and PID
-    let mut state = time ^ ((pid as u64) << 32);
-    for byte in bytes.iter_mut() {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        *byte = (state >> 56) as u8;
-    }
-    bytes
-}
 
 /// Convert bytes to hex string.
 pub fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        hex.push(HEX_CHARS[(byte >> 4) as usize] as char);
+        hex.push(HEX_CHARS[(byte & 0x0F) as usize] as char);
+    }
+    hex
 }
 
 /// Format a u128 as a UUID string (8-4-4-4-12 format with dashes).
@@ -55,12 +53,29 @@ pub fn format_uuid(value: u128) -> String {
 /// Convert hex string to bytes.
 pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, &'static str> {
     if hex.len() % 2 != 0 {
-        return Err("Invalid hex length");
+        return Err("Hex string must have even length");
     }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| "Invalid hex"))
-        .collect()
+    
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let hex_bytes = hex.as_bytes();
+    
+    for i in (0..hex.len()).step_by(2) {
+        let high = hex_digit_to_value(hex_bytes[i])?;
+        let low = hex_digit_to_value(hex_bytes[i + 1])?;
+        bytes.push((high << 4) | low);
+    }
+    
+    Ok(bytes)
+}
+
+/// Convert a hex digit character to its numeric value.
+fn hex_digit_to_value(digit: u8) -> Result<u8, &'static str> {
+    match digit {
+        b'0'..=b'9' => Ok(digit - b'0'),
+        b'a'..=b'f' => Ok(digit - b'a' + 10),
+        b'A'..=b'F' => Ok(digit - b'A' + 10),
+        _ => Err("Invalid hex character"),
+    }
 }
 
 /// Decode base64 string to bytes (standard alphabet, with optional padding).
@@ -107,109 +122,40 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, &'static str> {
     Ok(output)
 }
 
-/// Simple Shamir secret sharing (3-of-5) - mock implementation.
-///
-/// Production would use a proper Shamir library with polynomial interpolation.
-pub fn shamir_split(secret: &[u8], threshold: usize, shares: usize) -> Vec<NeuralShard> {
-    let _ = threshold; // Would be used in real implementation
-    let mut shards = Vec::with_capacity(shares);
 
-    for i in 1..=shares {
-        // Generate a shard by XORing secret with deterministic "random" data
-        let mut shard_bytes = Vec::with_capacity(secret.len() + 1);
-        shard_bytes.push(i as u8); // Shard index
-
-        // Generate deterministic padding based on index
-        let mut state = (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
-        for &byte in secret.iter() {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(i as u64);
-            shard_bytes.push(byte ^ (state >> 56) as u8);
-        }
-
-        shards.push(NeuralShard {
-            index: i as u8,
-            hex: bytes_to_hex(&shard_bytes),
-        });
-    }
-
-    shards
+/// Create a NeuralKey from raw 32-byte seed material.
+pub fn neural_key_from_bytes(seed: &[u8; 32]) -> NeuralKey {
+    NeuralKey::from_bytes(*seed)
 }
 
-/// Reconstruct secret from shards (mock implementation).
-///
-/// Production would use polynomial interpolation for proper Shamir reconstruction.
-pub fn shamir_reconstruct(shards: &[NeuralShard]) -> Result<Vec<u8>, KeyError> {
-    if shards.len() < 3 {
-        return Err(KeyError::InsufficientShards);
-    }
-
-    // Use first shard to reconstruct (simplified - real Shamir uses polynomial interpolation)
-    let shard = &shards[0];
-    let shard_bytes =
-        hex_to_bytes(&shard.hex).map_err(|e| KeyError::InvalidShard(String::from(e)))?;
-
-    if shard_bytes.is_empty() {
-        return Err(KeyError::InvalidShard(String::from("Empty shard")));
-    }
-
-    let index = shard_bytes[0] as u64;
-    let mut secret = Vec::with_capacity(shard_bytes.len() - 1);
-
-    // Reverse the XOR operation
-    let mut state = index.wrapping_mul(0x9E3779B97F4A7C15);
-    for &byte in &shard_bytes[1..] {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(index);
-        secret.push(byte ^ (state >> 56) as u8);
-    }
-
-    Ok(secret)
+/// Convert u128 to UUID bytes (16 bytes in big-endian format).
+/// Used by zid-crypto which expects uuid::Uuid type, but we construct it from bytes.
+pub fn u128_to_uuid_bytes(value: u128) -> [u8; 16] {
+    value.to_be_bytes()
 }
 
-/// Derive a public key from entropy with a salt (mock Ed25519/X25519).
-///
-/// Production would use proper key derivation functions.
-pub fn derive_public_key(entropy: &[u8], salt: &str) -> [u8; 32] {
-    let mut combined = Vec::with_capacity(entropy.len() + salt.len());
-    combined.extend_from_slice(entropy);
-    combined.extend_from_slice(salt.as_bytes());
-
-    // XOR fold to 32 bytes (mock derivation)
-    let mut public_key = [0u8; 32];
-    for (i, &byte) in combined.iter().enumerate() {
-        public_key[i % 32] ^= byte;
-    }
-
-    // Add more mixing
-    for i in 0..32 {
-        let state = (public_key[i] as u64)
-            .wrapping_mul(0x9E3779B97F4A7C15)
-            .wrapping_add(i as u64);
-        public_key[i] = (state >> 56) as u8;
-    }
-
-    public_key
+/// Reconstruct a MachineKeyPair from stored seed material for signing.
+/// 
+/// This allows machine keys to operate independently without needing the Neural Key.
+/// The seeds are securely stored and used to reconstruct the keypair when needed.
+pub fn machine_keypair_from_seeds(
+    signing_sk: &[u8; 32],
+    encryption_sk: &[u8; 32],
+) -> Result<MachineKeyPair, KeyError> {
+    use zos_identity::crypto::ZidMachineKeyCapabilities;
+    
+    // Create full capabilities (SIGN | ENCRYPT | VAULT_OPERATIONS)
+    let capabilities = ZidMachineKeyCapabilities::all();
+    
+    MachineKeyPair::from_seeds(signing_sk, encryption_sk, capabilities)
+        .map_err(|e| KeyError::CryptoError(format!("Failed to reconstruct keypair: {:?}", e)))
 }
 
-/// Sign a challenge with machine key (mock Ed25519 signature).
-///
-/// In production this would be proper Ed25519 signing.
-pub fn sign_challenge(challenge: &[u8], signing_key: &[u8; 32]) -> [u8; 64] {
-    let mut signature = [0u8; 64];
-    for (i, &byte) in challenge.iter().enumerate() {
-        let key_byte = signing_key[i % 32];
-        signature[i % 64] ^= byte ^ key_byte;
-    }
-    // Add more mixing
-    let mut state = 0x9E3779B97F4A7C15u64;
-    for i in 0..64 {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(signature[i] as u64);
-        signature[i] = (state >> 56) as u8;
-    }
-    signature
+/// Sign a message with a machine keypair (for challenge-response).
+pub fn sign_with_machine_keypair(
+    message: &[u8],
+    machine_keypair: &MachineKeyPair,
+) -> [u8; 64] {
+    // Sign using the machine keypair's signing component
+    sign_message(&machine_keypair.signing_key_pair(), message)
 }

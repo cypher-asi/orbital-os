@@ -1,8 +1,8 @@
 //! Window manager for lifecycle, focus, and z-order
 
-use std::collections::HashMap;
-use crate::math::{Rect, Size, Vec2, FRAME_STYLE};
 use super::{Window, WindowConfig, WindowId, WindowRegion, WindowState};
+use crate::math::{Rect, Size, Vec2, FRAME_STYLE};
+use std::collections::HashMap;
 
 /// Window manager handling window lifecycle, z-order, and focus
 pub struct WindowManager {
@@ -340,7 +340,7 @@ fn hit_test_title_bar(window: &Window, pos: Vec2, zoom: f32) -> Option<WindowReg
         window.size.width,
         title_height,
     );
-    
+
     if title_rect.contains(pos) {
         Some(WindowRegion::TitleBar)
     } else {

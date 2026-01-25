@@ -54,7 +54,7 @@ mod registry;
 
 pub use zos_process::{
     MSG_LOOKUP_RESPONSE, MSG_LOOKUP_SERVICE, MSG_REGISTER_SERVICE, MSG_SERVICE_READY,
-    MSG_SPAWN_SERVICE, MSG_SPAWN_RESPONSE, MSG_SUPERVISOR_CONSOLE_INPUT,
+    MSG_SPAWN_RESPONSE, MSG_SPAWN_SERVICE, MSG_SUPERVISOR_CONSOLE_INPUT,
     MSG_SUPERVISOR_IPC_DELIVERY, MSG_SUPERVISOR_KILL_PROCESS,
 };
 
@@ -63,9 +63,8 @@ pub use zos_process::init::{MSG_SERVICE_CAP_GRANTED, MSG_VFS_RESPONSE_CAP_GRANTE
 
 // Spawn protocol messages for Init-driven spawn
 pub use zos_process::supervisor::{
-    MSG_SUPERVISOR_CAP_RESPONSE, MSG_SUPERVISOR_CREATE_ENDPOINT,
-    MSG_SUPERVISOR_ENDPOINT_RESPONSE, MSG_SUPERVISOR_GRANT_CAP, MSG_SUPERVISOR_SPAWN_PROCESS,
-    MSG_SUPERVISOR_SPAWN_RESPONSE,
+    MSG_SUPERVISOR_CAP_RESPONSE, MSG_SUPERVISOR_CREATE_ENDPOINT, MSG_SUPERVISOR_ENDPOINT_RESPONSE,
+    MSG_SUPERVISOR_GRANT_CAP, MSG_SUPERVISOR_SPAWN_PROCESS, MSG_SUPERVISOR_SPAWN_RESPONSE,
 };
 
 // =============================================================================
@@ -91,6 +90,7 @@ pub struct ServiceInfo {
     /// Whether the service has signaled it's ready
     pub ready: bool,
 }
+
 
 /// Init process state
 pub struct Init {
@@ -133,11 +133,26 @@ impl Init {
         self.boot_sequence();
 
         self.log("Entering idle loop...");
+        
+        let mut loop_count = 0u32;
 
         // Minimal loop: handle service messages
         loop {
-            if let Some(msg) = syscall::receive(self.endpoint_slot) {
-                self.handle_message(&msg);
+            loop_count = loop_count.wrapping_add(1);
+            
+            // Log every 1000 iterations to show we're alive
+            if loop_count % 1000 == 0 {
+                self.log(&format!("AGENT_LOG:idle_loop:iteration={}:checking_slot={}", loop_count, self.endpoint_slot));
+            }
+            
+            match syscall::receive(self.endpoint_slot) {
+                Some(msg) => {
+                    self.log(&format!("AGENT_LOG:receive_returned_message:tag=0x{:x}:from_pid={}:len={}", msg.tag, msg.from_pid, msg.data.len()));
+                    self.handle_message(&msg);
+                }
+                None => {
+                    // No message available
+                }
             }
             syscall::yield_now();
         }
@@ -145,6 +160,11 @@ impl Init {
 
     /// Handle an incoming IPC message
     fn handle_message(&mut self, msg: &syscall::ReceivedMessage) {
+        self.log(&format!(
+            "AGENT_LOG:handle_message:tag=0x{:x}:from_pid={}:len={}",
+            msg.tag, msg.from_pid, msg.data.len()
+        ));
+        
         match msg.tag {
             // Service registry protocol
             MSG_REGISTER_SERVICE => self.handle_register(msg),
@@ -155,8 +175,14 @@ impl Init {
             // Supervisor → Init protocol
             MSG_SUPERVISOR_CONSOLE_INPUT => self.handle_supervisor_console_input(msg),
             MSG_SUPERVISOR_KILL_PROCESS => self.handle_supervisor_kill_process(msg),
-            MSG_SUPERVISOR_IPC_DELIVERY => self.handle_supervisor_ipc_delivery(msg),
-            MSG_SERVICE_CAP_GRANTED => self.handle_service_cap_granted(msg),
+            MSG_SUPERVISOR_IPC_DELIVERY => {
+                self.log(&format!("AGENT_LOG:dispatching_to_ipc_delivery_handler:tag=0x{:x}", msg.tag));
+                self.handle_supervisor_ipc_delivery(msg);
+            }
+            MSG_SERVICE_CAP_GRANTED => {
+                self.log("AGENT_LOG:dispatching_to_cap_granted_handler");
+                self.handle_service_cap_granted(msg);
+            }
             MSG_VFS_RESPONSE_CAP_GRANTED => self.handle_vfs_response_cap_granted(msg),
 
             // Init-driven spawn protocol (supervisor → Init)

@@ -10,18 +10,19 @@ const mockCurrentUser = { id: '12345', displayName: 'Test User' };
 let mockSelectCurrentUser = vi.fn(() => mockCurrentUser);
 
 vi.mock('../../../stores', () => ({
-  useIdentityStore: (selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown) =>
-    selector({ currentUser: mockSelectCurrentUser() }),
+  useIdentityStore: (
+    selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown
+  ) => selector({ currentUser: mockSelectCurrentUser() }),
   selectCurrentUser: (state: { currentUser: typeof mockCurrentUser | null }) => state.currentUser,
 }));
 
 // Create mock functions that will be populated in the factory
 let mockGenerateNeuralKey = vi.fn();
 let mockRecoverNeuralKey = vi.fn();
-let mockGetIdentityKey = vi.fn();
+const mockGetIdentityKey = vi.fn();
 let mockVfsIsAvailable = vi.fn(() => true);
 let mockVfsReadJsonSync = vi.fn(() => null);
-let mockVfsGetCacheStats = vi.fn(() => ({ hits: 0, misses: 0 }));
+const mockVfsGetCacheStats = vi.fn(() => ({ hits: 0, misses: 0 }));
 
 vi.mock('../../../services', () => ({
   IdentityServiceClient: vi.fn().mockImplementation(() => ({
@@ -39,16 +40,28 @@ vi.mock('../../../services', () => ({
 
 // Mock identity service client shorthand
 const mockIdentityServiceClient = {
-  get generateNeuralKey() { return mockGenerateNeuralKey; },
-  get recoverNeuralKey() { return mockRecoverNeuralKey; },
-  get getIdentityKey() { return mockGetIdentityKey; },
+  get generateNeuralKey() {
+    return mockGenerateNeuralKey;
+  },
+  get recoverNeuralKey() {
+    return mockRecoverNeuralKey;
+  },
+  get getIdentityKey() {
+    return mockGetIdentityKey;
+  },
 };
 
 // Mock VFS storage shorthand
 const mockVfsStorage = {
-  get isAvailable() { return mockVfsIsAvailable; },
-  get readJsonSync() { return mockVfsReadJsonSync; },
-  get getCacheStats() { return mockVfsGetCacheStats; },
+  get isAvailable() {
+    return mockVfsIsAvailable;
+  },
+  get readJsonSync() {
+    return mockVfsReadJsonSync;
+  },
+  get getCacheStats() {
+    return mockVfsGetCacheStats;
+  },
 };
 
 // Mock useIdentityServiceClient
@@ -176,9 +189,7 @@ describe('useNeuralKey', () => {
     });
 
     it('sets error on failure', async () => {
-      mockGenerateNeuralKey.mockRejectedValue(
-        new Error('Generation failed')
-      );
+      mockGenerateNeuralKey.mockRejectedValue(new Error('Generation failed'));
 
       const { result } = renderHook(() => useNeuralKey(), {
         wrapper: createWrapper(mockSupervisor),
@@ -229,10 +240,7 @@ describe('useNeuralKey', () => {
         expect(response.shards).toHaveLength(5);
       });
 
-      expect(mockRecoverNeuralKey).toHaveBeenCalledWith(
-        BigInt(12345),
-        shards
-      );
+      expect(mockRecoverNeuralKey).toHaveBeenCalledWith(BigInt(12345), shards);
     });
 
     it('throws error for insufficient shards', async () => {
@@ -374,7 +382,7 @@ describe('useNeuralKey', () => {
     });
   });
 
-  // Auto-refresh behavior is tested in the 'refresh' suite via the 
-  // 'reads from VFS cache when available' test which validates the 
+  // Auto-refresh behavior is tested in the 'refresh' suite via the
+  // 'reads from VFS cache when available' test which validates the
   // full refresh flow works correctly.
 });

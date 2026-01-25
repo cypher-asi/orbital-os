@@ -95,17 +95,11 @@ pub enum PendingOp {
     /// Get file content for read
     GetContent { client_pid: u32, path: String },
     /// Put inode (after put, send response)
-    PutInode {
-        client_pid: u32,
-        response_tag: u32,
-    },
+    PutInode { client_pid: u32, response_tag: u32 },
     /// Put content (after put, send response)
     PutContent { client_pid: u32, path: String },
     /// Delete inode
-    DeleteInode {
-        client_pid: u32,
-        response_tag: u32,
-    },
+    DeleteInode { client_pid: u32, response_tag: u32 },
     /// Delete content
     DeleteContent { client_pid: u32, path: String },
     /// List children for readdir
@@ -163,11 +157,7 @@ impl VfsService {
     // =========================================================================
 
     /// Start async storage read and track the pending operation
-    pub fn start_storage_read(
-        &mut self,
-        key: &str,
-        pending_op: PendingOp,
-    ) -> Result<(), AppError> {
+    pub fn start_storage_read(&mut self, key: &str, pending_op: PendingOp) -> Result<(), AppError> {
         match syscall::storage_read_async(key) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -307,10 +297,7 @@ impl VfsService {
         let pending_op = match self.pending_ops.remove(&request_id) {
             Some(op) => op,
             None => {
-                syscall::debug(&format!(
-                    "VfsService: unknown request_id {}",
-                    request_id
-                ));
+                syscall::debug(&format!("VfsService: unknown request_id {}", request_id));
                 return Ok(());
             }
         };
@@ -339,12 +326,14 @@ impl VfsService {
             PendingOp::DeleteContent { client_pid, path } => {
                 self.handle_delete_content_result(client_pid, &path, result_type)
             }
-            PendingOp::ListChildren { client_pid, path: _ } => {
-                self.handle_list_children_result(client_pid, result_type, data)
-            }
-            PendingOp::ExistsCheck { client_pid, path: _ } => {
-                self.handle_exists_result(client_pid, result_type, data)
-            }
+            PendingOp::ListChildren {
+                client_pid,
+                path: _,
+            } => self.handle_list_children_result(client_pid, result_type, data),
+            PendingOp::ExistsCheck {
+                client_pid,
+                path: _,
+            } => self.handle_exists_result(client_pid, result_type, data),
         }
     }
 
@@ -456,10 +445,7 @@ impl ZeroApp for VfsService {
             vfs_msg::MSG_VFS_STAT => self.handle_stat(ctx, &msg),
             vfs_msg::MSG_VFS_EXISTS => self.handle_exists(ctx, &msg),
             _ => {
-                syscall::debug(&format!(
-                    "VfsService: Unknown message tag 0x{:x}",
-                    msg.tag
-                ));
+                syscall::debug(&format!("VfsService: Unknown message tag 0x{:x}", msg.tag));
                 Ok(())
             }
         }

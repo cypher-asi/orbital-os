@@ -145,7 +145,15 @@ export class VfsStorageClient {
       const text = new TextDecoder().decode(content);
       return JSON.parse(text) as T;
     } catch (e) {
-      console.warn(`[VfsStorageClient] Failed to parse JSON at ${path}:`, e);
+      // Log detailed error info to help diagnose truncation issues
+      const textPreview = new TextDecoder().decode(content);
+      console.warn(
+        `[VfsStorageClient] Failed to parse JSON at ${path}:`,
+        e,
+        `\n  Content length: ${content.length} bytes`,
+        `\n  First 200 chars: ${textPreview.slice(0, 200)}...`,
+        `\n  Last 100 chars: ...${textPreview.slice(-100)}`
+      );
       return null;
     }
   }
@@ -215,6 +223,51 @@ export class VfsStorageClient {
       content: storage.contentCache.size,
     };
   }
+
+  /**
+   * Validate JSON content at a path without parsing it.
+   * Returns true if the content exists and is valid JSON.
+   *
+   * @param path - The canonical filesystem path
+   * @returns Object with validation result and diagnostic info
+   */
+  static validateJsonSync(path: string): {
+    exists: boolean;
+    valid: boolean;
+    contentLength: number;
+    error?: string;
+  } {
+    const content = this.readFileSync(path);
+    if (!content) {
+      return { exists: false, valid: false, contentLength: 0 };
+    }
+
+    try {
+      const text = new TextDecoder().decode(content);
+      JSON.parse(text);
+      return { exists: true, valid: true, contentLength: content.length };
+    } catch (e) {
+      return {
+        exists: true,
+        valid: false,
+        contentLength: content.length,
+        error: e instanceof Error ? e.message : 'Unknown parse error',
+      };
+    }
+  }
+
+  /**
+   * Get raw content as a string for debugging.
+   * Useful for inspecting corrupt/truncated files.
+   *
+   * @param path - The canonical filesystem path
+   * @returns The raw content as string, or null if not found
+   */
+  static readTextSync(path: string): string | null {
+    const content = this.readFileSync(path);
+    if (!content) return null;
+    return new TextDecoder().decode(content);
+  }
 }
 
 // =============================================================================
@@ -222,8 +275,8 @@ export class VfsStorageClient {
 // =============================================================================
 
 /**
- * Format a user ID as a 32-character hex string (128 bits).
- * This matches the Rust format: {:032x}
+ * Format a user ID as a decimal string.
+ * This matches the Rust format: {} (Display trait for u128)
  */
 export function formatUserId(userId: bigint | string | number): string {
   let value: bigint;
@@ -241,8 +294,8 @@ export function formatUserId(userId: bigint | string | number): string {
     value = BigInt(userId);
   }
 
-  // Format as 32-character lowercase hex
-  return value.toString(16).padStart(32, '0');
+  // Format as decimal string to match Rust's {} format
+  return value.toString(10);
 }
 
 /**

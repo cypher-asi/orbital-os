@@ -2,27 +2,11 @@
 //!
 //! Automated IPC latency testing between worker processes.
 //!
-//! # Deprecated API Usage
+//! # Init-Routed IPC Usage
 //!
-//! This module uses the deprecated `send_to_process()` kernel method to send
-//! commands to test processes. This bypasses capability checks and violates
-//! the capability-based security model.
-//!
-//! ## Why This Is Still Here
-//!
-//! The pingpong test was written before the Init-driven spawn protocol was
-//! implemented. It uses `send_to_process()` because:
-//! 1. The supervisor doesn't have capability slots to the test processes' endpoints
-//! 2. Setting up proper capability routing would require changes to the test setup
-//!
-//! ## Migration Plan
-//!
-//! To fix this properly, the pingpong test should:
-//! 1. Grant supervisor capabilities to test process endpoints during spawn
-//! 2. Use `kernel.ipc_send()` with proper capability slots
-//! 3. Or route commands through Init using MSG_SUPERVISOR_IPC_DELIVERY
-//!
-//! This is tracked as technical debt to be addressed in a future cleanup.
+//! This module routes commands through Init via MSG_SUPERVISOR_IPC_DELIVERY.
+//! This preserves capability checks and keeps the supervisor as a thin boundary
+//! layer while still allowing the pingpong test to coordinate processes.
 
 use zos_kernel::ProcessId;
 
@@ -80,16 +64,65 @@ impl PingPongTestState {
 pub(crate) struct PingPongContext<'a, H: zos_hal::HAL> {
     pub system: &'a mut zos_kernel::System<H>,
     pub write_console: &'a dyn Fn(&str),
-    #[allow(dead_code)]
-    pub request_spawn: &'a dyn Fn(&str, &str),
+    pub init_endpoint_slot: Option<u32>,
+}
+
+fn route_ipc_via_init<H: zos_hal::HAL>(
+    ctx: &mut PingPongContext<'_, H>,
+    target_pid: u64,
+    endpoint_slot: u32,
+    tag: u32,
+    data: &[u8],
+) -> Result<(), zos_kernel::KernelError> {
+    let init_slot = match ctx.init_endpoint_slot {
+        Some(slot) => slot,
+        None => {
+            (ctx.write_console)("[pingpong] Cannot route IPC: no Init capability\n");
+            return Err(zos_kernel::KernelError::PermissionDenied);
+        }
+    };
+
+    let mut payload = Vec::with_capacity(14 + data.len());
+    payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
+    payload.extend_from_slice(&endpoint_slot.to_le_bytes());
+    payload.extend_from_slice(&tag.to_le_bytes());
+    payload.extend_from_slice(&(data.len() as u16).to_le_bytes());
+    payload.extend_from_slice(data);
+
+    let supervisor_pid = ProcessId(0);
+    ctx.system.ipc_send(
+        supervisor_pid,
+        init_slot,
+        zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY,
+        payload,
+    )
+}
+
+fn request_kill_via_init<H: zos_hal::HAL>(
+    ctx: &mut PingPongContext<'_, H>,
+    target_pid: ProcessId,
+) -> Result<(), zos_kernel::KernelError> {
+    let init_slot = match ctx.init_endpoint_slot {
+        Some(slot) => slot,
+        None => {
+            (ctx.write_console)("[pingpong] Cannot request kill: no Init capability\n");
+            return Err(zos_kernel::KernelError::PermissionDenied);
+        }
+    };
+
+    let payload = (target_pid.0 as u32).to_le_bytes().to_vec();
+    let supervisor_pid = ProcessId(0);
+    ctx.system.ipc_send(
+        supervisor_pid,
+        init_slot,
+        zos_ipc::supervisor::MSG_SUPERVISOR_KILL_PROCESS,
+        payload,
+    )
 }
 
 /// Progress the ping-pong test state machine
 ///
 /// Returns the new state after processing
-///
-/// NOTE: Uses deprecated send_to_process() for testing purposes.
-#[allow(deprecated)]
 pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
     state: &PingPongTestState,
     ctx: &mut PingPongContext<'_, H>,
@@ -161,23 +194,14 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
                 iterations
             ));
 
-            let pinger = ProcessId(pinger_pid);
-            let ponger = ProcessId(ponger_pid);
-
             // Put ponger in pong mode
-            if let Err(e) = ctx
-                .system
-                .send_to_process(ProcessId(2), ponger, CMD_PONG_MODE, vec![])
-            {
+            if let Err(e) = route_ipc_via_init(ctx, ponger_pid, 0, CMD_PONG_MODE, &[]) {
                 (ctx.write_console)(&format!("  Error sending PONG_MODE: {:?}\n", e));
             }
 
             // Send ping command to pinger with iterations count
             let ping_data = iterations.to_le_bytes().to_vec();
-            if let Err(e) = ctx
-                .system
-                .send_to_process(ProcessId(2), pinger, CMD_PING, ping_data)
-            {
+            if let Err(e) = route_ipc_via_init(ctx, pinger_pid, 0, CMD_PING, &ping_data) {
                 (ctx.write_console)(&format!("  Error sending PING cmd: {:?}\n", e));
             }
 
@@ -221,26 +245,17 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
         } => {
             (ctx.write_console)("  Cleaning up test processes...\n");
 
-            let pinger = ProcessId(pinger_pid);
-            let ponger = ProcessId(ponger_pid);
-
             // Send exit commands
-            // NOTE: Uses deprecated send_to_process() - see module docs for migration plan
-            let _ = ctx
-                .system
-                .send_to_process(ProcessId(2), pinger, CMD_EXIT, vec![]);
-            let _ = ctx
-                .system
-                .send_to_process(ProcessId(2), ponger, CMD_EXIT, vec![]);
+            let _ = route_ipc_via_init(ctx, pinger_pid, 0, CMD_EXIT, &[]);
+            let _ = route_ipc_via_init(ctx, ponger_pid, 0, CMD_EXIT, &[]);
 
-            // Kill processes in kernel
-            // NOTE: Direct kernel.kill_process() for test cleanup.
-            // In production code, this should route through Init.
-            ctx.system.kill_process(pinger);
-            ctx.system.kill_process(ponger);
+            // Request kill through Init for proper auditing
+            // HAL workers will be terminated by supervisor after receiving INIT:KILL_OK
+            let _ = request_kill_via_init(ctx, ProcessId(pinger_pid));
+            let _ = request_kill_via_init(ctx, ProcessId(ponger_pid));
 
             (ctx.write_console)(&format!(
-                "  Killed processes {} and {}\n",
+                "  Kill requests sent for processes {} and {} (awaiting Init confirmation)\n",
                 pinger_pid, ponger_pid
             ));
             (ctx.write_console)("Ping-pong test complete.\nzero> ");

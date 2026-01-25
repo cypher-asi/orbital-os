@@ -19,6 +19,12 @@ use zos_hal::HAL;
 
 use super::{map_axiom_error, KernelCore};
 
+/// Result type for IPC receive with capability transfer
+type ReceiveWithCapsResult = (
+    Result<Option<(Message, Vec<CapSlot>)>, KernelError>,
+    Vec<Commit>,
+);
+
 impl<H: HAL> KernelCore<H> {
     /// Send IPC message (validates capability via axiom_check).
     ///
@@ -177,7 +183,7 @@ impl<H: HAL> KernelCore<H> {
         pid: ProcessId,
         endpoint_slot: CapSlot,
         timestamp: u64,
-    ) -> (Result<Option<(Message, Vec<CapSlot>)>, KernelError>, Vec<Commit>) {
+    ) -> ReceiveWithCapsResult {
         let mut commits = Vec::new();
 
         // First do normal receive
@@ -354,11 +360,7 @@ impl<H: HAL> KernelCore<H> {
     }
 
     /// Validate that all capabilities exist
-    fn validate_caps_exist(
-        &self,
-        pid: ProcessId,
-        slots: &[CapSlot],
-    ) -> Result<(), KernelError> {
+    fn validate_caps_exist(&self, pid: ProcessId, slots: &[CapSlot]) -> Result<(), KernelError> {
         let cspace = self
             .cap_spaces
             .get(&pid)

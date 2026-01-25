@@ -1,8 +1,8 @@
 //! Transition and crossfade state management
 
+use super::DesktopEngine;
 use crate::transition::{Crossfade, CrossfadeDirection};
 use crate::view_mode::ViewMode;
-use super::DesktopEngine;
 
 impl DesktopEngine {
     /// Get the current crossfade transition
@@ -176,14 +176,20 @@ impl DesktopEngine {
                 // During desktop switch: show source in first half, target in second half
                 let progress = crossfade.progress(now_ms);
                 if progress < 0.5 {
-                    crossfade.source_desktop.unwrap_or_else(|| self.desktops.active_index())
+                    crossfade
+                        .source_desktop
+                        .unwrap_or_else(|| self.desktops.active_index())
                 } else {
-                    crossfade.target_desktop.unwrap_or_else(|| self.desktops.active_index())
+                    crossfade
+                        .target_desktop
+                        .unwrap_or_else(|| self.desktops.active_index())
                 }
             }
             _ => {
                 // For other transitions, use target if available
-                crossfade.target_desktop.unwrap_or_else(|| self.desktops.active_index())
+                crossfade
+                    .target_desktop
+                    .unwrap_or_else(|| self.desktops.active_index())
             }
         }
     }
@@ -198,8 +204,8 @@ impl DesktopEngine {
 mod tests {
     use super::*;
     use crate::math::{Size, Vec2};
-    use crate::window::WindowConfig;
     use crate::transition::CROSSFADE_DURATION_MS;
+    use crate::window::WindowConfig;
 
     fn create_test_engine() -> DesktopEngine {
         let mut engine = DesktopEngine::new();
@@ -217,7 +223,7 @@ mod tests {
     fn test_is_crossfading_true_during_transition() {
         let mut engine = create_test_engine();
         engine.enter_void(0.0);
-        
+
         assert!(engine.is_crossfading());
     }
 
@@ -251,7 +257,7 @@ mod tests {
     fn test_should_show_void_during_void_transition() {
         let mut engine = create_test_engine();
         engine.enter_void(0.0);
-        
+
         assert!(engine.should_show_void());
     }
 
@@ -272,7 +278,7 @@ mod tests {
     fn test_layer_opacities_desktop_mode() {
         let engine = create_test_engine();
         let (desktop, void) = engine.layer_opacities(0.0);
-        
+
         assert!((desktop - 1.0).abs() < 0.001);
         assert!((void - 0.0).abs() < 0.001);
     }
@@ -281,11 +287,11 @@ mod tests {
     fn test_layer_opacities_void_mode() {
         let mut engine = create_test_engine();
         engine.enter_void(0.0);
-        
+
         // Complete transition
         let end_time = CROSSFADE_DURATION_MS as f64 + 100.0;
         engine.tick_transition(end_time);
-        
+
         let (desktop, void) = engine.layer_opacities(end_time);
         assert!((desktop - 0.0).abs() < 0.001);
         assert!((void - 1.0).abs() < 0.001);
@@ -295,7 +301,7 @@ mod tests {
     fn test_tick_transition_completes_crossfade() {
         let mut engine = create_test_engine();
         engine.enter_void(0.0);
-        
+
         assert!(engine.is_crossfading());
 
         // Tick past duration
@@ -333,7 +339,7 @@ mod tests {
     fn test_is_animating_true_during_transition() {
         let mut engine = create_test_engine();
         engine.enter_void(0.0);
-        
+
         assert!(engine.is_animating(50.0));
     }
 
@@ -341,10 +347,10 @@ mod tests {
     fn test_is_animating_true_after_recent_activity() {
         let mut engine = create_test_engine();
         engine.mark_activity(100.0);
-        
+
         // Should still be considered animating shortly after activity
         assert!(engine.is_animating(150.0));
-        
+
         // Should no longer be animating after threshold
         assert!(!engine.is_animating(500.0));
     }
@@ -363,7 +369,8 @@ mod tests {
 
         // After midpoint (> 50%), should show target desktop
         use crate::transition::DESKTOP_SWITCH_DURATION_MS;
-        let visual = engine.get_visual_active_workspace_at((DESKTOP_SWITCH_DURATION_MS / 2 + 50) as f64);
+        let visual =
+            engine.get_visual_active_workspace_at((DESKTOP_SWITCH_DURATION_MS / 2 + 50) as f64);
         assert_eq!(visual, 1);
     }
 
@@ -396,7 +403,7 @@ mod tests {
         engine.viewport.center = Vec2::new(500.0, 500.0);
         engine.viewport.zoom = 1.5;
         engine.switch_desktop(1, 0.0);
-        
+
         // Complete desktop switch
         let mut time = 500.0;
         engine.tick_transition(time);
@@ -418,11 +425,11 @@ mod tests {
     #[test]
     fn test_is_animating_viewport() {
         let mut engine = create_test_engine();
-        
+
         assert!(!engine.is_animating_viewport());
 
         engine.enter_void(0.0);
-        
+
         assert!(engine.is_animating_viewport());
     }
 }

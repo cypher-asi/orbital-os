@@ -42,16 +42,16 @@
 //! 3. **Small Modules**: Each file stays under 300 lines for maintainability
 //! 4. **Minimal Dependencies**: Core types have no browser dependencies
 
-pub mod math;
-pub mod window;
 pub mod desktop;
 pub mod input;
-pub mod transition;
+pub mod math;
 pub mod persistence;
+pub mod transition;
+pub mod window;
 
 mod engine;
-mod viewport;
 mod view_mode;
+mod viewport;
 
 // WASM exports (only available with "wasm" feature)
 #[cfg(feature = "wasm")]
@@ -64,16 +64,18 @@ pub use wasm::*;
 pub mod background;
 
 // Re-export core types for convenience
-pub use math::{Camera, Rect, Size, Vec2, FRAME_STYLE, FrameStyle};
-pub use window::{Window, WindowConfig, WindowId, WindowManager, WindowRegion, WindowState, WindowType};
 pub use desktop::{Desktop, DesktopId, DesktopManager, PersistedDesktop, VoidState};
 pub use input::{DragState, InputResult, InputRouter};
-pub use transition::{CameraAnimation, Crossfade, CrossfadeDirection};
+pub use math::{Camera, FrameStyle, Rect, Size, Vec2, FRAME_STYLE};
 pub use persistence::Snapshot;
+pub use transition::{CameraAnimation, Crossfade, CrossfadeDirection};
+pub use window::{
+    Window, WindowConfig, WindowId, WindowManager, WindowRegion, WindowState, WindowType,
+};
 
 pub use engine::{DesktopEngine, WindowScreenRect};
-pub use viewport::Viewport;
 pub use view_mode::ViewMode;
+pub use viewport::Viewport;
 
 /// Duration of crossfade transitions in milliseconds
 pub use transition::CROSSFADE_DURATION_MS;

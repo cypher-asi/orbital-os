@@ -1,7 +1,7 @@
 //! Input result type
 
-use serde::Serialize;
 use crate::window::WindowId;
+use serde::Serialize;
 
 /// Result of input handling
 #[derive(Clone, Debug, Serialize)]

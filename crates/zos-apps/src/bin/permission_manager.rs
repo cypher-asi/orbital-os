@@ -33,11 +33,8 @@ use zos_apps::{app_main, AppContext, AppError, AppManifest, ControlFlow, Message
 // All IPC message constants are defined in zos-ipc as the single source of truth.
 
 pub use zos_apps::pm::{
-    MSG_REQUEST_CAPABILITY,
+    MSG_CAPABILITY_RESPONSE, MSG_CAPS_LIST_RESPONSE, MSG_LIST_MY_CAPS, MSG_REQUEST_CAPABILITY,
     MSG_REVOKE_CAPABILITY,
-    MSG_LIST_MY_CAPS,
-    MSG_CAPABILITY_RESPONSE,
-    MSG_CAPS_LIST_RESPONSE,
 };
 
 pub use zos_apps::supervisor::MSG_SUPERVISOR_REVOKE_CAP;
@@ -162,9 +159,7 @@ impl PermissionManager {
         self.granted_caps
             .iter()
             .filter(|((p, _), _)| *p == pid)
-            .filter_map(|((_, obj_type), cap)| {
-                ObjectType::from_u8(*obj_type).map(|ot| (ot, cap))
-            })
+            .filter_map(|((_, obj_type), cap)| ObjectType::from_u8(*obj_type).map(|ot| (ot, cap)))
             .collect()
     }
 
@@ -233,10 +228,7 @@ impl PermissionManager {
         let from_slot = match source_slot {
             Some(s) => s,
             None => {
-                syscall::debug(&format!(
-                    "PermMgr: No root cap for {}",
-                    object_type.name()
-                ));
+                syscall::debug(&format!("PermMgr: No root cap for {}", object_type.name()));
                 return self.send_error_response(
                     ctx,
                     msg.from_pid,
@@ -361,22 +353,22 @@ impl PermissionManager {
             ));
             return Ok(());
         }
-        
+
         // Parse payload
         if msg.data.len() < 9 {
             syscall::debug("PermMgr: Invalid supervisor revoke payload (too short)");
             return Ok(());
         }
-        
+
         let target_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
         let slot = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]);
         let reason = msg.data[8];
-        
+
         syscall::debug(&format!(
             "PermMgr: Supervisor revoke request for PID {} slot {} reason {}",
             target_pid, slot, reason
         ));
-        
+
         // Perform the revocation via syscall
         // Uses privileged cap_revoke_from to revoke from another process
         match syscall::cap_revoke_from(target_pid, slot) {
@@ -385,7 +377,7 @@ impl PermissionManager {
                     "PermMgr: Successfully revoked cap from PID {} slot {}",
                     target_pid, slot
                 ));
-                
+
                 // Remove from our tracking if we have it
                 for obj_type in 1..=8u8 {
                     let key = (target_pid, obj_type);
@@ -396,7 +388,7 @@ impl PermissionManager {
                         }
                     }
                 }
-                
+
                 // Notify the affected process via debug channel
                 // The supervisor or Init can route this notification
                 syscall::debug(&format!(
@@ -411,7 +403,7 @@ impl PermissionManager {
                 ));
             }
         }
-        
+
         Ok(())
     }
 
@@ -462,16 +454,13 @@ impl ZeroApp for PermissionManager {
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {
-        syscall::debug(&format!(
-            "PermissionManager starting (PID {})",
-            ctx.pid
-        ));
+        syscall::debug(&format!("PermissionManager starting (PID {})", ctx.pid));
 
         // Set up root capability slots
         // In a full implementation, these would be granted by Init at spawn
         // For now, we use well-known slots that supervisor sets up
         self.console_cap_slot = Some(0); // Console output
-        self.spawn_cap_slot = Some(2);   // Process spawn
+        self.spawn_cap_slot = Some(2); // Process spawn
         self.endpoint_cap_slot = Some(1); // Endpoint creation
 
         syscall::debug("PermissionManager: Root capabilities configured");

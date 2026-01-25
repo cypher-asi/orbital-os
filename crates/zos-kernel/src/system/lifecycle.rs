@@ -37,7 +37,7 @@ pub(in crate::system) fn execute_kill_with_cap<H: HAL>(
     timestamp: u64,
 ) -> (i64, Vec<CommitType>) {
     let target_pid = ProcessId(args[0] as u64);
-    
+
     match core.kill_process_with_cap_check(sender, target_pid, timestamp) {
         (Ok(()), commits) => {
             let commit_types: Vec<CommitType> =
@@ -62,11 +62,11 @@ pub(in crate::system) fn execute_register_process<H: HAL>(
     if sender.0 != 1 {
         return (-1, Vec::new());
     }
-    
+
     let name = core::str::from_utf8(data).unwrap_or("unknown");
     let (pid, commits) = core.register_process(name, timestamp);
     let commit_types = commits.into_iter().map(|c| c.commit_type).collect();
-    
+
     (pid.0 as i64, commit_types)
 }
 
@@ -84,11 +84,11 @@ pub(in crate::system) fn execute_create_endpoint_for<H: HAL>(
     if sender.0 != 1 {
         return (-1, Vec::new());
     }
-    
+
     let target_pid = ProcessId(args[0] as u64);
     let (result, commits) = core.create_endpoint(target_pid, timestamp);
     let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
-    
+
     match result {
         Ok((eid, slot)) => {
             // Pack endpoint ID and slot into a single i64

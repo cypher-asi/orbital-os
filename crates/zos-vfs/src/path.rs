@@ -141,7 +141,10 @@ mod tests {
         assert_eq!(normalize_path("/").unwrap(), "/");
         assert_eq!(normalize_path("/home/user").unwrap(), "/home/user");
         assert_eq!(normalize_path("/home/./user").unwrap(), "/home/user");
-        assert_eq!(normalize_path("/home/user/../other").unwrap(), "/home/other");
+        assert_eq!(
+            normalize_path("/home/user/../other").unwrap(),
+            "/home/other"
+        );
         assert_eq!(normalize_path("/a/b/c/../../d").unwrap(), "/a/d");
         assert!(normalize_path("/..").is_err()); // Escapes root
     }

@@ -1,8 +1,8 @@
 //! Window struct and state
 
-use serde::{Deserialize, Serialize};
-use crate::math::{Rect, Size, Vec2, FRAME_STYLE};
 use super::WindowId;
+use crate::math::{Rect, Size, Vec2, FRAME_STYLE};
+use serde::{Deserialize, Serialize};
 
 /// Window state
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,11 +88,9 @@ impl Window {
 
     /// Get the close button rectangle
     pub fn close_button_rect(&self) -> Rect {
-        let x = self.position.x + self.size.width 
-            - FRAME_STYLE.button_margin 
-            - FRAME_STYLE.button_size;
-        let y = self.position.y 
-            + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
+        let x =
+            self.position.x + self.size.width - FRAME_STYLE.button_margin - FRAME_STYLE.button_size;
+        let y = self.position.y + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
         Rect::new(x, y, FRAME_STYLE.button_size, FRAME_STYLE.button_size)
     }
 
@@ -102,8 +100,7 @@ impl Window {
             - FRAME_STYLE.button_margin
             - FRAME_STYLE.button_size * 2.0
             - FRAME_STYLE.button_spacing;
-        let y = self.position.y 
-            + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
+        let y = self.position.y + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
         Rect::new(x, y, FRAME_STYLE.button_size, FRAME_STYLE.button_size)
     }
 
@@ -113,8 +110,7 @@ impl Window {
             - FRAME_STYLE.button_margin
             - FRAME_STYLE.button_size * 3.0
             - FRAME_STYLE.button_spacing * 2.0;
-        let y = self.position.y 
-            + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
+        let y = self.position.y + (FRAME_STYLE.title_bar_height - FRAME_STYLE.button_size) / 2.0;
         Rect::new(x, y, FRAME_STYLE.button_size, FRAME_STYLE.button_size)
     }
 }

@@ -118,11 +118,7 @@ impl StorageQuota {
 
     /// Remaining bytes available.
     pub fn remaining(&self) -> u64 {
-        if self.used_bytes >= self.max_bytes {
-            0
-        } else {
-            self.max_bytes - self.used_bytes
-        }
+        self.max_bytes.saturating_sub(self.used_bytes)
     }
 
     /// Update usage (delta can be positive or negative).

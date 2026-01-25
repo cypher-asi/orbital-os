@@ -1,7 +1,7 @@
 //! Snapshot serialization for desktop state
 
-use serde::{Deserialize, Serialize};
 use crate::desktop::PersistedDesktop;
+use serde::{Deserialize, Serialize};
 
 /// Snapshot of desktop state for persistence
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -46,16 +46,14 @@ mod tests {
 
     #[test]
     fn test_snapshot_creation() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Main".to_string(),
-                camera: Camera::new(),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Main".to_string(),
+            camera: Camera::new(),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         assert_eq!(snapshot.version, Snapshot::CURRENT_VERSION);
         assert_eq!(snapshot.active_desktop, 0);
         assert_eq!(snapshot.desktops.len(), 1);
@@ -63,19 +61,17 @@ mod tests {
 
     #[test]
     fn test_snapshot_serialization() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Main".to_string(),
-                camera: Camera::at(Vec2::new(100.0, 200.0), 1.5),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Main".to_string(),
+            camera: Camera::at(Vec2::new(100.0, 200.0), 1.5),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.desktops[0].name, "Main");
         assert!((restored.desktops[0].camera.center.x - 100.0).abs() < 0.001);
     }
@@ -83,7 +79,7 @@ mod tests {
     #[test]
     fn test_snapshot_default() {
         let snapshot: Snapshot = Default::default();
-        
+
         assert_eq!(snapshot.version, 0); // Default doesn't set CURRENT_VERSION
         assert_eq!(snapshot.active_desktop, 0);
         assert!(snapshot.desktops.is_empty());
@@ -92,13 +88,13 @@ mod tests {
     #[test]
     fn test_snapshot_empty_desktops() {
         let snapshot = Snapshot::new(0, vec![]);
-        
+
         assert_eq!(snapshot.version, Snapshot::CURRENT_VERSION);
         assert!(snapshot.desktops.is_empty());
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert!(restored.desktops.is_empty());
     }
 
@@ -125,13 +121,13 @@ mod tests {
             },
         ];
         let snapshot = Snapshot::new(1, desktops);
-        
+
         assert_eq!(snapshot.active_desktop, 1);
         assert_eq!(snapshot.desktops.len(), 3);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.active_desktop, 1);
         assert_eq!(restored.desktops.len(), 3);
         assert_eq!(restored.desktops[0].name, "Main");
@@ -141,19 +137,17 @@ mod tests {
 
     #[test]
     fn test_snapshot_camera_state_preservation() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Test".to_string(),
-                camera: Camera::at(Vec2::new(-500.0, 300.0), 2.5),
-                background: "mist".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Test".to_string(),
+            camera: Camera::at(Vec2::new(-500.0, 300.0), 2.5),
+            background: "mist".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         let camera = &restored.desktops[0].camera;
         assert!((camera.center.x - (-500.0)).abs() < 0.001);
         assert!((camera.center.y - 300.0).abs() < 0.001);
@@ -177,10 +171,10 @@ mod tests {
             },
         ];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.desktops[0].background, "grain");
         assert_eq!(restored.desktops[1].background, "mist");
     }
@@ -189,7 +183,7 @@ mod tests {
     fn test_snapshot_needs_migration() {
         let mut snapshot = Snapshot::new(0, vec![]);
         assert!(!snapshot.needs_migration());
-        
+
         // Simulate old version
         snapshot.version = 0;
         assert!(snapshot.needs_migration());
@@ -200,20 +194,18 @@ mod tests {
         let mut snapshot = Snapshot {
             version: 0,
             active_desktop: 2,
-            desktops: vec![
-                PersistedDesktop {
-                    id: 1,
-                    name: "Old".to_string(),
-                    camera: Camera::new(),
-                    background: "grain".to_string(),
-                },
-            ],
+            desktops: vec![PersistedDesktop {
+                id: 1,
+                name: "Old".to_string(),
+                camera: Camera::new(),
+                background: "grain".to_string(),
+            }],
         };
-        
+
         assert!(snapshot.needs_migration());
-        
+
         snapshot.migrate();
-        
+
         assert!(!snapshot.needs_migration());
         assert_eq!(snapshot.version, Snapshot::CURRENT_VERSION);
         // Data should be preserved
@@ -223,17 +215,15 @@ mod tests {
 
     #[test]
     fn test_snapshot_clone() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Main".to_string(),
-                camera: Camera::at(Vec2::new(100.0, 200.0), 1.5),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Main".to_string(),
+            camera: Camera::at(Vec2::new(100.0, 200.0), 1.5),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
         let cloned = snapshot.clone();
-        
+
         assert_eq!(cloned.version, snapshot.version);
         assert_eq!(cloned.active_desktop, snapshot.active_desktop);
         assert_eq!(cloned.desktops.len(), snapshot.desktops.len());
@@ -263,18 +253,18 @@ mod tests {
             },
         ];
         let original = Snapshot::new(1, desktops);
-        
+
         // Serialize
         let json = serde_json::to_string_pretty(&original).unwrap();
-        
+
         // Deserialize
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         // Verify all fields
         assert_eq!(restored.version, original.version);
         assert_eq!(restored.active_desktop, original.active_desktop);
         assert_eq!(restored.desktops.len(), original.desktops.len());
-        
+
         for (orig, rest) in original.desktops.iter().zip(restored.desktops.iter()) {
             assert_eq!(orig.id, rest.id);
             assert_eq!(orig.name, rest.name);
@@ -287,18 +277,16 @@ mod tests {
 
     #[test]
     fn test_snapshot_json_structure() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Test".to_string(),
-                camera: Camera::new(),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Test".to_string(),
+            camera: Camera::new(),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
-        
+
         // Verify JSON contains expected keys
         assert!(json.contains("\"version\""));
         assert!(json.contains("\"active_desktop\""));
@@ -310,37 +298,33 @@ mod tests {
 
     #[test]
     fn test_snapshot_special_characters_in_name() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "Work & Play \"Special\" <Test>".to_string(),
-                camera: Camera::new(),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "Work & Play \"Special\" <Test>".to_string(),
+            camera: Camera::new(),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.desktops[0].name, "Work & Play \"Special\" <Test>");
     }
 
     #[test]
     fn test_snapshot_unicode_name() {
-        let desktops = vec![
-            PersistedDesktop {
-                id: 1,
-                name: "工作桌面 🖥️".to_string(),
-                camera: Camera::new(),
-                background: "grain".to_string(),
-            },
-        ];
+        let desktops = vec![PersistedDesktop {
+            id: 1,
+            name: "工作桌面 🖥️".to_string(),
+            camera: Camera::new(),
+            background: "grain".to_string(),
+        }];
         let snapshot = Snapshot::new(0, desktops);
-        
+
         let json = serde_json::to_string(&snapshot).unwrap();
         let restored: Snapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.desktops[0].name, "工作桌面 🖥️");
     }
 }

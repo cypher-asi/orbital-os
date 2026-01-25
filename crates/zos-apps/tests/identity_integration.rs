@@ -11,11 +11,12 @@ fn test_app_receives_user_context() {
     // Create VFS with user home directory
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    let home_path = format!("/home/{:032x}", user_id);
+    let home_path = format!("/home/{}", user_id);
 
     // Create home directory structure
     vfs.mkdir_p(&home_path).unwrap();
-    vfs.mkdir_p(&format!("{}/.zos/identity", home_path)).unwrap();
+    vfs.mkdir_p(&format!("{}/.zos/identity", home_path))
+        .unwrap();
     vfs.mkdir_p(&format!("{}/Apps", home_path)).unwrap();
 
     // Verify home exists
@@ -28,13 +29,13 @@ fn test_app_receives_user_context() {
 fn test_app_permissions_checked_against_manifest() {
     // This test verifies the permission checking logic
     // In a real implementation, this would check the manifest parser
-    
+
     // For now, verify the basic permission checking in VFS
     use zos_vfs::service::{check_read, check_write, PermissionContext};
     use zos_vfs::types::Inode;
 
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
+
     // Create a file owned by the user
     let inode = Inode::new_file(
         String::from("/home/user/app_data.txt"),
@@ -67,7 +68,7 @@ fn test_app_data_directory_created() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
     let app_id = "com.example.calculator";
-    let home_path = format!("/home/{:032x}", user_id);
+    let home_path = format!("/home/{}", user_id);
     let app_data_path = format!("{}/Apps/{}", home_path, app_id);
 
     // Create the app data directory (simulating app launch)
@@ -79,8 +80,9 @@ fn test_app_data_directory_created() {
 
     // App can write to its data directory
     let config_path = format!("{}/config.json", app_data_path);
-    vfs.write_file(&config_path, b"{\"theme\": \"dark\"}").unwrap();
-    
+    vfs.write_file(&config_path, b"{\"theme\": \"dark\"}")
+        .unwrap();
+
     let content = vfs.read_file(&config_path).unwrap();
     assert_eq!(content, b"{\"theme\": \"dark\"}");
 }
@@ -104,7 +106,7 @@ fn test_permission_denial_for_unauthorized_operations() {
         None,
         1000,
     );
-    
+
     // Ensure no world permissions
     inode.permissions = FilePermissions {
         owner_read: true,
@@ -131,20 +133,23 @@ fn test_permission_denial_for_unauthorized_operations() {
 #[test]
 fn test_session_data_isolation() {
     let vfs = MemoryVfs::new();
-    
+
     let user1_id: u128 = 0x00000000000000000000000000000001;
     let user2_id: u128 = 0x00000000000000000000000000000002;
-    
-    let user1_home = format!("/home/{:032x}", user1_id);
-    let user2_home = format!("/home/{:032x}", user2_id);
+
+    let user1_home = format!("/home/{}", user1_id);
+    let user2_home = format!("/home/{}", user2_id);
 
     // Create both user homes
-    vfs.mkdir_p(&format!("{}/.zos/sessions", user1_home)).unwrap();
-    vfs.mkdir_p(&format!("{}/.zos/sessions", user2_home)).unwrap();
+    vfs.mkdir_p(&format!("{}/.zos/sessions", user1_home))
+        .unwrap();
+    vfs.mkdir_p(&format!("{}/.zos/sessions", user2_home))
+        .unwrap();
 
     // Write session data for user1
     let session_path = format!("{}/.zos/sessions/current.json", user1_home);
-    vfs.write_file(&session_path, b"{\"session_id\": \"abc123\"}").unwrap();
+    vfs.write_file(&session_path, b"{\"session_id\": \"abc123\"}")
+        .unwrap();
 
     // User1's session file should exist
     assert!(vfs.exists(&session_path).unwrap());

@@ -4,7 +4,9 @@
 //! - `keys`: Neural key and machine key operations
 //! - `session`: ZID login/enrollment flows
 //! - `credentials`: Credential management
+//! - `preferences`: Identity preferences (default key scheme, etc.)
 
-pub mod keys;
-pub mod session;
 pub mod credentials;
+pub mod keys;
+pub mod preferences;
+pub mod session;

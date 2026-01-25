@@ -70,16 +70,18 @@ impl BackgroundRenderer {
         let (instance, surface, width, height) = Self::create_surface(canvas)?;
         let gpu = Self::setup_gpu(&instance, &surface, width, height).await?;
         let resources = Self::setup_render_resources(&gpu, width, height);
-        
+
         let mut renderer = Self::assemble(surface, gpu, resources);
         renderer.render_static_glass();
-        
+
         Ok(renderer)
     }
 
     /// Create the wgpu instance and surface from canvas
     #[cfg(target_arch = "wasm32")]
-    fn create_surface(canvas: web_sys::HtmlCanvasElement) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
+    fn create_surface(
+        canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
         let width = canvas.width();
         let height = canvas.height();
 
@@ -97,7 +99,9 @@ impl BackgroundRenderer {
 
     /// Create the wgpu instance and surface from canvas (non-WASM stub)
     #[cfg(not(target_arch = "wasm32"))]
-    fn create_surface(_canvas: web_sys::HtmlCanvasElement) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
+    fn create_surface(
+        _canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<(wgpu::Instance, wgpu::Surface<'static>, u32, u32), String> {
         Err("BackgroundRenderer only supports WASM targets".to_string())
     }
 
@@ -109,9 +113,11 @@ impl BackgroundRenderer {
         height: u32,
     ) -> Result<GpuResources, String> {
         let (device, queue, adapter) = create_device(instance, surface).await?;
-        let (surface_config, surface_format) = configure_surface(surface, &adapter, &device, width, height);
-        let (uniform_buffer, bind_group_layout, bind_group) = create_uniform_resources(&device, width, height);
-        
+        let (surface_config, surface_format) =
+            configure_surface(surface, &adapter, &device, width, height);
+        let (uniform_buffer, bind_group_layout, bind_group) =
+            create_uniform_resources(&device, width, height);
+
         Ok(GpuResources {
             device,
             queue,
@@ -126,18 +132,18 @@ impl BackgroundRenderer {
     /// Setup rendering resources (pipelines, textures)
     fn setup_render_resources(gpu: &GpuResources, width: u32, height: u32) -> RenderResources {
         let pipelines = create_pipelines(&gpu.device, &gpu.bind_group_layout, gpu.surface_format);
-        
+
         let (scene_texture, scene_texture_view, scene_sampler) =
             create_smoke_texture(&gpu.device, width, height, gpu.surface_format);
-        
+
         let (glass_overlay_texture, glass_overlay_view) =
             create_glass_texture(&gpu.device, width, height, gpu.surface_format);
-        
+
         let glass_static_pipeline =
             create_glass_static_pipeline(&gpu.device, &gpu.bind_group_layout, gpu.surface_format);
-        
+
         let composite_bind_group_layout = create_composite_bind_group_layout(&gpu.device);
-        
+
         let composite_bind_group = create_composite_bind_group(
             &gpu.device,
             &composite_bind_group_layout,
@@ -145,7 +151,7 @@ impl BackgroundRenderer {
             &scene_sampler,
             &glass_overlay_view,
         );
-        
+
         let composite_pipeline = create_composite_pipeline(
             &gpu.device,
             &gpu.bind_group_layout,
@@ -225,7 +231,7 @@ impl BackgroundRenderer {
             workspace_gap: self.workspace_gap,
             _pad: [0.0, 0.0, 0.0, 0.0],
         };
-        
+
         render_glass_static(
             &self.queue,
             &self.device,
@@ -267,7 +273,7 @@ impl BackgroundRenderer {
     fn recreate_smoke_texture(&mut self, width: u32, height: u32) {
         let (texture, view, sampler) =
             create_smoke_texture(&self.device, width, height, self.surface_format);
-        
+
         self.scene_texture = texture;
         self.scene_texture_view = view;
         self.scene_sampler = sampler;
@@ -277,7 +283,7 @@ impl BackgroundRenderer {
     fn recreate_glass_texture(&mut self, width: u32, height: u32) {
         let (texture, view) =
             create_glass_texture(&self.device, width, height, self.surface_format);
-        
+
         self.glass_overlay_texture = texture;
         self.glass_overlay_view = view;
     }
@@ -315,7 +321,7 @@ impl BackgroundRenderer {
     ) {
         self.workspace_count = count as f32;
         self.active_workspace = active as f32;
-        
+
         for (i, bg) in backgrounds.iter().take(4).enumerate() {
             self.workspace_backgrounds[i] = match bg {
                 BackgroundType::Grain => 0.0,
@@ -340,11 +346,8 @@ impl BackgroundRenderer {
         let elapsed = ((now - self.start_time) / 1000.0) as f32;
 
         let uniforms = self.build_uniforms(elapsed);
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[uniforms]),
-        );
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
         let output = self.get_surface_texture()?;
         let view = output
@@ -404,12 +407,8 @@ impl BackgroundRenderer {
                 self.surface.configure(&self.device, &self.surface_config);
                 Err("Surface reconfigured, skip frame".to_string())
             }
-            Err(wgpu::SurfaceError::OutOfMemory) => {
-                Err("Out of GPU memory".to_string())
-            }
-            Err(wgpu::SurfaceError::Timeout) => {
-                Err("GPU timeout, skip frame".to_string())
-            }
+            Err(wgpu::SurfaceError::OutOfMemory) => Err("Out of GPU memory".to_string()),
+            Err(wgpu::SurfaceError::Timeout) => Err("GPU timeout, skip frame".to_string()),
         }
     }
 

@@ -35,6 +35,7 @@ pub mod error;
 pub mod identity;
 pub mod manifest;
 pub mod runtime;
+pub mod vfs_async;
 
 // Re-export core types at crate root
 pub use app::{AppContext, ControlFlow, Message, ZeroApp};
@@ -48,7 +49,7 @@ pub use zos_process as syscall;
 
 // Re-export IPC protocol modules from zos-process (which re-exports from zos-ipc)
 // This allows apps to use consistent message constants.
-pub use zos_process::{pm, supervisor, init, kernel, permission, storage};
+pub use zos_process::{init, kernel, permission, pm, storage, supervisor};
 
 /// Generate the entry point and runtime setup for a Zero app.
 ///
@@ -77,11 +78,27 @@ macro_rules! app_main {
         /// Entry point called by the WASM runtime
         #[no_mangle]
         pub extern "C" fn _start() {
+            // #region agent log
+            $crate::syscall::debug("[_start] Entry point called");
+            // #endregion
+            
             // Create app instance
             let app = <$app_type>::default();
+            
+            // #region agent log
+            $crate::syscall::debug("[_start] App instance created");
+            // #endregion
 
             // Create and run runtime
             let mut runtime = $crate::AppRuntime::new();
+            
+            // #region agent log
+            use alloc::format;
+            $crate::syscall::debug(&format!(
+                "[_start] Runtime created, PID={}",
+                runtime.pid()
+            ));
+            // #endregion
 
             // Set app ID from manifest
             runtime.set_app_id(<$app_type as $crate::ZeroApp>::manifest().id);
@@ -91,6 +108,13 @@ macro_rules! app_main {
             // Slot 1 is typically the input endpoint
             runtime.set_ui_endpoint(0);
             runtime.set_input_endpoint(1);
+            
+            // #region agent log
+            $crate::syscall::debug(&format!(
+                "[_start] Endpoints configured, starting run loop for {}",
+                <$app_type as $crate::ZeroApp>::manifest().id
+            ));
+            // #endregion
 
             // Run forever (exits via syscall::exit)
             runtime.run(app);

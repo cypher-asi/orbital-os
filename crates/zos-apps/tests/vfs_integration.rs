@@ -2,9 +2,9 @@
 //!
 //! Tests that verify app filesystem access and restrictions.
 
+use zos_vfs::types::FilePermissions;
 use zos_vfs::MemoryVfs;
 use zos_vfs::VfsService;
-use zos_vfs::types::FilePermissions;
 
 extern crate alloc;
 
@@ -14,8 +14,8 @@ fn test_app_can_read_write_data_directory() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
     let app_id = "com.example.calculator";
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let app_data_path = format!("{}/Apps/{}", home_path, app_id);
 
     // Create app data directory
@@ -30,7 +30,8 @@ fn test_app_can_read_write_data_directory() {
     assert_eq!(content, b"{\"history\": []}");
 
     // Update file
-    vfs.write_file(&data_file, b"{\"history\": [\"1+1=2\"]}").unwrap();
+    vfs.write_file(&data_file, b"{\"history\": [\"1+1=2\"]}")
+        .unwrap();
     let content = vfs.read_file(&data_file).unwrap();
     assert_eq!(content, b"{\"history\": [\"1+1=2\"]}");
 }
@@ -40,8 +41,8 @@ fn test_app_can_read_write_data_directory() {
 fn test_app_cannot_access_other_apps_directories() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let app1_path = format!("{}/Apps/com.example.app1", home_path);
     let app2_path = format!("{}/Apps/com.example.app2", home_path);
 
@@ -62,7 +63,7 @@ fn test_app_cannot_access_other_apps_directories() {
     // In a real implementation, app2's process would have permission checks
     // that prevent it from reading app1's files. The VFS service would check
     // the calling process's context and deny access.
-    // 
+    //
     // This test verifies the file system structure is correct for isolation.
     let entries = vfs.readdir(&format!("{}/Apps", home_path)).unwrap();
     assert_eq!(entries.len(), 2);
@@ -72,12 +73,12 @@ fn test_app_cannot_access_other_apps_directories() {
 #[test]
 fn test_app_cannot_access_other_users_home() {
     let vfs = MemoryVfs::new();
-    
+
     let user1_id: u128 = 0x00000000000000000000000000000001;
     let user2_id: u128 = 0x00000000000000000000000000000002;
-    
-    let user1_home = format!("/home/{:032x}", user1_id);
-    let user2_home = format!("/home/{:032x}", user2_id);
+
+    let user1_home = format!("/home/{}", user1_id);
+    let user2_home = format!("/home/{}", user2_id);
 
     // Create both homes with private permissions
     vfs.mkdir_p(&user1_home).unwrap();
@@ -86,8 +87,10 @@ fn test_app_cannot_access_other_users_home() {
     // Set ownership and private permissions
     vfs.chown(&user1_home, Some(user1_id)).unwrap();
     vfs.chown(&user2_home, Some(user2_id)).unwrap();
-    vfs.chmod(&user1_home, FilePermissions::user_dir_default()).unwrap();
-    vfs.chmod(&user2_home, FilePermissions::user_dir_default()).unwrap();
+    vfs.chmod(&user1_home, FilePermissions::user_dir_default())
+        .unwrap();
+    vfs.chmod(&user2_home, FilePermissions::user_dir_default())
+        .unwrap();
 
     // User1 writes private data
     let user1_file = format!("{}/private.txt", user1_home);
@@ -104,8 +107,8 @@ fn test_app_cannot_access_other_users_home() {
 fn test_quota_enforcement_for_app_storage() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     vfs.mkdir_p(&home_path).unwrap();
 
     // Set a small quota (1KB)
@@ -132,8 +135,8 @@ fn test_file_operations_in_app_sandbox() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
     let app_id = "com.example.notes";
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let app_path = format!("{}/Apps/{}", home_path, app_id);
     let docs_path = format!("{}/documents", app_path);
 
@@ -171,15 +174,16 @@ fn test_file_operations_in_app_sandbox() {
 fn test_encrypted_file_storage() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let secrets_path = format!("{}/.zos/credentials", home_path);
     vfs.mkdir_p(&secrets_path).unwrap();
 
     // Write encrypted file (in MemoryVfs this is a no-op, but the API is tested)
     let key: [u8; 32] = [0u8; 32];
     let credential_file = format!("{}/api_key.enc", secrets_path);
-    vfs.write_file_encrypted(&credential_file, b"secret-api-key-12345", &key).unwrap();
+    vfs.write_file_encrypted(&credential_file, b"secret-api-key-12345", &key)
+        .unwrap();
 
     // Verify it's marked as encrypted
     let stat = vfs.stat(&credential_file).unwrap();
@@ -195,8 +199,8 @@ fn test_encrypted_file_storage() {
 fn test_symlink_operations() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     vfs.mkdir_p(&home_path).unwrap();
 
     // Create a file
@@ -221,18 +225,20 @@ fn test_symlink_operations() {
 fn test_recursive_directory_operations() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let project_path = format!("{}/Apps/ide/projects/myproject", home_path);
-    
+
     // Create deep directory structure
     vfs.mkdir_p(&project_path).unwrap();
     vfs.mkdir_p(&format!("{}/src", project_path)).unwrap();
     vfs.mkdir_p(&format!("{}/docs", project_path)).unwrap();
-    
+
     // Create files
-    vfs.write_file(&format!("{}/src/main.rs", project_path), b"fn main() {}").unwrap();
-    vfs.write_file(&format!("{}/README.md", project_path), b"# My Project").unwrap();
+    vfs.write_file(&format!("{}/src/main.rs", project_path), b"fn main() {}")
+        .unwrap();
+    vfs.write_file(&format!("{}/README.md", project_path), b"# My Project")
+        .unwrap();
 
     // Verify structure
     let entries = vfs.readdir(&project_path).unwrap();
@@ -241,7 +247,7 @@ fn test_recursive_directory_operations() {
     // Recursive delete
     vfs.rmdir_recursive(&project_path).unwrap();
     assert!(!vfs.exists(&project_path).unwrap());
-    
+
     // Parent should still exist
     let parent = format!("{}/Apps/ide/projects", home_path);
     assert!(vfs.exists(&parent).unwrap());

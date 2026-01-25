@@ -12,6 +12,7 @@ import {
   type MachineKeyCapabilities as ServiceMachineKeyCapabilities,
   type MachineKeyRecord as ServiceMachineKeyRecord,
   type KeyScheme as ServiceKeyScheme,
+  type NeuralShard,
   isLegacyCapabilities,
   convertLegacyCapabilities,
   VfsStorageClient,
@@ -27,6 +28,9 @@ export type {
   MachineKeyCapability,
 } from '../../stores';
 
+/** Neural shard for key derivation */
+export type { NeuralShard } from '../../services';
+
 /**
  * Hook return type
  */
@@ -37,11 +41,12 @@ export interface UseMachineKeysReturn {
   listMachineKeys: () => Promise<import('../../stores').MachineKeyRecord[]>;
   /** Get a specific machine key */
   getMachineKey: (machineId: string) => Promise<import('../../stores').MachineKeyRecord | null>;
-  /** Create a new machine key */
+  /** Create a new machine key (requires 3 Neural shards for key derivation) */
   createMachineKey: (
     machineName?: string,
     capabilities?: MachineKeyCapability[],
-    keyScheme?: KeyScheme
+    keyScheme?: KeyScheme,
+    shards?: NeuralShard[]
   ) => Promise<import('../../stores').MachineKeyRecord>;
   /** Revoke a machine key */
   revokeMachineKey: (machineId: string) => Promise<void>;
@@ -86,7 +91,9 @@ function convertCapabilities(
 /**
  * Convert public API capabilities (string array) to service format.
  */
-function convertCapabilitiesForService(caps?: MachineKeyCapability[]): ServiceMachineKeyCapabilities {
+function convertCapabilitiesForService(
+  caps?: MachineKeyCapability[]
+): ServiceMachineKeyCapabilities {
   // Default capabilities if none provided
   const defaultCaps: MachineKeyCapability[] = ['AUTHENTICATE', 'ENCRYPT'];
   const capabilities = caps && caps.length > 0 ? caps : defaultCaps;
@@ -179,6 +186,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
       // List children of the machine keys directory
       const children = VfsStorageClient.listChildrenSync(machineDir);
       const machines: import('../../stores').MachineKeyRecord[] = [];
+      const corruptFiles: string[] = [];
 
       // Read each machine key file
       for (const child of children) {
@@ -186,13 +194,59 @@ export function useMachineKeys(): UseMachineKeysReturn {
 
         const content = VfsStorageClient.readJsonSync<ServiceMachineKeyRecord>(child.path);
         if (content) {
-          machines.push(convertMachineRecord(content, state.currentMachineId || undefined));
+          try {
+            machines.push(convertMachineRecord(content, state.currentMachineId || undefined));
+          } catch (convErr) {
+            console.warn(
+              `[useMachineKeys] Failed to convert machine key at ${child.path}:`,
+              convErr
+            );
+            corruptFiles.push(child.path);
+          }
+        } else {
+          // JSON parsing failed - file might be corrupt/truncated
+          console.warn(`[useMachineKeys] Skipping corrupt/invalid machine key file: ${child.path}`);
+          corruptFiles.push(child.path);
         }
       }
 
-      console.log(`[useMachineKeys] Found ${machines.length} machine keys in VFS cache`);
+      if (corruptFiles.length > 0) {
+        console.warn(
+          `[useMachineKeys] Found ${corruptFiles.length} corrupt machine key file(s). ` +
+            `These may need to be deleted and recreated:`,
+          corruptFiles
+        );
+      }
 
-      setMachines(machines);
+      // Deduplicate machines by machineId (in case of duplicate entries)
+      const uniqueMachines = machines.filter((machine, index, self) => {
+        const isDuplicate = self.findIndex(m => m.machineId === machine.machineId) !== index;
+        if (isDuplicate) {
+          console.warn(`[useMachineKeys] Skipping duplicate machine ID: ${machine.machineId}`);
+        }
+        return !isDuplicate;
+      });
+
+      // Warn about zero-ID machines (indicates entropy generation failure)
+      const zeroIdMachines = uniqueMachines.filter(m => 
+        m.machineId === '0x00000000000000000000000000000000' || 
+        m.machineId === '0x0' ||
+        m.machineId === '0'
+      );
+      if (zeroIdMachines.length > 0) {
+        console.error(
+          `[useMachineKeys] WARNING: Found ${zeroIdMachines.length} machine(s) with zero ID! ` +
+          `This indicates entropy generation failed. These machines may need to be recreated.`
+        );
+      }
+
+      console.log(
+        `[useMachineKeys] Found ${uniqueMachines.length} unique machine keys in VFS cache` +
+          (corruptFiles.length > 0 ? ` (${corruptFiles.length} corrupt/skipped)` : '') +
+          (machines.length !== uniqueMachines.length ? ` (${machines.length - uniqueMachines.length} duplicates removed)` : '')
+      );
+
+      setMachines(uniqueMachines);
 
       return machines;
     } catch (err) {
@@ -216,24 +270,31 @@ export function useMachineKeys(): UseMachineKeysReturn {
     async (
       machineName?: string,
       capabilities?: MachineKeyCapability[],
-      keyScheme?: KeyScheme
+      keyScheme?: KeyScheme,
+      shards?: NeuralShard[]
     ): Promise<import('../../stores').MachineKeyRecord> => {
       const userIdVal = getUserIdOrThrow();
       const client = getClientOrThrow();
+
+      // Validate shards
+      if (!shards || shards.length < 3) {
+        throw new Error('At least 3 Neural shards are required to create a machine key');
+      }
 
       setLoading(true);
 
       try {
         const schemeToUse = keyScheme ?? 'classical';
         console.log(
-          `[useMachineKeys] Creating machine key for user ${userIdVal} (scheme: ${schemeToUse})`
+          `[useMachineKeys] Creating machine key for user ${userIdVal} (scheme: ${schemeToUse}, shards: ${shards.length})`
         );
         const serviceCaps = convertCapabilitiesForService(capabilities);
         const serviceRecord = await client.createMachineKey(
           userIdVal,
           machineName || 'New Device',
           serviceCaps,
-          schemeToUse as ServiceKeyScheme
+          schemeToUse as ServiceKeyScheme,
+          shards
         );
         const newMachine = convertMachineRecord(serviceRecord, state.currentMachineId || undefined);
 

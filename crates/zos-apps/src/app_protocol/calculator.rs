@@ -28,7 +28,12 @@ pub struct CalculatorState {
 
 impl CalculatorState {
     /// Create a new CalculatorState
-    pub fn new(display: String, pending_op: Option<char>, has_error: bool, memory_indicator: bool) -> Self {
+    pub fn new(
+        display: String,
+        pending_op: Option<char>,
+        has_error: bool,
+        memory_indicator: bool,
+    ) -> Self {
         Self {
             display,
             pending_op,

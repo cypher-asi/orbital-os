@@ -1,12 +1,16 @@
 //! Core syscall wrappers for Zero OS
 
-use crate::constants::error;
+extern crate alloc;
+use alloc::format;
+use alloc::string::ToString;
+use crate::error;
+// Import syscall numbers (re-exported from zos-ipc at crate root)
 #[allow(unused_imports)]
-use crate::constants::syscall::{
-    SYS_CAP_DELETE, SYS_CAP_DERIVE, SYS_CAP_GRANT, SYS_CAP_INSPECT, SYS_CAP_REVOKE,
-    SYS_CONSOLE_WRITE, SYS_CREATE_ENDPOINT_FOR, SYS_DEBUG, SYS_EP_CREATE, SYS_EXIT, SYS_GET_TIME,
-    SYS_GET_WALLCLOCK, SYS_KILL, SYS_LIST_CAPS, SYS_LIST_PROCS, SYS_RECEIVE, SYS_REGISTER_PROCESS,
-    SYS_REPLY, SYS_SEND, SYS_SEND_CAP,
+use crate::{
+    SYS_CALL, SYS_CAP_DELETE, SYS_CAP_DERIVE, SYS_CAP_GRANT, SYS_CAP_INSPECT, SYS_CAP_LIST,
+    SYS_CAP_REVOKE, SYS_CONSOLE_WRITE, SYS_CREATE_ENDPOINT, SYS_CREATE_ENDPOINT_FOR, SYS_DEBUG,
+    SYS_DELETE_ENDPOINT, SYS_EXIT, SYS_KILL, SYS_PS, SYS_RECV, SYS_REGISTER_PROCESS, SYS_REPLY,
+    SYS_SEND, SYS_SEND_CAP, SYS_TIME, SYS_WALLCLOCK, SYS_YIELD,
 };
 use crate::types::{CapInfo, Permissions, ProcessInfo, ReceivedMessage};
 use alloc::vec::Vec;
@@ -92,8 +96,8 @@ pub fn console_write(_text: &str) {
 #[cfg(target_arch = "wasm32")]
 pub fn get_time() -> u64 {
     unsafe {
-        let low = zos_syscall(SYS_GET_TIME, 0, 0, 0);
-        let high = zos_syscall(SYS_GET_TIME, 1, 0, 0);
+        let low = zos_syscall(SYS_TIME, 0, 0, 0);
+        let high = zos_syscall(SYS_TIME, 1, 0, 0);
         ((high as u64) << 32) | (low as u64)
     }
 }
@@ -110,8 +114,8 @@ pub fn get_time() -> u64 {
 #[cfg(target_arch = "wasm32")]
 pub fn get_wallclock() -> u64 {
     unsafe {
-        let low = zos_syscall(SYS_GET_WALLCLOCK, 0, 0, 0);
-        let high = zos_syscall(SYS_GET_WALLCLOCK, 1, 0, 0);
+        let low = zos_syscall(SYS_WALLCLOCK, 0, 0, 0);
+        let high = zos_syscall(SYS_WALLCLOCK, 1, 0, 0);
         ((high as u64) << 32) | (low as u64)
     }
 }
@@ -209,16 +213,30 @@ pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
     // Buffer sized to support large IPC messages (e.g., PQ hybrid keys ~6KB)
     let mut buffer = [0u8; 16384];
     unsafe {
-        let result = zos_syscall(SYS_RECEIVE, endpoint_slot, 0, 0) as i32;
+        let result = zos_syscall(SYS_RECV, endpoint_slot, 0, 0) as i32;
+        
         if result <= 0 {
             // 0 = no message, negative = error (e.g., permission denied)
+            // #region agent log
+            if result < 0 {
+                debug(&format!("[receive] SYS_RECV failed with error code {} for slot {}", result, endpoint_slot));
+            }
+            // #endregion
             return None;
         }
-        // Get the message data
+        
+        // CRITICAL: Get the message data BEFORE any debug logging!
+        // Debug logging makes a SYS_DEBUG syscall which clears the mailbox buffer.
         let len = zos_recv_bytes(buffer.as_mut_ptr(), buffer.len() as u32);
+        
+        // #region agent log
         if len == 0 {
+            // This should never happen - if SYS_RECV returned success, there should be data
+            debug(&format!("[receive] WARNING: SYS_RECV returned result={} but zos_recv_bytes returned 0 bytes for slot {}", result, endpoint_slot));
             return None;
         }
+        debug(&format!("[receive] SYS_RECV success, result={}, slot={}, received {} bytes", result, endpoint_slot, len));
+        // #endregion
         // Parse message format:
         // [from_pid: u32][tag: u32][num_caps: u8][cap_slots: u32*num_caps][data: ...]
         // Minimum: 4 + 4 + 1 = 9 bytes
@@ -576,10 +594,10 @@ pub fn cap_derive(_slot: u32, _new_perms: Permissions) -> Result<u32, u32> {
 #[cfg(target_arch = "wasm32")]
 pub fn create_endpoint() -> Result<(u64, u32), u32> {
     unsafe {
-        let result = zos_syscall(SYS_EP_CREATE, 0, 0, 0);
+        let result = zos_syscall(SYS_CREATE_ENDPOINT, 0, 0, 0);
         if result & 0x80000000 == 0 {
             // Result format: high 32 = endpoint_id, low 32 = slot
-            let high = zos_syscall(SYS_EP_CREATE, 1, 0, 0);
+            let high = zos_syscall(SYS_CREATE_ENDPOINT, 1, 0, 0);
             let endpoint_id = ((high as u64) << 32) | (result as u64 >> 32);
             let slot = result & 0xFFFFFFFF;
             Ok((endpoint_id, slot))
@@ -669,7 +687,7 @@ pub fn create_endpoint_for(_target_pid: u32) -> Result<(u64, u32), u32> {
 pub fn list_caps() -> Vec<CapInfo> {
     let mut buffer = [0u8; 4096];
     unsafe {
-        let result = zos_syscall(SYS_LIST_CAPS, 0, 0, 0);
+        let result = zos_syscall(SYS_CAP_LIST, 0, 0, 0);
         if result != 0 {
             return Vec::new();
         }
@@ -729,7 +747,7 @@ pub fn list_caps() -> Vec<CapInfo> {
 pub fn list_processes() -> Vec<ProcessInfo> {
     let mut buffer = [0u8; 4096];
     unsafe {
-        let result = zos_syscall(SYS_LIST_PROCS, 0, 0, 0);
+        let result = zos_syscall(SYS_PS, 0, 0, 0);
         if result != 0 {
             return Vec::new();
         }

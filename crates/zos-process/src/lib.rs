@@ -18,7 +18,6 @@ extern crate alloc;
 // Module Organization
 // ============================================================================
 
-pub mod constants;
 pub mod syscalls;
 pub mod types;
 
@@ -26,9 +25,34 @@ pub mod types;
 // Re-exports for Convenience
 // ============================================================================
 
-// Re-export syscall constants
-pub use constants::error;
-pub use constants::syscall::*;
+// Re-export syscall constants from zos-ipc (the single source of truth)
+pub use zos_ipc::syscall::*;
+
+// Syscall error codes
+pub mod error {
+    /// Success
+    pub const E_OK: u32 = 0;
+    /// Permission denied
+    pub const E_PERM: u32 = 1;
+    /// Object not found
+    pub const E_NOENT: u32 = 2;
+    /// Invalid argument
+    pub const E_INVAL: u32 = 3;
+    /// Syscall not implemented
+    pub const E_NOSYS: u32 = 4;
+    /// Would block (try again)
+    pub const E_AGAIN: u32 = 5;
+    /// Out of memory
+    pub const E_NOMEM: u32 = 6;
+    /// Invalid capability slot
+    pub const E_BADF: u32 = 7;
+    /// Resource busy
+    pub const E_BUSY: u32 = 8;
+    /// Already exists
+    pub const E_EXIST: u32 = 9;
+    /// Buffer overflow
+    pub const E_OVERFLOW: u32 = 10;
+}
 
 // Re-export types
 pub use types::{CapInfo, ObjectType, Permissions, ProcessInfo, ReceivedMessage};
@@ -61,9 +85,9 @@ pub use syscalls::deprecated::{vfs_delete, vfs_exists, vfs_list, vfs_mkdir, vfs_
 // Re-export all IPC modules for convenient access
 pub use zos_ipc::{
     console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
-    identity_query, identity_remote, identity_session, identity_user, identity_zid, init, kernel,
-    net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir, vfs_file, vfs_meta,
-    vfs_quota,
+    identity_prefs, identity_query, identity_remote, identity_session, identity_user, identity_zid,
+    init, kernel, net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir,
+    vfs_file, vfs_meta, vfs_quota,
 };
 
 /// Console input message tag - used by terminal for receiving keyboard input.

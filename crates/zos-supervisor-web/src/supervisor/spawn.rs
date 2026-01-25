@@ -37,8 +37,8 @@
 
 mod capabilities;
 
-use zos_kernel::ProcessId;
 use wasm_bindgen::prelude::*;
+use zos_kernel::ProcessId;
 
 use super::{log, Supervisor};
 use crate::pingpong;
@@ -196,7 +196,7 @@ impl Supervisor {
                 "[supervisor] Created terminal input endpoint {} at slot {} for terminal",
                 input_eid.0, slot
             ));
-            
+
             // Note: Supervisor capability to this endpoint is granted in
             // grant_terminal_capabilities() after endpoint creation.
         }

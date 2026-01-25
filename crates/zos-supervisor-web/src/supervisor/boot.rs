@@ -50,8 +50,8 @@
 //!
 //! See `spawn.rs` for the Init-driven spawn protocol documentation.
 
-use zos_kernel::ProcessId;
 use wasm_bindgen::prelude::*;
+use zos_kernel::ProcessId;
 
 use super::{log, Supervisor};
 use crate::vfs;
@@ -184,7 +184,27 @@ impl Supervisor {
                 vfs::putInode(path, inode).await;
             }
 
-            log("[supervisor] Root filesystem created");
+            // Create default user home directory structure (user ID 1)
+            // This is the default test/demo user: 00000000000000000000000000000001
+            let user_id = 1u128;
+            let user_home = format!("/home/{}", user_id);
+            let user_zos = format!("{}/.zos", user_home);
+            let user_identity = format!("{}/identity", user_zos);
+            let user_machine = format!("{}/machine", user_identity);
+            
+            let default_user_dirs = vec![
+                (user_home.clone(), "/home".to_string(), format!("{}", user_id)),
+                (user_zos.clone(), user_home.clone(), ".zos".to_string()),
+                (user_identity.clone(), user_zos.clone(), "identity".to_string()),
+                (user_machine.clone(), user_identity.clone(), "machine".to_string()),
+            ];
+
+            for (path, parent, name) in default_user_dirs {
+                let inode = vfs::create_dir_inode(&path, &parent, &name);
+                vfs::putInode(&path, inode).await;
+            }
+
+            log("[supervisor] Root filesystem created with default user home");
         } else {
             log("[supervisor] ZosStorage already initialized");
         }
@@ -192,7 +212,10 @@ impl Supervisor {
         // Get inode count for logging
         let count = vfs::getInodeCount().await;
         if let Some(n) = count.as_f64() {
-            log(&format!("[supervisor] ZosStorage ready with {} inodes", n as u64));
+            log(&format!(
+                "[supervisor] ZosStorage ready with {} inodes",
+                n as u64
+            ));
         }
 
         Ok(JsValue::from_bool(true))

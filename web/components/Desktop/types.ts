@@ -63,10 +63,7 @@ export interface BackgroundInfo {
 }
 
 /** Helper to check if window list changed (add/remove, not position) */
-export function windowListChanged(
-  newWindows: Array<{ id: number }>,
-  oldIds: Set<number>
-): boolean {
+export function windowListChanged(newWindows: Array<{ id: number }>, oldIds: Set<number>): boolean {
   if (newWindows.length !== oldIds.size) return true;
   for (const win of newWindows) {
     if (!oldIds.has(win.id)) return true;

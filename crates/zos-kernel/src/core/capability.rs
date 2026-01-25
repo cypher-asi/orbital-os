@@ -43,15 +43,11 @@ impl<H: HAL> KernelCore<H> {
         let granted_perms = attenuate_permissions(&source_cap.permissions, &new_perms);
 
         // Create and insert new capability
-        let (to_slot, cap_commits) = match self.create_derived_cap(
-            to_pid,
-            &source_cap,
-            granted_perms,
-            timestamp,
-        ) {
-            Ok(result) => result,
-            Err(e) => return (Err(e), commits),
-        };
+        let (to_slot, cap_commits) =
+            match self.create_derived_cap(to_pid, &source_cap, granted_perms, timestamp) {
+                Ok(result) => result,
+                Err(e) => return (Err(e), commits),
+            };
 
         // Log CapGranted commit
         commits.push(Commit {
@@ -64,13 +60,16 @@ impl<H: HAL> KernelCore<H> {
                 to_pid: to_pid.0,
                 from_slot,
                 to_slot,
-                new_cap_id: cap_commits.last().map(|c| {
-                    if let CommitType::CapInserted { cap_id, .. } = c.commit_type {
-                        cap_id
-                    } else {
-                        0
-                    }
-                }).unwrap_or(0),
+                new_cap_id: cap_commits
+                    .last()
+                    .map(|c| {
+                        if let CommitType::CapInserted { cap_id, .. } = c.commit_type {
+                            cap_id
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0),
                 perms: zos_axiom::Permissions {
                     read: granted_perms.read,
                     write: granted_perms.write,
@@ -289,7 +288,7 @@ impl<H: HAL> KernelCore<H> {
         };
 
         axiom_check(cspace, from_slot, &grant_perms, None, timestamp)
-            .map(|cap| cap.clone())
+            .cloned()
             .map_err(map_axiom_error)
     }
 
@@ -331,7 +330,7 @@ impl<H: HAL> KernelCore<H> {
         // No specific permissions required - derive just creates a weaker copy
         let no_perms = Permissions::default();
         axiom_check(cspace, slot, &no_perms, None, timestamp)
-            .map(|cap| cap.clone())
+            .cloned()
             .map_err(map_axiom_error)
     }
 

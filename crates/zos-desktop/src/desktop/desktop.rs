@@ -1,9 +1,9 @@
 //! Desktop struct - an isolated infinite canvas
 
-use serde::{Deserialize, Serialize};
+use super::DesktopId;
 use crate::math::{Camera, Rect, Vec2};
 use crate::window::WindowId;
-use super::DesktopId;
+use serde::{Deserialize, Serialize};
 
 /// A desktop - an isolated infinite canvas
 ///
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_desktop_windows() {
         let mut desktop = Desktop::new(1, "Test".to_string(), Rect::new(0.0, 0.0, 1920.0, 1080.0));
-        
+
         desktop.add_window(100);
         desktop.add_window(101);
         assert_eq!(desktop.windows.len(), 2);
@@ -160,9 +160,9 @@ mod tests {
     #[test]
     fn test_desktop_camera() {
         let mut desktop = Desktop::new(1, "Test".to_string(), Rect::new(0.0, 0.0, 1920.0, 1080.0));
-        
+
         desktop.save_camera(Vec2::new(100.0, 200.0), 2.0);
-        
+
         let camera = desktop.camera();
         assert!((camera.center.x - 100.0).abs() < 0.001);
         assert!((camera.center.y - 200.0).abs() < 0.001);

@@ -45,7 +45,7 @@ pub const VFS_RESPONSE_SLOT: u32 = 4;
 /// VFS client for sending IPC messages to VFS Service
 pub struct VfsClient {
     /// Capability slot for VFS service endpoint
-    #[allow(dead_code)]  // Used in WASM target
+    #[allow(dead_code)] // Used in WASM target
     vfs_endpoint: u32,
 }
 
@@ -390,8 +390,9 @@ impl VfsClient {
 
             if response.tag == expected_response_tag {
                 // This is our VFS response - deserialize and return
-                let resp: Resp = serde_json::from_slice(&response.data)
-                    .map_err(|e| VfsError::StorageError(alloc::format!("Deserialize error: {}", e)))?;
+                let resp: Resp = serde_json::from_slice(&response.data).map_err(|e| {
+                    VfsError::StorageError(alloc::format!("Deserialize error: {}", e))
+                })?;
                 return Ok(resp);
             }
 

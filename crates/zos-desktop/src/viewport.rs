@@ -191,7 +191,7 @@ mod tests {
     fn test_viewport_apply_camera() {
         let mut viewport = Viewport::new(1920.0, 1080.0);
         let camera = Camera::at(Vec2::new(100.0, 200.0), 0.5);
-        
+
         viewport.apply_camera(camera);
 
         assert!((viewport.center.x - 100.0).abs() < 0.001);

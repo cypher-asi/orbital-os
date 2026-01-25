@@ -12,8 +12,8 @@ use core::cell::RefCell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use zos_hal::{HalError, NumericProcessHandle, HAL};
 use zos_kernel::{
-    axiom_check, AxiomError, Capability, CapabilitySpace, System, ObjectType, Permissions,
-    ProcessId, ProcessState,
+    axiom_check, AxiomError, Capability, CapabilitySpace, ObjectType, Permissions, ProcessId,
+    ProcessState, System,
 };
 
 // ============================================================================
@@ -91,7 +91,8 @@ impl HAL for MockHal {
         self.processes.borrow_mut().insert(pid, process);
         self.debug_log.borrow_mut().push(alloc::format!(
             "[mock-hal] Spawned process '{}' with PID {}",
-            name, pid
+            name,
+            pid
         ));
 
         Ok(handle)
@@ -157,10 +158,10 @@ impl HAL for MockHal {
         }
     }
 
-    fn deallocate(&self, ptr: *mut u8, size: usize, _align: usize) {
+    unsafe fn deallocate(&self, ptr: *mut u8, size: usize, _align: usize) {
         if !ptr.is_null() {
             let layout = core::alloc::Layout::from_size_align(size, 8).unwrap();
-            unsafe { alloc::alloc::dealloc(ptr, layout) };
+            alloc::alloc::dealloc(ptr, layout);
         }
     }
 
@@ -276,7 +277,9 @@ fn test_capability_grant() {
         .expect("grant should succeed");
 
     let cap_space = kernel.get_cap_space(pid2).expect("cap space should exist");
-    let cap = cap_space.get(recipient_slot).expect("capability should exist");
+    let cap = cap_space
+        .get(recipient_slot)
+        .expect("capability should exist");
 
     assert_eq!(cap.object_type, ObjectType::Endpoint);
     assert_eq!(cap.object_id, eid.0);
@@ -358,13 +361,7 @@ fn test_axiom_check_valid_capability() {
 fn test_axiom_check_invalid_slot() {
     let cspace = CapabilitySpace::new();
 
-    let result = axiom_check(
-        &cspace,
-        999,
-        &Permissions::read_only(),
-        None,
-        0,
-    );
+    let result = axiom_check(&cspace, 999, &Permissions::read_only(), None, 0);
 
     assert!(matches!(result, Err(AxiomError::InvalidSlot)));
 }
@@ -412,28 +409,29 @@ fn test_sys_register_process_init_only() {
     const SYS_REGISTER_PROCESS: u32 = 0x14;
 
     // Init (PID 1) should be able to register a new process
-    let (result, _rich, _data) = kernel.process_syscall(
-        init_pid,
-        SYS_REGISTER_PROCESS,
-        [0, 0, 0, 0],
-        b"test_proc",
+    let (result, _rich, _data) =
+        kernel.process_syscall(init_pid, SYS_REGISTER_PROCESS, [0, 0, 0, 0], b"test_proc");
+    assert!(
+        result >= 0,
+        "Init should be able to register processes, got {}",
+        result
     );
-    assert!(result >= 0, "Init should be able to register processes, got {}", result);
     let new_pid = result as u64;
     assert!(new_pid > 0, "Should return a valid PID");
 
     // Verify the process was created
-    let proc = kernel.get_process(ProcessId(new_pid)).expect("new process should exist");
+    let proc = kernel
+        .get_process(ProcessId(new_pid))
+        .expect("new process should exist");
     assert_eq!(proc.name, "test_proc");
 
     // Other processes should NOT be able to register processes
-    let (result2, _rich2, _data2) = kernel.process_syscall(
-        other_pid,
-        SYS_REGISTER_PROCESS,
-        [0, 0, 0, 0],
-        b"malicious",
+    let (result2, _rich2, _data2) =
+        kernel.process_syscall(other_pid, SYS_REGISTER_PROCESS, [0, 0, 0, 0], b"malicious");
+    assert_eq!(
+        result2, -1,
+        "Non-Init processes should not be able to register processes"
     );
-    assert_eq!(result2, -1, "Non-Init processes should not be able to register processes");
 }
 
 /// Test that SYS_CREATE_ENDPOINT_FOR (0x15) is Init-only.
@@ -467,12 +465,19 @@ fn test_sys_create_endpoint_for_init_only() {
         [target_pid.0 as u32, 0, 0, 0],
         &[],
     );
-    assert!(result >= 0, "Init should be able to create endpoints, got {}", result);
+    assert!(
+        result >= 0,
+        "Init should be able to create endpoints, got {}",
+        result
+    );
 
     // Verify the endpoint was created
     let endpoints = kernel.list_endpoints();
     assert_eq!(endpoints.len(), 1, "One endpoint should exist");
-    assert_eq!(endpoints[0].owner, target_pid, "Endpoint should be owned by target");
+    assert_eq!(
+        endpoints[0].owner, target_pid,
+        "Endpoint should be owned by target"
+    );
 
     // Other processes should NOT be able to create endpoints for others
     let (result2, _rich2, _data2) = kernel.process_syscall(
@@ -481,5 +486,8 @@ fn test_sys_create_endpoint_for_init_only() {
         [target_pid.0 as u32, 0, 0, 0],
         &[],
     );
-    assert_eq!(result2, -1, "Non-Init processes should not be able to create endpoints for others");
+    assert_eq!(
+        result2, -1,
+        "Non-Init processes should not be able to create endpoints for others"
+    );
 }

@@ -5,9 +5,9 @@
 //!
 //! Only the Network Service should use these - applications use IPC to Network Service.
 
-use crate::constants::error;
+use crate::error;
 #[allow(unused_imports)]
-use crate::constants::syscall::SYS_NETWORK_FETCH;
+use crate::SYS_NETWORK_FETCH;
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {

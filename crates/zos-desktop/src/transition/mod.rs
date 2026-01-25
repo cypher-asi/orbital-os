@@ -2,12 +2,12 @@
 //!
 //! Provides crossfade transitions and camera animations.
 
-mod crossfade;
 mod camera;
+mod crossfade;
 mod easing;
 
-pub use crossfade::{Crossfade, CrossfadeDirection};
 pub use camera::CameraAnimation;
+pub use crossfade::{Crossfade, CrossfadeDirection};
 pub use easing::{ease_in_out, ease_out_cubic};
 
 /// Duration of crossfade transitions in milliseconds (void enter/exit)

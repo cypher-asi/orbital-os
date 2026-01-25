@@ -96,13 +96,8 @@ pub const CMD_PONG_MODE: u32 = 0x3002;
 
 // Re-export diagnostic message constants from zos-ipc (the single source of truth)
 pub use zos_process::diagnostics::{
-    MSG_MEMORY_STATUS,
+    MSG_DATA, MSG_LATENCY_STATS, MSG_MEMORY_STATUS, MSG_PING, MSG_PONG, MSG_RECEIVER_STATS,
     MSG_SENDER_STATS,
-    MSG_RECEIVER_STATS,
-    MSG_LATENCY_STATS,
-    MSG_PING,
-    MSG_PONG,
-    MSG_DATA,
 };
 
 // ============================================================================

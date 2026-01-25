@@ -42,10 +42,17 @@ pub fn handle_write_key_store_content(
     result_type: u8,
 ) -> StorageHandlerResult {
     if result_type != storage_result::WRITE_OK {
+        syscall::debug(&format!(
+            "IdentityService: Neural key content write failed for user {:032x}, result_type={}",
+            user_id, result_type
+        ));
         return StorageHandlerResult::Done(response::send_neural_key_error(
             client_pid,
             &cap_slots,
-            KeyError::StorageError("Content write failed".into()),
+            KeyError::StorageError(format!(
+                "Content write failed (result_type={}). Parent directory may not exist.",
+                result_type
+            )),
         ));
     }
 
@@ -55,7 +62,11 @@ pub fn handle_write_key_store_content(
     let inode = Inode::new_file(
         key_path.clone(),
         parent_path(&key_path).to_string(),
-        key_path.rsplit('/').next().unwrap_or("keys.json").to_string(),
+        key_path
+            .rsplit('/')
+            .next()
+            .unwrap_or("keys.json")
+            .to_string(),
         Some(user_id),
         json_bytes.len() as u64,
         None,
@@ -94,17 +105,19 @@ pub fn handle_write_key_store_inode(
     result_type: u8,
 ) -> StorageHandlerResult {
     if result_type == storage_result::WRITE_OK {
-        syscall::debug("IdentityService: Neural key stored (content + inode)");
+        syscall::debug("IdentityService: Neural key stored successfully (content + inode)");
         StorageHandlerResult::Done(response::send_neural_key_success(
-            client_pid,
-            &cap_slots,
-            result,
+            client_pid, &cap_slots, result,
         ))
     } else {
+        syscall::debug(&format!(
+            "IdentityService: Neural key inode write failed, result_type={}",
+            result_type
+        ));
         StorageHandlerResult::Done(response::send_neural_key_error(
             client_pid,
             &cap_slots,
-            KeyError::StorageError("Inode write failed".into()),
+            KeyError::StorageError(format!("Inode write failed (result_type={})", result_type)),
         ))
     }
 }
@@ -138,9 +151,7 @@ pub fn handle_get_identity_key(
     } else {
         // Key not found
         StorageHandlerResult::Done(response::send_get_identity_key_success(
-            client_pid,
-            &cap_slots,
-            None,
+            client_pid, &cap_slots, None,
         ))
     }
 }
@@ -167,7 +178,11 @@ pub fn handle_write_recovered_content(
     let inode = Inode::new_file(
         key_path.clone(),
         parent_path(&key_path).to_string(),
-        key_path.rsplit('/').next().unwrap_or("keys.json").to_string(),
+        key_path
+            .rsplit('/')
+            .next()
+            .unwrap_or("keys.json")
+            .to_string(),
         Some(user_id),
         json_bytes.len() as u64,
         None,
@@ -202,9 +217,7 @@ pub fn handle_write_recovered_inode(
     if result_type == storage_result::WRITE_OK {
         syscall::debug("IdentityService: Recovered key stored (content + inode)");
         StorageHandlerResult::Done(response::send_recover_key_success(
-            client_pid,
-            &cap_slots,
-            result,
+            client_pid, &cap_slots, result,
         ))
     } else {
         StorageHandlerResult::Done(response::send_recover_key_error(

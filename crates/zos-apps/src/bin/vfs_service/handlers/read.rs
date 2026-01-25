@@ -283,7 +283,9 @@ impl VfsService {
                             }
                         })
                         .collect();
-                    ReaddirResponse { result: Ok(entries) }
+                    ReaddirResponse {
+                        result: Ok(entries),
+                    }
                 }
                 Err(e) => ReaddirResponse {
                     result: Err(VfsError::StorageError(e.to_string())),

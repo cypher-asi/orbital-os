@@ -35,62 +35,57 @@ pub struct User {
 impl User {
     /// Returns the user's home directory path.
     pub fn home_dir(&self) -> String {
-        alloc::format!("/home/{:032x}", self.id)
+        alloc::format!("/home/{}", self.id)
     }
 
     /// Returns the user's hidden ZOS directory path.
     pub fn zos_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos", self.id)
+        alloc::format!("/home/{}/.zos", self.id)
     }
 
     /// Returns the user's identity directory path.
     pub fn identity_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos/identity", self.id)
+        alloc::format!("/home/{}/.zos/identity", self.id)
     }
 
     /// Returns the user's sessions directory path.
     pub fn sessions_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos/sessions", self.id)
+        alloc::format!("/home/{}/.zos/sessions", self.id)
     }
 
     /// Returns the user's credentials directory path.
     pub fn credentials_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos/credentials", self.id)
+        alloc::format!("/home/{}/.zos/credentials", self.id)
     }
 
     /// Returns the user's tokens directory path.
     pub fn tokens_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos/tokens", self.id)
+        alloc::format!("/home/{}/.zos/tokens", self.id)
     }
 
     /// Returns the user's config directory path.
     pub fn config_dir(&self) -> String {
-        alloc::format!("/home/{:032x}/.zos/config", self.id)
+        alloc::format!("/home/{}/.zos/config", self.id)
     }
 
     /// Returns the user's app data directory for a specific app.
     pub fn app_data_dir(&self, app_id: &str) -> String {
-        alloc::format!("/home/{:032x}/Apps/{}", self.id, app_id)
+        alloc::format!("/home/{}/Apps/{}", self.id, app_id)
     }
 }
 
 /// Status of a user account.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UserStatus {
     /// User has at least one active local session
     Active,
 
     /// User exists but has no active sessions
+    #[default]
     Offline,
 
     /// Account is suspended (cannot login)
     Suspended,
-}
-
-impl Default for UserStatus {
-    fn default() -> Self {
-        Self::Offline
-    }
 }
 
 /// User preferences stored in the config directory.
@@ -112,7 +107,7 @@ pub struct UserPreferences {
 impl UserPreferences {
     /// Path where preferences are stored for a user.
     pub fn storage_path(user_id: UserId) -> String {
-        alloc::format!("/home/{:032x}/.zos/config/preferences.json", user_id)
+        alloc::format!("/home/{}/.zos/config/preferences.json", user_id)
     }
 }
 

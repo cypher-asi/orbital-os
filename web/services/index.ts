@@ -39,6 +39,7 @@ export {
   InvalidShardError,
   StorageError,
   DerivationFailedError,
+  NeuralKeyMismatchError,
   // Credential Error Classes
   CredentialAlreadyLinkedError,
   InvalidCredentialFormatError,

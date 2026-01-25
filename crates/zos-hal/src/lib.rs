@@ -103,7 +103,7 @@ pub trait HAL: Send + Sync + 'static {
     ///
     /// # Safety
     /// The pointer must have been allocated by `allocate` with the same size and alignment
-    fn deallocate(&self, ptr: *mut u8, size: usize, align: usize);
+    unsafe fn deallocate(&self, ptr: *mut u8, size: usize, align: usize);
 
     // === Time & Entropy ===
 
@@ -182,7 +182,12 @@ pub trait HAL: Send + Sync + 'static {
     /// # Returns
     /// * `Ok(request_id)` - Unique request ID to match with result
     /// * `Err(HalError)` - Failed to start operation
-    fn storage_write_async(&self, _pid: u64, _key: &str, _value: &[u8]) -> Result<StorageRequestId, HalError> {
+    fn storage_write_async(
+        &self,
+        _pid: u64,
+        _key: &str,
+        _value: &[u8],
+    ) -> Result<StorageRequestId, HalError> {
         Err(HalError::NotSupported)
     }
 
@@ -270,7 +275,11 @@ pub trait HAL: Send + Sync + 'static {
     /// # Returns
     /// * `Ok(request_id)` - Unique request ID to match with result
     /// * `Err(HalError)` - Failed to start operation
-    fn network_fetch_async(&self, _pid: u64, _request: &[u8]) -> Result<NetworkRequestId, HalError> {
+    fn network_fetch_async(
+        &self,
+        _pid: u64,
+        _request: &[u8],
+    ) -> Result<NetworkRequestId, HalError> {
         Err(HalError::NotSupported)
     }
 
@@ -483,8 +492,8 @@ impl HAL for TestHal {
     }
 
     fn allocate(&self, size: usize, _align: usize) -> Result<*mut u8, HalError> {
-        let layout = core::alloc::Layout::from_size_align(size, 8)
-            .map_err(|_| HalError::InvalidArgument)?;
+        let layout =
+            core::alloc::Layout::from_size_align(size, 8).map_err(|_| HalError::InvalidArgument)?;
         let ptr = unsafe { alloc::alloc::alloc(layout) };
         if ptr.is_null() {
             Err(HalError::OutOfMemory)
@@ -493,10 +502,12 @@ impl HAL for TestHal {
         }
     }
 
-    fn deallocate(&self, ptr: *mut u8, size: usize, _align: usize) {
+    unsafe fn deallocate(&self, ptr: *mut u8, size: usize, _align: usize) {
         if !ptr.is_null() {
+            // SAFETY: Layout is guaranteed valid since we use the same size and alignment
+            // that was used in allocate(). align=8 is always valid.
             let layout = core::alloc::Layout::from_size_align(size, 8).unwrap();
-            unsafe { alloc::alloc::dealloc(ptr, layout) };
+            alloc::alloc::dealloc(ptr, layout);
         }
     }
 

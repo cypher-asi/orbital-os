@@ -19,6 +19,7 @@ import {
 import { useZeroIdAuth } from '../../../../desktop/hooks/useZeroIdAuth';
 import { useWindowActions } from '../../../../desktop/hooks/useWindows';
 import { ZeroIdLoginPanel } from './panels/ZeroIdLoginPanel';
+import { LoginModal } from './modals';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
@@ -50,6 +51,9 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const [stack, setStack] = useState<PanelDrillItem[]>([]);
   const isSubpanelOpen = stack.length > 0;
 
+  // Modal state for centered login
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
   // Compute display values
   const displayName = currentUser?.displayName ?? 'Not logged in';
   const displayUid = currentUser ? formatUserId(currentUser.id) : '---';
@@ -59,15 +63,21 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const isZeroIdConnected = !!remoteAuthState;
   const zeroIdUserKey = remoteAuthState?.userKey;
 
-  // Open Settings app at Identity section
-  const openIdentitySettings = useCallback(() => {
-    // Set pending navigation via store (handles both cases - Settings open or closed)
-    setPendingNavigation('identity');
-    // Launch or focus the Settings app
-    launchOrFocusApp('settings');
-    // Close the identity panel
-    onClose();
-  }, [setPendingNavigation, launchOrFocusApp, onClose]);
+  // Open Settings app at Identity section (with optional sub-panel)
+  const openIdentitySettings = useCallback(
+    (subPanel?: string) => {
+      // Set pending navigation via store (handles both cases - Settings open or closed)
+      setPendingNavigation({
+        area: 'identity',
+        subPanel: subPanel as 'neural-key' | 'machine-keys' | 'linked-accounts' | undefined,
+      });
+      // Launch or focus the Settings app
+      launchOrFocusApp('settings');
+      // Close the identity panel
+      onClose();
+    },
+    [setPendingNavigation, launchOrFocusApp, onClose]
+  );
 
   // Handle menu selection - open subpanel overlay
   const handleSelect = useCallback(
@@ -79,15 +89,30 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
       switch (id) {
         case 'neural-key':
+          // Open Settings > Identity > Neural Key
+          openIdentitySettings('neural-key');
+          return;
+
         case 'machine-keys':
+          // Open Settings > Identity > Machine Keys
+          openIdentitySettings('machine-keys');
+          return;
+
         case 'linked-accounts':
-          // These items open Settings > Identity
-          openIdentitySettings();
+          // Open Settings > Identity > Linked Accounts
+          openIdentitySettings('linked-accounts');
           return;
 
         case 'login-zero-id':
-          subPanelLabel = isZeroIdConnected ? 'ZERO ID' : 'Login';
-          subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
+          if (isZeroIdConnected) {
+            // Show connected status in subpanel (existing behavior)
+            subPanelLabel = 'ZERO ID';
+            subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
+          } else {
+            // Show centered login modal (NEW)
+            setShowLoginModal(true);
+            return; // Don't open subpanel
+          }
           break;
 
         case 'logout':
@@ -212,11 +237,15 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
             stack={stack}
             onNavigate={handleNavigate}
             className={styles.subpanel}
-            background="bg"
+            background="none"
             border="future"
+            style={{ background: 'transparent' }}
           />
         </div>
       )}
+
+      {/* Centered Login Modal - Shows when not connected */}
+      {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} />}
     </div>
   );
 }

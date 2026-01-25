@@ -6,9 +6,7 @@ pub fn should_use_mist_renderer(
     viewport_zoom: f32,
     transitioning: bool,
 ) -> bool {
-    current_background == BackgroundType::Mist
-        && viewport_zoom >= 0.95
-        && !transitioning
+    current_background == BackgroundType::Mist && viewport_zoom >= 0.95 && !transitioning
 }
 
 /// Render mist smoke pass to offscreen texture

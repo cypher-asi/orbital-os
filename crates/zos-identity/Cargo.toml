@@ -16,5 +16,8 @@ std = []
 serde = { workspace = true }
 serde_json = { workspace = true }
 zos-process = { path = "../zos-process" }
+zid-crypto = { workspace = true }
+getrandom = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]

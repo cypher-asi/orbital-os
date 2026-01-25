@@ -220,9 +220,7 @@ export function LinkedAccountsPanel() {
               variant="primary"
               size="sm"
               onClick={handleAttachEmail}
-              disabled={
-                isSending || !emailInput.includes('@') || passwordInput.length < 12
-              }
+              disabled={isSending || !emailInput.includes('@') || passwordInput.length < 12}
             >
               {isSending ? (
                 <>

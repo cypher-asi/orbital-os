@@ -7,11 +7,11 @@
 //! - Storage handlers for async storage operation results
 
 pub mod crypto;
+pub mod network_handlers;
 pub mod pending;
 pub mod response;
 pub mod storage;
 pub mod storage_handlers;
-pub mod network_handlers;
 
 pub use crypto::*;
 pub use pending::*;

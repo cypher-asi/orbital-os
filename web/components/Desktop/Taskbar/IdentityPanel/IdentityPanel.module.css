@@ -41,6 +41,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: transparent !important;
 }
 
 /* Vertically center content within PanelDrill */

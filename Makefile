@@ -37,6 +37,9 @@ build-processes:
 	cp target/wasm32-unknown-unknown/release/clock.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/calculator.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/settings.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/identity_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/vfs_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/time_service.wasm web/processes/
 	@echo "Process binaries ready!"
 
 # Build and run the dev server

@@ -8,8 +8,8 @@
 //! - Camera animations and transitions
 
 use zos_desktop::{
-    DesktopEngine, WindowConfig, Size, Vec2, WindowState, ViewMode,
-    CROSSFADE_DURATION_MS, CAMERA_ANIMATION_DURATION_MS,
+    DesktopEngine, Size, Vec2, ViewMode, WindowConfig, WindowState, CAMERA_ANIMATION_DURATION_MS,
+    CROSSFADE_DURATION_MS,
 };
 
 // =============================================================================
@@ -238,11 +238,11 @@ fn test_void_entry_exit_roundtrip() {
     });
 
     engine.create_desktop("Second");
-    
+
     // Complete the desktop switch transition first
     engine.switch_desktop(1, 0.0);
     engine.tick_transition(500.0);
-    
+
     let win2 = engine.create_window(WindowConfig {
         title: "Window 2".to_string(),
         size: Size::new(800.0, 600.0),
@@ -256,19 +256,22 @@ fn test_void_entry_exit_roundtrip() {
     // Enter void
     let mut time = 1000.0;
     engine.enter_void(time);
-    
+
     // Complete the transition
     time += CROSSFADE_DURATION_MS as f64 + 100.0;
     engine.tick_transition(time);
-    
+
     assert!(matches!(*engine.get_view_mode(), ViewMode::Void));
 
     // Exit void to first desktop
     engine.exit_void(0, time);
     time += CROSSFADE_DURATION_MS as f64 + 100.0;
     engine.tick_transition(time);
-    
-    assert!(matches!(*engine.get_view_mode(), ViewMode::Desktop { index: 0 }));
+
+    assert!(matches!(
+        *engine.get_view_mode(),
+        ViewMode::Desktop { index: 0 }
+    ));
     assert_eq!(engine.desktops.active_index(), 0);
 
     // Windows should still exist
@@ -387,14 +390,16 @@ fn test_pan_gesture() {
 
     // Start pan (middle click or ctrl+click)
     engine.handle_pointer_down(500.0, 500.0, 1, false, false);
-    
+
     // Move pointer
     engine.handle_pointer_move(600.0, 600.0);
 
     // Center should have moved
     let new_center = engine.viewport.center;
-    assert!((new_center.x - initial_center.x).abs() > 0.001 || 
-            (new_center.y - initial_center.y).abs() > 0.001);
+    assert!(
+        (new_center.x - initial_center.x).abs() > 0.001
+            || (new_center.y - initial_center.y).abs() > 0.001
+    );
 
     // Release
     engine.handle_pointer_up();
@@ -456,7 +461,7 @@ fn test_pan_to_window_animation() {
     let window = engine.windows.get(id).unwrap();
     let window_center = window.rect().center();
     let viewport_center = engine.viewport.center;
-    
+
     // Should be reasonably close (allowing for some margin)
     assert!((viewport_center.x - window_center.x).abs() < 500.0);
     assert!((viewport_center.y - window_center.y).abs() < 500.0);
@@ -477,12 +482,12 @@ fn test_state_consistency_after_many_operations() {
     for i in 0..10 {
         // Create desktop
         engine.create_desktop(&format!("Desktop {}", i + 2));
-        
+
         // Switch to new desktop first (so windows are created on the new desktop)
         engine.switch_desktop(i + 1, time);
         time += 500.0;
         engine.tick_transition(time);
-        
+
         // Create windows on this desktop
         for j in 0..5 {
             engine.create_window(WindowConfig {
@@ -509,14 +514,14 @@ fn test_state_consistency_after_many_operations() {
     engine.enter_void(time);
     time += CROSSFADE_DURATION_MS as f64 + 100.0;
     engine.tick_transition(time);
-    
+
     engine.exit_void(5, time);
     time += CROSSFADE_DURATION_MS as f64 + 100.0;
     engine.tick_transition(time);
 
     // Should be on desktop 5
     assert_eq!(engine.desktops.active_index(), 5);
-    
+
     // All windows should still exist
     assert_eq!(engine.windows.count(), 50);
 }
@@ -570,10 +575,10 @@ fn test_switch_to_invalid_desktop() {
     engine.init(1920.0, 1080.0);
 
     let initial = engine.desktops.active_index();
-    
+
     // Try to switch to invalid index
     engine.switch_desktop(100, 0.0);
-    
+
     // Should remain on current desktop
     assert_eq!(engine.desktops.active_index(), initial);
 }
@@ -587,7 +592,7 @@ fn test_operations_blocked_during_transition() {
 
     // Start void transition
     engine.enter_void(0.0);
-    
+
     // Try to pan during transition
     engine.pan(1000.0, 1000.0);
 
@@ -611,7 +616,7 @@ fn test_get_window_screen_rects() {
     });
 
     let rects = engine.get_window_screen_rects(0.0);
-    
+
     assert_eq!(rects.len(), 1);
     assert_eq!(rects[0].id, id);
     assert_eq!(rects[0].title, "Test");

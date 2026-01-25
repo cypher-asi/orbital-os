@@ -24,7 +24,7 @@ pub enum NetworkHandlerResult {
         client_pid: u32,
         user_id: u128,
         zid_endpoint: String,
-        machine_key: MachineKeyRecord,
+        machine_key: Box<MachineKeyRecord>,
         challenge_response: HttpSuccess,
         cap_slots: Vec<u32>,
     },
@@ -43,12 +43,40 @@ pub enum NetworkHandlerResult {
         email: String,
         cap_slots: Vec<u32>,
     },
-    /// Continue ZID enrollment after server response
+    /// Continue ZID enrollment after server response (identity created, need to chain login)
     ContinueZidEnroll {
         client_pid: u32,
         user_id: u128,
         zid_endpoint: String,
         enroll_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue enrollment flow after challenge received (chained login)
+    ContinueZidEnrollWithChallenge {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        machine_id: u128,
+        identity_signing_public_key: [u8; 32],
+        machine_signing_public_key: [u8; 32],
+        machine_encryption_public_key: [u8; 32],
+        machine_signing_sk: [u8; 32],
+        machine_encryption_sk: [u8; 32],
+        challenge_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue enrollment flow after tokens received (final step)
+    ContinueZidEnrollWithTokens {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        machine_id: u128,
+        identity_signing_public_key: [u8; 32],
+        machine_signing_public_key: [u8; 32],
+        machine_encryption_public_key: [u8; 32],
+        machine_signing_sk: [u8; 32],
+        machine_encryption_sk: [u8; 32],
+        login_response: HttpSuccess,
         cap_slots: Vec<u32>,
     },
 }
@@ -68,7 +96,7 @@ pub fn handle_zid_challenge_result(
                 client_pid,
                 user_id,
                 zid_endpoint,
-                machine_key,
+                machine_key: Box::new(machine_key),
                 challenge_response: success,
                 cap_slots,
             }
@@ -166,10 +194,7 @@ pub fn handle_email_to_zid_result(
         }
         Ok(success) if success.status == 400 => {
             let error = parse_zid_credential_error(&success.body);
-            syscall::debug(&format!(
-                "IdentityService: ZID rejected email: {:?}",
-                error
-            ));
+            syscall::debug(&format!("IdentityService: ZID rejected email: {:?}", error));
             NetworkHandlerResult::Done(response::send_attach_email_error(
                 client_pid, &cap_slots, error,
             ))
@@ -238,9 +263,7 @@ pub fn handle_zid_enroll_result(
             NetworkHandlerResult::Done(response::send_zid_enroll_error(
                 client_pid,
                 &cap_slots,
-                ZidError::EnrollmentFailed(
-                    "Machine already registered. Use Login instead.".into(),
-                ),
+                ZidError::EnrollmentFailed("Machine already registered. Use Login instead.".into()),
             ))
         }
         Ok(success) => {
@@ -262,6 +285,129 @@ pub fn handle_zid_enroll_result(
                 client_pid,
                 &cap_slots,
                 ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle RequestZidChallengeAfterEnroll network result (challenge during chained login).
+pub fn handle_zid_challenge_after_enroll_result(
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    machine_id: u128,
+    identity_signing_public_key: [u8; 32],
+    machine_signing_public_key: [u8; 32],
+    machine_encryption_public_key: [u8; 32],
+    machine_signing_sk: [u8; 32],
+    machine_encryption_sk: [u8; 32],
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Challenge received after enrollment, continuing to login");
+            NetworkHandlerResult::ContinueZidEnrollWithChallenge {
+                client_pid,
+                user_id,
+                zid_endpoint,
+                machine_id,
+                identity_signing_public_key,
+                machine_signing_public_key,
+                machine_encryption_public_key,
+                machine_signing_sk,
+                machine_encryption_sk,
+                challenge_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Challenge request after enroll failed with status {}: {:?}",
+                success.status, error
+            ));
+            // Return enrollment error since we're still in the enrollment flow
+            NetworkHandlerResult::Done(response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed(format!("Login challenge failed: {:?}", error)),
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Challenge request after enroll network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(format!("Challenge request failed: {}", e.message())),
+            ))
+        }
+    }
+}
+
+/// Handle SubmitZidLoginAfterEnroll network result (tokens after chained login).
+pub fn handle_zid_login_after_enroll_result(
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    machine_id: u128,
+    identity_signing_public_key: [u8; 32],
+    machine_signing_public_key: [u8; 32],
+    machine_encryption_public_key: [u8; 32],
+    machine_signing_sk: [u8; 32],
+    machine_encryption_sk: [u8; 32],
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Login successful after enrollment, tokens received");
+            NetworkHandlerResult::ContinueZidEnrollWithTokens {
+                client_pid,
+                user_id,
+                zid_endpoint,
+                machine_id,
+                identity_signing_public_key,
+                machine_signing_public_key,
+                machine_encryption_public_key,
+                machine_signing_sk,
+                machine_encryption_sk,
+                login_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Login after enrollment failed - authentication error");
+            NetworkHandlerResult::Done(response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed("Login authentication failed after enrollment".into()),
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Login after enroll failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed(format!("Login failed: {:?}", error)),
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Login after enroll network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(format!("Login request failed: {}", e.message())),
             ))
         }
     }
@@ -328,9 +474,7 @@ pub fn parse_zid_credential_error(body: &[u8]) -> CredentialError {
                     "Password must be 12+ chars with uppercase, lowercase, number, and symbol"
                         .into(),
                 ),
-                _ => {
-                    CredentialError::StorageError(err_response.message.unwrap_or_else(|| error_code))
-                }
+                _ => CredentialError::StorageError(err_response.message.unwrap_or(error_code)),
             };
         }
     }
@@ -341,35 +485,101 @@ pub fn parse_zid_credential_error(body: &[u8]) -> CredentialError {
 /// Parse ZID enrollment error response.
 pub fn parse_zid_enroll_error(body: &[u8], status: u16) -> ZidError {
     #[derive(serde::Deserialize)]
+    struct ZidErrorDetail {
+        code: Option<String>,
+        message: Option<String>,
+        field: Option<String>,
+        details: Option<serde_json::Value>,
+    }
+
+    #[derive(serde::Deserialize)]
     struct ZidErrorOuter {
         error: serde_json::Value,
     }
 
+    // Try to parse structured error response
     if let Ok(outer) = serde_json::from_slice::<ZidErrorOuter>(body) {
+        // Try to parse as structured error object with field details
+        if let Ok(detail) = serde_json::from_value::<ZidErrorDetail>(outer.error.clone()) {
+            let code = detail.code.as_deref().unwrap_or("UNKNOWN");
+            let message = detail.message.as_deref().unwrap_or("Unknown error");
+
+            // Build detailed error message
+            let mut error_msg = String::new();
+            error_msg.push_str(code);
+            error_msg.push_str(": ");
+            error_msg.push_str(message);
+
+            if let Some(field) = detail.field {
+                error_msg.push_str(" (field: ");
+                error_msg.push_str(&field);
+                error_msg.push(')');
+            }
+
+            if let Some(details) = detail.details {
+                if let Some(details_str) = details.as_str() {
+                    error_msg.push_str(" - ");
+                    error_msg.push_str(details_str);
+                } else if let Some(details_obj) = details.as_object() {
+                    error_msg.push_str(" - ");
+                    error_msg.push_str(&serde_json::to_string(&details_obj).unwrap_or_default());
+                }
+            }
+
+            return match code {
+                "CONFLICT" | "ALREADY_EXISTS" => ZidError::EnrollmentFailed(
+                    "Identity or machine already registered. Use Login instead.".into(),
+                ),
+                "INVALID_PUBLIC_KEY" | "INVALID_SIGNATURE" | "VALIDATION_ERROR" => {
+                    ZidError::EnrollmentFailed(error_msg)
+                }
+                "INVALID_REQUEST" | "MISSING_FIELD" | "INVALID_FORMAT" => {
+                    ZidError::EnrollmentFailed(format!("Request validation failed: {}", error_msg))
+                }
+                _ => ZidError::EnrollmentFailed(error_msg),
+            };
+        }
+
+        // Fall back to simple object parsing
         if let Some(obj) = outer.error.as_object() {
             let code = obj.get("code").and_then(|v| v.as_str()).unwrap_or("");
             let message = obj.get("message").and_then(|v| v.as_str()).unwrap_or("");
 
             return match code {
-                "CONFLICT" | "ALREADY_EXISTS" => {
-                    ZidError::EnrollmentFailed("Machine already registered. Use Login instead.".into())
-                }
+                "CONFLICT" | "ALREADY_EXISTS" => ZidError::EnrollmentFailed(
+                    "Machine already registered. Use Login instead.".into(),
+                ),
                 "INVALID_PUBLIC_KEY" => {
                     ZidError::EnrollmentFailed(format!("Invalid public key: {}", message))
                 }
-                _ => ZidError::EnrollmentFailed(format!("{}: {}", code, message)),
+                _ if !code.is_empty() && !message.is_empty() => {
+                    ZidError::EnrollmentFailed(format!("{}: {}", code, message))
+                }
+                _ => ZidError::EnrollmentFailed("Unknown enrollment error".into()),
             };
         }
 
-        if let Some(error_code) = outer.error.as_str() {
-            return match error_code {
-                "conflict" | "already_exists" => {
-                    ZidError::EnrollmentFailed("Machine already registered. Use Login instead.".into())
-                }
-                _ => ZidError::EnrollmentFailed(error_code.into()),
+        // Fall back to string error
+        if let Some(error_str) = outer.error.as_str() {
+            return match error_str {
+                "conflict" | "already_exists" => ZidError::EnrollmentFailed(
+                    "Machine already registered. Use Login instead.".into(),
+                ),
+                _ => ZidError::EnrollmentFailed(error_str.into()),
             };
         }
     }
 
-    ZidError::EnrollmentFailed(format!("HTTP {} error", status))
+    // Try to parse raw body as string for any error details
+    if let Ok(body_str) = alloc::str::from_utf8(body) {
+        if !body_str.is_empty() && body_str.len() < 500 {
+            return ZidError::EnrollmentFailed(format!(
+                "HTTP {} error: {}",
+                status,
+                body_str.trim()
+            ));
+        }
+    }
+
+    ZidError::EnrollmentFailed(format!("HTTP {} error (no details)", status))
 }

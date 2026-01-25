@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import type { PanelDrillItem } from '@cypher-asi/zui';
 import { useMachineKeys } from '../../../../desktop/hooks/useMachineKeys';
 import { useNeuralKey } from '../../../../desktop/hooks/useNeuralKey';
+import { useIdentityServiceClient } from '../../../../desktop/hooks/useIdentityServiceClient';
+import { useMachineKeysStore } from '../../../../stores/machineKeysStore';
 import { usePanelDrillOptional } from '../../context';
 import { GenerateMachineKeyPanel } from '../GenerateMachineKeyPanel';
 import {
@@ -29,6 +31,8 @@ export function MachineKeysPanel({ onDrillDown }: MachineKeysPanelProps) {
   // Data hooks
   const { state, revokeMachineKey, rotateMachineKey } = useMachineKeys();
   const { state: neuralKeyState } = useNeuralKey();
+  const { getUserIdOrThrow } = useIdentityServiceClient();
+  const { setDefaultKeySchemeFromMachine } = useMachineKeysStore();
 
   // Navigation - prefer context, fall back to prop
   const panelDrill = usePanelDrillOptional();
@@ -76,13 +80,24 @@ export function MachineKeysPanel({ onDrillDown }: MachineKeysPanelProps) {
   }, []);
 
   // Handle machine action from menu
-  const handleMachineAction = useCallback((machineId: string, action: MachineAction) => {
-    if (action === 'rotate') {
-      setConfirmationState({ type: 'rotate', machineId });
-    } else if (action === 'delete') {
-      setConfirmationState({ type: 'delete', machineId });
-    }
-  }, []);
+  const handleMachineAction = useCallback(
+    async (machineId: string, action: MachineAction) => {
+      if (action === 'rotate') {
+        setConfirmationState({ type: 'rotate', machineId });
+      } else if (action === 'delete') {
+        setConfirmationState({ type: 'delete', machineId });
+      } else if (action === 'set_default') {
+        try {
+          const userId = getUserIdOrThrow();
+          await setDefaultKeySchemeFromMachine(userId, machineId);
+          console.log(`Set default key scheme from machine ${machineId}`);
+        } catch (err) {
+          console.error('Failed to set default key scheme:', err);
+        }
+      }
+    },
+    [getUserIdOrThrow, setDefaultKeySchemeFromMachine]
+  );
 
   // Handle add machine - navigate to generate key panel
   const handleAddMachine = useCallback(() => {

@@ -8,14 +8,14 @@
 # - atomics: Enable atomic instructions for SharedArrayBuffer
 # - bulk-memory: Required for atomics
 # - mutable-globals: Required for shared memory
-# - initial-memory/max-memory: Set memory size (4MB initial, 16MB max)
+# - initial-memory/max-memory: Set memory size (2MB initial, 4MB max)
 #
 # NOTE: This requires nightly Rust and -Z build-std to compile std with atomics
 # The atomics/bulk-memory/mutable-globals target features are still unstable,
 # which produces warnings. These are expected and harmless.
 rustflags = [
     "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
-    "-C", "link-args=--import-memory --shared-memory --initial-memory=4194304 --max-memory=16777216"
+    "-C", "link-args=--import-memory --shared-memory --initial-memory=2097152 --max-memory=4194304"
 ]
 
 [unstable]

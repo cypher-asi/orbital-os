@@ -13,10 +13,10 @@ use alloc::string::String;
 fn test_login_creates_session_and_updates_status() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let sessions_path = format!("{}/.zos/sessions", home_path);
-    
+
     // Create user directory structure
     vfs.mkdir_p(&sessions_path).unwrap();
 
@@ -29,14 +29,14 @@ fn test_login_creates_session_and_updates_status() {
         "expires_at": 2000000,
         "capabilities": ["endpoint.read", "endpoint.write"]
     }"#;
-    
+
     vfs.write_file(&session_file, session_data).unwrap();
 
     // Verify session exists
     assert!(vfs.exists(&session_file).unwrap());
-    
+
     let content = vfs.read_file(&session_file).unwrap();
-    assert!(content.len() > 0);
+    assert!(!content.is_empty());
 }
 
 /// Test that logout ends session and updates user status.
@@ -44,10 +44,10 @@ fn test_login_creates_session_and_updates_status() {
 fn test_logout_ends_session() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let sessions_path = format!("{}/.zos/sessions", home_path);
-    
+
     // Create session
     vfs.mkdir_p(&sessions_path).unwrap();
     let session_file = format!("{}/current.json", sessions_path);
@@ -67,12 +67,12 @@ fn test_logout_ends_session() {
 #[test]
 fn test_user_switching() {
     let vfs = MemoryVfs::new();
-    
+
     let user1_id: u128 = 0x00000000000000000000000000000001;
     let user2_id: u128 = 0x00000000000000000000000000000002;
-    
-    let user1_home = format!("/home/{:032x}", user1_id);
-    let user2_home = format!("/home/{:032x}", user2_id);
+
+    let user1_home = format!("/home/{}", user1_id);
+    let user2_home = format!("/home/{}", user2_id);
     let user1_sessions = format!("{}/.zos/sessions", user1_home);
     let user2_sessions = format!("{}/.zos/sessions", user2_home);
 
@@ -100,23 +100,24 @@ fn test_user_switching() {
 fn test_session_expiration_handling() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let sessions_path = format!("{}/.zos/sessions", home_path);
-    
+
     vfs.mkdir_p(&sessions_path).unwrap();
 
     // Create session with expiration time
     let session_file = format!("{}/current.json", sessions_path);
     let now = 1000000u64;
     let expires_at = now + 86400000; // 24 hours
-    
+
     let session_data = format!(
         r#"{{"session_id": "abc", "created_at": {}, "expires_at": {}}}"#,
         now, expires_at
     );
-    
-    vfs.write_file(&session_file, session_data.as_bytes()).unwrap();
+
+    vfs.write_file(&session_file, session_data.as_bytes())
+        .unwrap();
 
     // Read and verify session data
     let content = vfs.read_file(&session_file).unwrap();
@@ -129,18 +130,20 @@ fn test_session_expiration_handling() {
 fn test_multiple_concurrent_sessions() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let sessions_path = format!("{}/.zos/sessions", home_path);
-    
+
     vfs.mkdir_p(&sessions_path).unwrap();
 
     // Create multiple sessions
     let session1 = format!("{}/session_device1.json", sessions_path);
     let session2 = format!("{}/session_device2.json", sessions_path);
-    
-    vfs.write_file(&session1, b"{\"device\": \"laptop\"}").unwrap();
-    vfs.write_file(&session2, b"{\"device\": \"phone\"}").unwrap();
+
+    vfs.write_file(&session1, b"{\"device\": \"laptop\"}")
+        .unwrap();
+    vfs.write_file(&session2, b"{\"device\": \"phone\"}")
+        .unwrap();
 
     // Both sessions exist
     assert!(vfs.exists(&session1).unwrap());
@@ -156,8 +159,8 @@ fn test_multiple_concurrent_sessions() {
 fn test_user_home_bootstrap() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
 
     // Simulate home directory bootstrap
     let directories = [
@@ -197,10 +200,10 @@ fn test_user_home_bootstrap() {
 fn test_user_preferences_storage() {
     let vfs = MemoryVfs::new();
     let user_id: u128 = 0x00000000000000000000000000000001;
-    
-    let home_path = format!("/home/{:032x}", user_id);
+
+    let home_path = format!("/home/{}", user_id);
     let config_path = format!("{}/.zos/config", home_path);
-    
+
     vfs.mkdir_p(&config_path).unwrap();
 
     // Store user preferences
@@ -213,13 +216,13 @@ fn test_user_preferences_storage() {
             "taskbar_position": "bottom"
         }
     }"#;
-    
+
     vfs.write_file(&prefs_file, preferences).unwrap();
 
     // Read back
     let content = vfs.read_file(&prefs_file).unwrap();
-    assert!(content.len() > 0);
-    
+    assert!(!content.is_empty());
+
     let content_str = String::from_utf8_lossy(&content);
     assert!(content_str.contains("\"theme\": \"dark\""));
 }

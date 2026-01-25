@@ -73,6 +73,9 @@ const ZosNetwork = {
       return;
     }
 
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
+
     // Create abort controller for timeout/cancellation
     const abortController = new AbortController();
     this.pendingRequests.set(requestId, abortController);
@@ -133,8 +136,9 @@ const ZosNetwork = {
         `[ZosNetwork] Fetch complete: request_id=${requestId}, status=${response.status}, body_len=${body.length}`
       );
 
-      // Notify supervisor (pid must be BigInt for WASM u64)
-      this.supervisor.onNetworkResult(requestId, BigInt(pid), result);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      // (pid must be BigInt for WASM u64)
+      setTimeout(() => supervisor.onNetworkResult(requestId, BigInt(pid), result), 0);
     } catch (error) {
       // Clear timeout
       clearTimeout(timeoutId);
@@ -159,8 +163,8 @@ const ZosNetwork = {
 
       console.log(`[ZosNetwork] Fetch error: request_id=${requestId}, error=${error.message}`);
 
-      // Notify supervisor (pid must be BigInt for WASM u64)
-      this.supervisor.onNetworkResult(requestId, BigInt(pid), errorResult);
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      setTimeout(() => supervisor.onNetworkResult(requestId, BigInt(pid), errorResult), 0);
     } finally {
       // Clean up pending request
       this.pendingRequests.delete(requestId);

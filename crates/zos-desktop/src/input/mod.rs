@@ -2,13 +2,13 @@
 //!
 //! Provides input state machine for drag/resize operations.
 
-mod router;
 mod drag;
 mod result;
+mod router;
 
-pub use router::InputRouter;
 pub use drag::DragState;
 pub use result::InputResult;
+pub use router::InputRouter;
 
 use crate::math::{Size, Vec2};
 use crate::window::WindowRegion;

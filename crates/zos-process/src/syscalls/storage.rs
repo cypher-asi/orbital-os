@@ -5,9 +5,9 @@
 //!
 //! Only VfsService should use these - applications use zos_vfs::VfsClient.
 
-use crate::constants::error;
+use crate::error;
 #[allow(unused_imports)]
-use crate::constants::syscall::{
+use crate::{
     SYS_STORAGE_DELETE, SYS_STORAGE_EXISTS, SYS_STORAGE_LIST, SYS_STORAGE_READ, SYS_STORAGE_WRITE,
 };
 #[allow(unused_imports)]

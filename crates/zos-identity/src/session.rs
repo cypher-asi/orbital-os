@@ -82,8 +82,9 @@ impl LocalSession {
     /// Path where this session is stored.
     pub fn storage_path(&self) -> String {
         alloc::format!(
-            "/home/{:032x}/.zos/sessions/{:032x}.json",
-            self.user_id, self.id
+            "/home/{}/.zos/sessions/{:032x}.json",
+            self.user_id,
+            self.id
         )
     }
 
@@ -209,10 +210,7 @@ pub struct TokenFamily {
 impl TokenFamily {
     /// Path where token family is stored.
     pub fn storage_path(user_id: UserId, family_id: u128) -> String {
-        alloc::format!(
-            "/home/{:032x}/.zos/tokens/{:032x}.json",
-            user_id, family_id
-        )
+        alloc::format!("/home/{}/.zos/tokens/{:032x}.json", user_id, family_id)
     }
 }
 

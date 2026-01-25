@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 import { BeginMenu } from './BeginMenu';
-import { DesktopControllerProvider, SupervisorProvider } from '../../../../desktop/hooks/useSupervisor';
+import {
+  DesktopControllerProvider,
+  SupervisorProvider,
+} from '../../../../desktop/hooks/useSupervisor';
 import { createMockDesktopController, createMockSupervisor } from '../../../../test/mocks';
 
 // Track the onChange callback for testing

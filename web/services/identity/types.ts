@@ -46,6 +46,11 @@ export const MSG = {
   ZID_REFRESH_RESPONSE: 0x7083,
   ZID_ENROLL_MACHINE: 0x7084,
   ZID_ENROLL_MACHINE_RESPONSE: 0x7085,
+  // Identity Preferences
+  GET_IDENTITY_PREFERENCES: 0x7090,
+  GET_IDENTITY_PREFERENCES_RESPONSE: 0x7091,
+  SET_DEFAULT_KEY_SCHEME: 0x7092,
+  SET_DEFAULT_KEY_SCHEME_RESPONSE: 0x7093,
 } as const;
 
 // =============================================================================
@@ -73,7 +78,7 @@ export interface NeuralKeyGenerated {
 }
 
 /** Key scheme for machine keys */
-export type KeyScheme = 'classical' | 'pq_hybrid';
+export type KeyScheme = 'Classical' | 'PqHybrid';
 
 /** Machine key capability strings */
 export type MachineKeyCapability =
@@ -238,6 +243,16 @@ export interface GetIdentityKeyResponse {
   result: Result<LocalKeyStore | null>;
 }
 
+/** Request to create a machine key (mirrors Rust CreateMachineKeyRequest) */
+export interface CreateMachineKeyRequest {
+  user_id: string;
+  machine_name: string | null;
+  capabilities: MachineKeyCapabilities;
+  key_scheme: KeyScheme;
+  /** Neural shards for key derivation (at least 3 required) */
+  shards: NeuralShard[];
+}
+
 export interface CreateMachineKeyResponse {
   result: Result<MachineKeyRecord>;
 }
@@ -273,6 +288,26 @@ export interface ZidLoginResponse {
 
 export interface ZidEnrollMachineResponse {
   result: Result<ZidTokens>;
+}
+
+// =============================================================================
+// Identity Preferences
+// =============================================================================
+
+/** Identity preferences stored in VFS */
+export interface IdentityPreferences {
+  /** Default key scheme for new machine keys */
+  default_key_scheme: KeyScheme;
+}
+
+/** Get identity preferences response */
+export interface GetIdentityPreferencesResponse {
+  preferences: IdentityPreferences;
+}
+
+/** Set default key scheme response */
+export interface SetDefaultKeySchemeResponse {
+  result: Result<void>;
 }
 
 // =============================================================================

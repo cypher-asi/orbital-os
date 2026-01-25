@@ -73,14 +73,24 @@ impl AppRuntime {
     /// This function never returns normally - it either runs forever
     /// or exits via syscall::exit().
     pub fn run<A: ZeroApp>(&mut self, mut app: A) -> ! {
+        // #region agent log
+        syscall::debug(&format!("[AppRuntime] Starting run loop for PID {}", self.pid));
+        // #endregion
+        
         // Build initial context
         let ctx = self.build_context();
 
         // Initialize the app
+        // #region agent log
+        syscall::debug(&format!("[AppRuntime] Calling app.init() for PID {}", self.pid));
+        // #endregion
         if let Err(e) = app.init(&ctx) {
             syscall::debug(&format!("App init failed: {}", e));
             syscall::exit(1);
         }
+        // #region agent log
+        syscall::debug(&format!("[AppRuntime] app.init() completed successfully for PID {}", self.pid));
+        // #endregion
 
         // Main event loop
         loop {
@@ -90,6 +100,9 @@ impl AppRuntime {
             // Poll for incoming messages
             if let Some(slot) = self.input_slot {
                 while let Some(msg) = syscall::receive(slot) {
+                    // #region agent log
+                    syscall::debug(&format!("[AppRuntime] Received message on slot {} for PID {}, tag=0x{:x}", slot, self.pid, msg.tag));
+                    // #endregion
                     let message = Message::new(msg.tag, msg.from_pid, msg.cap_slots, msg.data);
                     if let Err(e) = app.on_message(&ctx, message) {
                         syscall::debug(&format!("Message handling error: {}", e));

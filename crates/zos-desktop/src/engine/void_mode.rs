@@ -1,10 +1,10 @@
 //! Void mode transitions
 
+use super::DesktopEngine;
 use crate::desktop::VoidState;
 use crate::math::{Camera, Rect};
 use crate::transition::Crossfade;
 use crate::view_mode::ViewMode;
-use super::DesktopEngine;
 
 impl DesktopEngine {
     /// Enter the void (zoom out to see all desktops)
@@ -19,7 +19,8 @@ impl DesktopEngine {
         };
 
         // Save current desktop camera state
-        self.desktops.save_desktop_camera(from_desktop, self.viewport.center, self.viewport.zoom);
+        self.desktops
+            .save_desktop_camera(from_desktop, self.viewport.center, self.viewport.zoom);
 
         // Calculate void camera to show all desktops
         let bounds: Vec<Rect> = self.desktops.desktops().iter().map(|d| d.bounds).collect();

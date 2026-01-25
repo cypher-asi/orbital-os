@@ -10,7 +10,12 @@ import {
   Shield,
   ShieldOff,
 } from 'lucide-react';
-import type { ObjectType, Permissions, CapabilityInfo, AppManifest } from '../../../../types/permissions';
+import type {
+  ObjectType,
+  Permissions,
+  CapabilityInfo,
+  AppManifest,
+} from '../../../../types/permissions';
 import styles from './AppPermissions.module.css';
 
 // Re-export types for consumers

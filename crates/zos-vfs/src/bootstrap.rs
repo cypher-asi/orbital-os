@@ -172,12 +172,8 @@ fn increment_boot_count<V: VfsService>(vfs: &V) -> Result<(), VfsError> {
 /// ├── Music/
 /// └── Apps/
 /// ```
-pub fn create_user_home<V: VfsService>(
-    vfs: &V,
-    user_id: u128,
-    _now: u64,
-) -> Result<(), VfsError> {
-    let home = alloc::format!("/home/{:032x}", user_id);
+pub fn create_user_home<V: VfsService>(vfs: &V, user_id: u128, _now: u64) -> Result<(), VfsError> {
+    let home = alloc::format!("/home/{}", user_id);
 
     // Create home directory
     vfs.mkdir(&home)?;
@@ -221,7 +217,7 @@ fn set_home_ownership<V: VfsService>(vfs: &V, home: &str, user_id: u128) -> Resu
 
 /// Delete a user's home directory.
 pub fn delete_user_home<V: VfsService>(vfs: &V, user_id: u128) -> Result<(), VfsError> {
-    let home = alloc::format!("/home/{:032x}", user_id);
+    let home = alloc::format!("/home/{}", user_id);
     if vfs.exists(&home)? {
         vfs.rmdir_recursive(&home)?;
     }
@@ -299,7 +295,7 @@ mod tests {
     #[test]
     fn test_user_home_path() {
         let user_id = 0x12345678_9abcdef0_12345678_9abcdef0u128;
-        let home = alloc::format!("/home/{:032x}", user_id);
+        let home = alloc::format!("/home/{}", user_id);
         assert!(home.starts_with("/home/"));
         assert_eq!(home.len(), "/home/".len() + 32);
     }

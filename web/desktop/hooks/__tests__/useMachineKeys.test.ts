@@ -27,11 +27,13 @@ const mockStoreFunctions = {
 };
 
 vi.mock('../../../stores', () => ({
-  useIdentityStore: (selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown) =>
-    selector({ currentUser: mockSelectCurrentUser() }),
+  useIdentityStore: (
+    selector: (state: { currentUser: typeof mockCurrentUser | null }) => unknown
+  ) => selector({ currentUser: mockSelectCurrentUser() }),
   selectCurrentUser: (state: { currentUser: typeof mockCurrentUser | null }) => state.currentUser,
-  useMachineKeysStore: (selector: (state: typeof mockMachineKeysState & typeof mockStoreFunctions) => unknown) =>
-    selector({ ...mockMachineKeysState, ...mockStoreFunctions }),
+  useMachineKeysStore: (
+    selector: (state: typeof mockMachineKeysState & typeof mockStoreFunctions) => unknown
+  ) => selector({ ...mockMachineKeysState, ...mockStoreFunctions }),
   selectMachineKeysState: (state: typeof mockMachineKeysState) => ({
     machines: state.machines,
     isLoading: state.isLoading,
@@ -136,7 +138,14 @@ describe('useMachineKeys', () => {
   });
 
   describe('createMachineKey', () => {
-    it('calls identity service client', async () => {
+    // Sample Neural shards for testing
+    const testShards = [
+      { index: 1, hex: 'abc123def456' },
+      { index: 2, hex: 'def456abc789' },
+      { index: 3, hex: '789012345abc' },
+    ];
+
+    it('calls identity service client with shards', async () => {
       const mockRecord = {
         machine_id: 1,
         signing_public_key: new Array(32).fill(0),
@@ -162,11 +171,56 @@ describe('useMachineKeys', () => {
       });
 
       await act(async () => {
-        await result.current.createMachineKey('Test Device');
+        await result.current.createMachineKey('Test Device', undefined, undefined, testShards);
       });
 
-      expect(mockIdentityServiceClient.createMachineKey).toHaveBeenCalled();
+      expect(mockIdentityServiceClient.createMachineKey).toHaveBeenCalledWith(
+        expect.anything(),
+        'Test Device',
+        expect.anything(),
+        expect.anything(),
+        testShards
+      );
       expect(mockStoreFunctions.addMachine).toHaveBeenCalled();
+    });
+
+    it('throws error when shards are missing', async () => {
+      const { result } = renderHook(() => useMachineKeys(), {
+        wrapper: createWrapper(mockSupervisor),
+      });
+
+      await act(async () => {
+        try {
+          await result.current.createMachineKey('Test Device');
+        } catch (error) {
+          expect((error as Error).message).toBe(
+            'At least 3 Neural shards are required to create a machine key'
+          );
+        }
+      });
+
+      expect(mockIdentityServiceClient.createMachineKey).not.toHaveBeenCalled();
+    });
+
+    it('throws error when insufficient shards provided', async () => {
+      const { result } = renderHook(() => useMachineKeys(), {
+        wrapper: createWrapper(mockSupervisor),
+      });
+
+      await act(async () => {
+        try {
+          await result.current.createMachineKey('Test Device', undefined, undefined, [
+            { index: 1, hex: 'abc123' },
+            { index: 2, hex: 'def456' },
+          ]);
+        } catch (error) {
+          expect((error as Error).message).toBe(
+            'At least 3 Neural shards are required to create a machine key'
+          );
+        }
+      });
+
+      expect(mockIdentityServiceClient.createMachineKey).not.toHaveBeenCalled();
     });
 
     it('sets error on failure', async () => {
@@ -178,7 +232,7 @@ describe('useMachineKeys', () => {
 
       await act(async () => {
         try {
-          await result.current.createMachineKey();
+          await result.current.createMachineKey('Test Device', undefined, undefined, testShards);
         } catch {
           // Expected error
         }

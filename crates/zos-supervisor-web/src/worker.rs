@@ -1,9 +1,9 @@
 //! Worker process types and message handling
 
-use zos_hal::ProcessMessageType;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, Worker};
+use zos_hal::ProcessMessageType;
 
 #[wasm_bindgen]
 extern "C" {

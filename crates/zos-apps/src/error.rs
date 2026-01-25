@@ -55,16 +55,10 @@ pub enum ProtocolError {
     UnknownVersion(u8),
 
     /// Payload length exceeds available data
-    PayloadOverflow {
-        declared: usize,
-        available: usize,
-    },
+    PayloadOverflow { declared: usize, available: usize },
 
     /// String length exceeds available data
-    StringOverflow {
-        declared: usize,
-        available: usize,
-    },
+    StringOverflow { declared: usize, available: usize },
 
     /// Invalid UTF-8 in string
     InvalidUtf8,
@@ -73,19 +67,13 @@ pub enum ProtocolError {
     EmptyPayload,
 
     /// Unexpected type tag
-    UnexpectedType {
-        expected: u8,
-        got: u8,
-    },
+    UnexpectedType { expected: u8, got: u8 },
 
     /// Unknown message type
     UnknownMessageType(u8),
 
     /// Invalid enum value
-    InvalidEnumValue {
-        field: &'static str,
-        value: u8,
-    },
+    InvalidEnumValue { field: &'static str, value: u8 },
 }
 
 impl fmt::Display for ProtocolError {
@@ -93,14 +81,20 @@ impl fmt::Display for ProtocolError {
         match self {
             ProtocolError::TooShort => write!(f, "Message too short"),
             ProtocolError::UnknownVersion(v) => write!(f, "Unknown protocol version: {}", v),
-            ProtocolError::PayloadOverflow { declared, available } => {
+            ProtocolError::PayloadOverflow {
+                declared,
+                available,
+            } => {
                 write!(
                     f,
                     "Payload overflow: declared {} bytes, only {} available",
                     declared, available
                 )
             }
-            ProtocolError::StringOverflow { declared, available } => {
+            ProtocolError::StringOverflow {
+                declared,
+                available,
+            } => {
                 write!(
                     f,
                     "String overflow: declared {} bytes, only {} available",
@@ -110,7 +104,11 @@ impl fmt::Display for ProtocolError {
             ProtocolError::InvalidUtf8 => write!(f, "Invalid UTF-8 in string"),
             ProtocolError::EmptyPayload => write!(f, "Empty payload"),
             ProtocolError::UnexpectedType { expected, got } => {
-                write!(f, "Unexpected type: expected 0x{:02x}, got 0x{:02x}", expected, got)
+                write!(
+                    f,
+                    "Unexpected type: expected 0x{:02x}, got 0x{:02x}",
+                    expected, got
+                )
             }
             ProtocolError::UnknownMessageType(t) => write!(f, "Unknown message type: 0x{:02x}", t),
             ProtocolError::InvalidEnumValue { field, value } => {

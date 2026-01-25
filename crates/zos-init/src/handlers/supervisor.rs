@@ -91,10 +91,7 @@ impl Init {
 
         let target_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
 
-        self.log(&format!(
-            "Supervisor requested kill of PID {}",
-            target_pid
-        ));
+        self.log(&format!("Supervisor requested kill of PID {}", target_pid));
 
         // Invoke the kill syscall
         // Init (PID 1) has implicit permission to kill any process
@@ -154,14 +151,21 @@ impl Init {
         // - Slot 4 (VFS_RESPONSE_SLOT): use service_vfs_slots (VFS response delivery)
         // - Slot 1 (input endpoint): use service_cap_slots (general IPC)
         const VFS_RESPONSE_SLOT: u32 = 4;
-        
+
         let cap_slot = if endpoint_slot == VFS_RESPONSE_SLOT {
             self.service_vfs_slots.get(&target_pid).copied()
         } else {
             self.service_cap_slots.get(&target_pid).copied()
         };
-        
+
         if let Some(cap_slot) = cap_slot {
+            // #region agent log - hypothesis A,C
+            self.log(&format!(
+                "AGENT_LOG:ipc_delivery:cap_found:target_pid={}:cap_slot={}:tag=0x{:x}",
+                target_pid, cap_slot, tag
+            ));
+            // #endregion
+            
             self.log(&format!(
                 "Delivering IPC to PID {} slot {} via cap slot {} (tag 0x{:x}, {} bytes)",
                 target_pid, endpoint_slot, cap_slot, tag, data_len
@@ -170,9 +174,26 @@ impl Init {
             // Deliver via capability-checked IPC
             match syscall::send(cap_slot, tag, ipc_data) {
                 Ok(()) => {
-                    self.log(&format!("IPC delivered to PID {} slot {}", target_pid, endpoint_slot));
+                    // #region agent log - hypothesis A,C
+                    self.log(&format!(
+                        "AGENT_LOG:ipc_delivery:send_success:target_pid={}:tag=0x{:x}",
+                        target_pid, tag
+                    ));
+                    // #endregion
+                    
+                    self.log(&format!(
+                        "IPC delivered to PID {} slot {}",
+                        target_pid, endpoint_slot
+                    ));
                 }
                 Err(e) => {
+                    // #region agent log - hypothesis A,C
+                    self.log(&format!(
+                        "AGENT_LOG:ipc_delivery:send_failed:target_pid={}:error={}",
+                        target_pid, e
+                    ));
+                    // #endregion
+                    
                     self.log(&format!(
                         "IPC delivery to PID {} slot {} failed: error {}",
                         target_pid, endpoint_slot, e
@@ -180,15 +201,15 @@ impl Init {
                 }
             }
         } else {
+            // HARD FAIL: No capability means service isn't ready yet
+            // This is a boot sequencing bug that must be fixed
             self.log(&format!(
-                "No capability for PID {} slot {} - cannot deliver IPC (routing via debug fallback)",
-                target_pid, endpoint_slot
+                "FATAL: No capability for PID {} slot {} - service not properly initialized (tag 0x{:x})",
+                target_pid, endpoint_slot, tag
             ));
-            // Fall back to debug channel for supervisor (legacy behavior)
-            let data_hex: String = ipc_data.iter().map(|b| format!("{:02x}", b)).collect();
             syscall::debug(&format!(
-                "INIT:IPC_DELIVERY:{}:{}:{:x}:{}",
-                target_pid, endpoint_slot, tag, data_hex
+                "ERROR:IPC_DELIVERY_FAILED:no_capability:pid={}:slot={}:tag=0x{:x}",
+                target_pid, endpoint_slot, tag
             ));
         }
     }
@@ -252,10 +273,7 @@ impl Init {
         // This syscall is Init-only and logs to SysLog
         match syscall::register_process(name) {
             Ok(pid) => {
-                self.log(&format!(
-                    "Process '{}' registered with PID {}",
-                    name, pid
-                ));
+                self.log(&format!("Process '{}' registered with PID {}", name, pid));
                 self.send_spawn_response(1, pid); // success
             }
             Err(e) => {
@@ -305,17 +323,9 @@ impl Init {
             return;
         }
 
-        let target_pid = u32::from_le_bytes([
-            msg.data[0],
-            msg.data[1],
-            msg.data[2],
-            msg.data[3],
-        ]);
+        let target_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
 
-        self.log(&format!(
-            "Create endpoint request for PID {}",
-            target_pid
-        ));
+        self.log(&format!("Create endpoint request for PID {}", target_pid));
 
         // Create endpoint via SYS_CREATE_ENDPOINT_FOR syscall
         // This syscall is Init-only and logs to SysLog
@@ -374,24 +384,9 @@ impl Init {
             return;
         }
 
-        let from_pid = u32::from_le_bytes([
-            msg.data[0],
-            msg.data[1],
-            msg.data[2],
-            msg.data[3],
-        ]);
-        let from_slot = u32::from_le_bytes([
-            msg.data[4],
-            msg.data[5],
-            msg.data[6],
-            msg.data[7],
-        ]);
-        let to_pid = u32::from_le_bytes([
-            msg.data[8],
-            msg.data[9],
-            msg.data[10],
-            msg.data[11],
-        ]);
+        let from_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
+        let from_slot = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]);
+        let to_pid = u32::from_le_bytes([msg.data[8], msg.data[9], msg.data[10], msg.data[11]]);
         let perms = msg.data[12];
 
         self.log(&format!(

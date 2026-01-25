@@ -138,13 +138,21 @@ pub fn decode_u32(data: &[u8], cursor: &mut usize) -> Result<u32, ProtocolError>
     if *cursor + 4 > data.len() {
         return Err(ProtocolError::TooShort);
     }
-    let value = u32::from_le_bytes([data[*cursor], data[*cursor + 1], data[*cursor + 2], data[*cursor + 3]]);
+    let value = u32::from_le_bytes([
+        data[*cursor],
+        data[*cursor + 1],
+        data[*cursor + 2],
+        data[*cursor + 3],
+    ]);
     *cursor += 4;
     Ok(value)
 }
 
 /// Decode an optional char (0x00 = None, 0x01 + u32 = Some(char))
-pub fn decode_optional_char(data: &[u8], cursor: &mut usize) -> Result<Option<char>, ProtocolError> {
+pub fn decode_optional_char(
+    data: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<char>, ProtocolError> {
     let has_value = decode_u8(data, cursor)?;
     if has_value == 0 {
         Ok(None)

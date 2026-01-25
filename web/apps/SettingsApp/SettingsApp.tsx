@@ -5,6 +5,7 @@ import {
   type NavigatorItem,
   PanelDrill,
   type PanelDrillItem,
+  ButtonPlus,
 } from '@cypher-asi/zui';
 import { Clock, User, Shield, Palette, Network } from 'lucide-react';
 import { GeneralPanel } from './panels/GeneralPanel';
@@ -12,6 +13,10 @@ import { IdentitySettingsPanel } from './panels/IdentitySettingsPanel';
 import { PermissionsPanel } from './panels/PermissionsPanel';
 import { ThemePanel } from './panels/ThemePanel';
 import { NetworkPanel } from './panels/NetworkPanel';
+import { NeuralKeyPanel } from './panels/NeuralKeyPanel';
+import { MachineKeysPanel } from './panels/MachineKeysPanel';
+import { LinkedAccountsPanel } from './panels/LinkedAccountsPanel';
+import { GenerateMachineKeyPanel } from './panels/GenerateMachineKeyPanel';
 import { PanelDrillProvider } from './context';
 import {
   useSettingsStore,
@@ -20,7 +25,9 @@ import {
   selectRpcEndpoint,
   selectPendingNavigation,
   type SettingsArea,
+  type SettingsSubPanel,
 } from '../../stores';
+import { useIdentityServiceClient } from '../../desktop/hooks/useIdentityServiceClient';
 import styles from './SettingsApp.module.css';
 
 // Area labels
@@ -45,6 +52,9 @@ export function SettingsApp() {
   // Navigation state (local to this component)
   const [activeArea, setActiveArea] = useState<SettingsArea>('identity');
 
+  // Identity service client for loading preferences
+  const { userId } = useIdentityServiceClient();
+
   // Time settings from global store (synced with time_service)
   const timeFormat24h = useSettingsStore(selectTimeFormat24h);
   const timezone = useSettingsStore(selectTimezone);
@@ -58,6 +68,13 @@ export function SettingsApp() {
   // Navigation state from store (replaces module-level pendingNavigation)
   const pendingNavigation = useSettingsStore(selectPendingNavigation);
   const clearPendingNavigation = useSettingsStore((state) => state.clearPendingNavigation);
+
+  // Load identity preferences when user is available
+  useEffect(() => {
+    if (userId) {
+      useSettingsStore.getState().loadIdentityPreferences(userId);
+    }
+  }, [userId]);
 
   // Use ref for pushPanel to avoid circular dependency in content creation
   const pushPanelRef = useRef<(item: PanelDrillItem) => void>(() => {});
@@ -90,6 +107,41 @@ export function SettingsApp() {
     },
     [timeFormat24h, timezone, setTimeFormat24h, setTimezone, rpcEndpoint, setRpcEndpoint]
   );
+
+  // Helper to create PanelDrillItem for a given sub-panel (for deep-linking)
+  const createSubPanelItem = useCallback((subPanel: SettingsSubPanel): PanelDrillItem | null => {
+    switch (subPanel) {
+      case 'neural-key':
+        return {
+          id: 'neural-key',
+          label: 'Neural Key',
+          content: <NeuralKeyPanel />,
+        };
+      case 'machine-keys':
+        // Handler for the + button in the header - drills to Generate Key form
+        const handleAddMachineKey = () => {
+          pushPanelRef.current({
+            id: 'generate-key',
+            label: 'Generate Key',
+            content: <GenerateMachineKeyPanel />,
+          });
+        };
+        return {
+          id: 'machine-keys',
+          label: 'Machine Keys',
+          action: <ButtonPlus onClick={handleAddMachineKey} />,
+          content: <MachineKeysPanel />,
+        };
+      case 'linked-accounts':
+        return {
+          id: 'linked-accounts',
+          label: 'Linked Accounts',
+          content: <LinkedAccountsPanel />,
+        };
+      default:
+        return null;
+    }
+  }, []);
 
   // Initialize stack with root item - content created once on mount
   // We use a ref to track initialization and update once store values are available
@@ -194,39 +246,56 @@ export function SettingsApp() {
 
   // Check for pending navigation from store (handles race condition when Settings is opened)
   // This effect runs when pendingNavigation changes and navigates to the requested section
+  // Supports deep-linking to sub-panels by building the complete stack upfront
   useEffect(() => {
     if (pendingNavigation) {
       console.log('[SettingsApp] Found pending navigation:', pendingNavigation);
-      handleAreaSelect(pendingNavigation);
+
+      const { area, subPanel } = pendingNavigation;
+      setActiveArea(area);
+
+      // Build the stack - root panel + optional sub-panel
+      const rootItem: PanelDrillItem = {
+        id: area,
+        label: AREA_LABELS[area],
+        content: createContentForArea(area),
+      };
+
+      const newStack: PanelDrillItem[] = [rootItem];
+
+      // If deep-linking to a sub-panel, add it to the initial stack
+      if (subPanel) {
+        const subPanelItem = createSubPanelItem(subPanel);
+        if (subPanelItem) {
+          newStack.push(subPanelItem);
+        }
+      }
+
+      setStack(newStack);
       clearPendingNavigation();
     }
-  }, [pendingNavigation, handleAreaSelect, clearPendingNavigation]);
+  }, [pendingNavigation, createContentForArea, createSubPanelItem, clearPendingNavigation]);
 
   return (
-    <Panel border="none" className={styles.container}>
+    <Panel border="none" background="none" className={styles.container}>
       {/* Left Navigation Sidebar */}
       <div className={styles.sidebar}>
-        <Navigator
-          items={navItems}
-          value={activeArea}
-          onChange={handleAreaSelect}
-          background="none"
-          border="none"
-        />
+        <Navigator items={navItems} value={activeArea} onChange={handleAreaSelect} />
       </div>
 
       {/* Right Content Area with PanelDrill */}
-      <div className={styles.content}>
+      <Panel border="none" background="none" className={styles.content}>
         <PanelDrillProvider onNavigateBack={navigateBack} onPushPanel={pushPanel}>
           <PanelDrill
             stack={stack}
             onNavigate={handleNavigate}
             showBreadcrumb={true}
             border="none"
+            background="none"
             className={styles.panelDrill}
           />
         </PanelDrillProvider>
-      </div>
+      </Panel>
     </Panel>
   );
 }

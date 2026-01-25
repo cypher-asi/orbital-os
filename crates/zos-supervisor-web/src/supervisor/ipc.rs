@@ -34,18 +34,23 @@ impl super::Supervisor {
                 return;
             }
         };
-        
+
         // Build message for Init: [target_pid: u32, endpoint_slot: u32, data_len: u16, data: [u8]]
         let mut payload = Vec::with_capacity(10 + input.len());
         payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
         payload.extend_from_slice(&1u32.to_le_bytes()); // Terminal input slot
         payload.extend_from_slice(&(input.len() as u16).to_le_bytes());
         payload.extend_from_slice(input.as_bytes());
-        
+
         let supervisor_pid = ProcessId(0);
         use zos_ipc::supervisor::MSG_SUPERVISOR_CONSOLE_INPUT;
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_CONSOLE_INPUT, payload) {
+
+        match self.system.ipc_send(
+            supervisor_pid,
+            init_slot,
+            MSG_SUPERVISOR_CONSOLE_INPUT,
+            payload,
+        ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed {} bytes to PID {} via Init",
@@ -61,9 +66,15 @@ impl super::Supervisor {
             }
         }
     }
-    
+
     /// Route an IPC message through Init for capability-checked delivery
-    pub(super) fn route_ipc_via_init(&mut self, target_pid: u64, endpoint_slot: u32, tag: u32, data: &[u8]) {
+    pub(super) fn route_ipc_via_init(
+        &mut self,
+        target_pid: u64,
+        endpoint_slot: u32,
+        tag: u32,
+        data: &[u8],
+    ) {
         let init_slot = match self.init_endpoint_slot {
             Some(slot) => slot,
             None => {
@@ -71,9 +82,9 @@ impl super::Supervisor {
                 return;
             }
         };
-        
+
         use zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY;
-        
+
         // Build message for Init: [target_pid: u32, endpoint_slot: u32, tag: u32, data_len: u16, data: [u8]]
         let mut payload = Vec::with_capacity(14 + data.len());
         payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
@@ -81,10 +92,15 @@ impl super::Supervisor {
         payload.extend_from_slice(&tag.to_le_bytes());
         payload.extend_from_slice(&(data.len() as u16).to_le_bytes());
         payload.extend_from_slice(data);
-        
+
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
+
+        match self.system.ipc_send(
+            supervisor_pid,
+            init_slot,
+            MSG_SUPERVISOR_IPC_DELIVERY,
+            payload,
+        ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed IPC to PID {} endpoint {} tag 0x{:x} via Init",
@@ -115,7 +131,10 @@ impl super::Supervisor {
         let to_pid = match parts[0].parse::<u32>() {
             Ok(p) => p,
             Err(_) => {
-                log(&format!("[supervisor] VFS:RESPONSE invalid PID: {}", parts[0]));
+                log(&format!(
+                    "[supervisor] VFS:RESPONSE invalid PID: {}",
+                    parts[0]
+                ));
                 return;
             }
         };
@@ -123,7 +142,10 @@ impl super::Supervisor {
         let tag = match u32::from_str_radix(parts[1], 16) {
             Ok(t) => t,
             Err(_) => {
-                log(&format!("[supervisor] VFS:RESPONSE invalid tag: {}", parts[1]));
+                log(&format!(
+                    "[supervisor] VFS:RESPONSE invalid tag: {}",
+                    parts[1]
+                ));
                 return;
             }
         };
@@ -150,7 +172,10 @@ impl super::Supervisor {
     pub(super) fn handle_debug_service_response(&self, rest: &str) {
         let parts: Vec<&str> = rest.splitn(3, ':').collect();
         if parts.len() != 3 {
-            log(&format!("[supervisor] Malformed SERVICE:RESPONSE: {}", rest));
+            log(&format!(
+                "[supervisor] Malformed SERVICE:RESPONSE: {}",
+                rest
+            ));
             return;
         }
 

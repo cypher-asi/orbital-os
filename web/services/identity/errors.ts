@@ -147,6 +147,16 @@ export class DerivationFailedError extends IdentityServiceError {
   }
 }
 
+/**
+ * Neural Key verification failed - provided shards don't match stored identity.
+ */
+export class NeuralKeyMismatchError extends IdentityServiceError {
+  constructor() {
+    super('Neural Key verification failed - the provided shards do not match your stored identity');
+    this.name = 'NeuralKeyMismatchError';
+  }
+}
+
 // =============================================================================
 // Credential Errors
 // =============================================================================
@@ -338,6 +348,8 @@ function parseStringError(err: string): IdentityServiceError {
       return new InsufficientShardsError();
     case 'DerivationFailed':
       return new DerivationFailedError();
+    case 'NeuralKeyMismatch':
+      return new NeuralKeyMismatchError();
     // Credential errors
     case 'AlreadyLinked':
       return new CredentialAlreadyLinkedError();

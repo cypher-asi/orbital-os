@@ -21,7 +21,7 @@ pub const FRAME_STYLE: FrameStyle = FrameStyle {
     shadow_blur: 20.0,
     shadow_offset_y: 4.0,
     resize_handle_size: 8.0,
-    button_size: 32.0,  // ZUI --control-height-sm
+    button_size: 32.0, // ZUI --control-height-sm
     button_spacing: 0.0,
     button_margin: 0.0,
 };

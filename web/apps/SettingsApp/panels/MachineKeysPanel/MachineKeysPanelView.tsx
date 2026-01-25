@@ -8,7 +8,7 @@ import {
   ButtonMore,
   ButtonCopy,
 } from '@cypher-asi/zui';
-import { Cpu, Plus, Trash2, RefreshCw, X, AlertTriangle, Smartphone, Loader } from 'lucide-react';
+import { Cpu, Plus, Trash2, RefreshCw, X, AlertTriangle, Smartphone, Loader, Star } from 'lucide-react';
 import type { MachineKeyRecord } from '../../../../stores';
 import styles from './MachineKeysPanel.module.css';
 
@@ -17,7 +17,7 @@ import styles from './MachineKeysPanel.module.css';
 // =============================================================================
 
 /** Machine action type for type-safe action handling */
-export type MachineAction = 'rotate' | 'delete';
+export type MachineAction = 'rotate' | 'delete' | 'set_default';
 
 /** Confirmation dialog state - discriminated union pattern */
 export type ConfirmationState =
@@ -319,6 +319,7 @@ export function MachineKeysPanelView({
               <div className={styles.machineItemAction}>
                 <ButtonMore
                   items={[
+                    { id: 'set_default', label: 'Set as Default', icon: <Star size={14} /> },
                     { id: 'rotate', label: 'Rotate', icon: <RefreshCw size={14} /> },
                     ...(!machine.isCurrentDevice
                       ? [{ id: 'delete', label: 'Delete', icon: <Trash2 size={14} /> }]

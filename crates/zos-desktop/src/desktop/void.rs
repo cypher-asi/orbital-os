@@ -78,10 +78,22 @@ impl VoidState {
             return;
         }
 
-        let min_x = desktop_bounds.iter().map(|b| b.x).fold(f32::INFINITY, f32::min);
-        let max_x = desktop_bounds.iter().map(|b| b.right()).fold(f32::NEG_INFINITY, f32::max);
-        let min_y = desktop_bounds.iter().map(|b| b.y).fold(f32::INFINITY, f32::min);
-        let max_y = desktop_bounds.iter().map(|b| b.bottom()).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = desktop_bounds
+            .iter()
+            .map(|b| b.x)
+            .fold(f32::INFINITY, f32::min);
+        let max_x = desktop_bounds
+            .iter()
+            .map(|b| b.right())
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = desktop_bounds
+            .iter()
+            .map(|b| b.y)
+            .fold(f32::INFINITY, f32::min);
+        let max_y = desktop_bounds
+            .iter()
+            .map(|b| b.bottom())
+            .fold(f32::NEG_INFINITY, f32::max);
 
         let bounds = Rect::new(
             min_x - padding,
@@ -117,10 +129,22 @@ impl VoidState {
             return Vec2::ZERO;
         }
 
-        let min_x = desktop_bounds.iter().map(|b| b.x).fold(f32::INFINITY, f32::min);
-        let max_x = desktop_bounds.iter().map(|b| b.right()).fold(f32::NEG_INFINITY, f32::max);
-        let min_y = desktop_bounds.iter().map(|b| b.y).fold(f32::INFINITY, f32::min);
-        let max_y = desktop_bounds.iter().map(|b| b.bottom()).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = desktop_bounds
+            .iter()
+            .map(|b| b.x)
+            .fold(f32::INFINITY, f32::min);
+        let max_x = desktop_bounds
+            .iter()
+            .map(|b| b.right())
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = desktop_bounds
+            .iter()
+            .map(|b| b.y)
+            .fold(f32::INFINITY, f32::min);
+        let max_y = desktop_bounds
+            .iter()
+            .map(|b| b.bottom())
+            .fold(f32::NEG_INFINITY, f32::max);
 
         Vec2::new((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
     }
@@ -131,8 +155,14 @@ impl VoidState {
             return 0.4;
         }
 
-        let min_x = desktop_bounds.iter().map(|b| b.x).fold(f32::INFINITY, f32::min);
-        let max_x = desktop_bounds.iter().map(|b| b.right()).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = desktop_bounds
+            .iter()
+            .map(|b| b.x)
+            .fold(f32::INFINITY, f32::min);
+        let max_x = desktop_bounds
+            .iter()
+            .map(|b| b.right())
+            .fold(f32::NEG_INFINITY, f32::max);
 
         let total_width = max_x - min_x;
         if total_width <= 0.0 {
@@ -168,9 +198,7 @@ mod tests {
 
     #[test]
     fn test_void_fit_zoom() {
-        let bounds = vec![
-            Rect::new(-960.0, -540.0, 1920.0, 1080.0),
-        ];
+        let bounds = vec![Rect::new(-960.0, -540.0, 1920.0, 1080.0)];
         let screen_size = Size::new(1920.0, 1080.0);
         let zoom = VoidState::calculate_fit_zoom(&bounds, screen_size);
         assert!((0.15..=0.5).contains(&zoom));

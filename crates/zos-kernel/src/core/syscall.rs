@@ -34,33 +34,47 @@ impl<H: HAL> KernelCore<H> {
             Syscall::CreateEndpoint => self.handle_create_endpoint(from_pid, timestamp),
 
             // IPC syscalls
-            Syscall::Send { endpoint_slot, tag, data } => {
-                self.handle_send(from_pid, endpoint_slot, tag, data, timestamp)
-            }
+            Syscall::Send {
+                endpoint_slot,
+                tag,
+                data,
+            } => self.handle_send(from_pid, endpoint_slot, tag, data, timestamp),
             Syscall::Receive { endpoint_slot } => {
                 self.handle_receive(from_pid, endpoint_slot, timestamp)
             }
-            Syscall::SendWithCaps { endpoint_slot, tag, data, cap_slots } => {
+            Syscall::SendWithCaps {
+                endpoint_slot,
+                tag,
+                data,
+                cap_slots,
+            } => {
                 self.handle_send_with_caps(from_pid, endpoint_slot, tag, data, cap_slots, timestamp)
             }
-            Syscall::Call { endpoint_slot, tag, data } => {
-                self.handle_call(from_pid, endpoint_slot, tag, data, timestamp)
-            }
-            Syscall::Reply { caller_pid, tag, data } => {
-                self.handle_reply(from_pid, caller_pid, tag, data, timestamp)
-            }
+            Syscall::Call {
+                endpoint_slot,
+                tag,
+                data,
+            } => self.handle_call(from_pid, endpoint_slot, tag, data, timestamp),
+            Syscall::Reply {
+                caller_pid,
+                tag,
+                data,
+            } => self.handle_reply(from_pid, caller_pid, tag, data, timestamp),
 
             // Capability syscalls
             Syscall::ListCaps => self.handle_list_caps(from_pid),
-            Syscall::CapGrant { from_slot, to_pid, permissions } => {
-                self.handle_cap_grant(from_pid, from_slot, to_pid, permissions, timestamp)
-            }
+            Syscall::CapGrant {
+                from_slot,
+                to_pid,
+                permissions,
+            } => self.handle_cap_grant(from_pid, from_slot, to_pid, permissions, timestamp),
             Syscall::CapRevoke { slot } => self.handle_cap_revoke(from_pid, slot, timestamp),
             Syscall::CapDelete { slot } => self.handle_cap_delete(from_pid, slot, timestamp),
             Syscall::CapInspect { slot } => self.handle_cap_inspect(from_pid, slot),
-            Syscall::CapDerive { slot, new_permissions } => {
-                self.handle_cap_derive(from_pid, slot, new_permissions, timestamp)
-            }
+            Syscall::CapDerive {
+                slot,
+                new_permissions,
+            } => self.handle_cap_derive(from_pid, slot, new_permissions, timestamp),
 
             // Process syscalls
             Syscall::ListProcesses => self.handle_list_processes(),
@@ -77,8 +91,13 @@ impl<H: HAL> KernelCore<H> {
     // Debug syscalls
     // ========================================================================
 
-    fn handle_debug(&self, from_pid: ProcessId, msg: alloc::string::String) -> (SyscallResult, Vec<Commit>) {
-        self.hal.debug_write(&alloc::format!("[PID {}] {}", from_pid.0, msg));
+    fn handle_debug(
+        &self,
+        from_pid: ProcessId,
+        msg: alloc::string::String,
+    ) -> (SyscallResult, Vec<Commit>) {
+        self.hal
+            .debug_write(&alloc::format!("[PID {}] {}", from_pid.0, msg));
         (SyscallResult::Ok(0), vec![])
     }
 

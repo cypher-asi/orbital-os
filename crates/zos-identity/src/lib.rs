@@ -42,6 +42,7 @@
 extern crate alloc;
 
 pub mod client;
+pub mod crypto;
 pub mod error;
 pub mod ipc;
 pub mod keystore;

@@ -4,18 +4,17 @@
 
 extern crate alloc;
 
+use crate::error::AppError;
+use crate::syscall;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::error::AppError;
-use crate::syscall;
 use zos_identity::error::{CredentialError, ZidError};
 use zos_identity::ipc::{
     AttachEmailResponse, CreateMachineKeyResponse, GenerateNeuralKeyResponse,
-    GetCredentialsResponse, GetIdentityKeyResponse, GetMachineKeyResponse,
-    ListMachineKeysResponse, RecoverNeuralKeyResponse, RevokeMachineKeyResponse,
-    RotateMachineKeyResponse, UnlinkCredentialResponse, ZidEnrollMachineResponse,
-    ZidLoginResponse, ZidTokens,
+    GetCredentialsResponse, GetIdentityKeyResponse, GetMachineKeyResponse, ListMachineKeysResponse,
+    RecoverNeuralKeyResponse, RevokeMachineKeyResponse, RotateMachineKeyResponse,
+    UnlinkCredentialResponse, ZidEnrollMachineResponse, ZidLoginResponse, ZidTokens,
 };
 use zos_identity::keystore::{LinkedCredential, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
@@ -90,6 +89,10 @@ pub fn send_neural_key_error(
     cap_slots: &[u32],
     error: KeyError,
 ) -> Result<(), AppError> {
+    syscall::debug(&format!(
+        "IdentityService: Sending neural key error to PID {}: {:?}",
+        client_pid, error
+    ));
     let response = GenerateNeuralKeyResponse { result: Err(error) };
     send_response_to_pid(
         client_pid,
@@ -171,9 +174,7 @@ pub fn send_create_machine_key_success(
     cap_slots: &[u32],
     record: MachineKeyRecord,
 ) -> Result<(), AppError> {
-    let response = CreateMachineKeyResponse {
-        result: Ok(record),
-    };
+    let response = CreateMachineKeyResponse { result: Ok(record) };
     send_response_to_pid(
         client_pid,
         cap_slots,
@@ -218,9 +219,7 @@ pub fn send_get_machine_key_success(
     cap_slots: &[u32],
     record: Option<MachineKeyRecord>,
 ) -> Result<(), AppError> {
-    let response = GetMachineKeyResponse {
-        result: Ok(record),
-    };
+    let response = GetMachineKeyResponse { result: Ok(record) };
     send_response_to_pid(
         client_pid,
         cap_slots,
@@ -245,10 +244,7 @@ pub fn send_get_machine_key_error(
 }
 
 /// Send revoke machine key success response.
-pub fn send_revoke_machine_key_success(
-    client_pid: u32,
-    cap_slots: &[u32],
-) -> Result<(), AppError> {
+pub fn send_revoke_machine_key_success(client_pid: u32, cap_slots: &[u32]) -> Result<(), AppError> {
     let response = RevokeMachineKeyResponse { result: Ok(()) };
     send_response_to_pid(
         client_pid,
@@ -279,9 +275,7 @@ pub fn send_rotate_machine_key_success(
     cap_slots: &[u32],
     record: MachineKeyRecord,
 ) -> Result<(), AppError> {
-    let response = RotateMachineKeyResponse {
-        result: Ok(record),
-    };
+    let response = RotateMachineKeyResponse { result: Ok(record) };
     send_response_to_pid(
         client_pid,
         cap_slots,
@@ -386,9 +380,7 @@ pub fn send_zid_login_success(
     cap_slots: &[u32],
     tokens: ZidTokens,
 ) -> Result<(), AppError> {
-    let response = ZidLoginResponse {
-        result: Ok(tokens),
-    };
+    let response = ZidLoginResponse { result: Ok(tokens) };
     send_response_to_pid(
         client_pid,
         cap_slots,
@@ -418,9 +410,7 @@ pub fn send_zid_enroll_success(
     cap_slots: &[u32],
     tokens: ZidTokens,
 ) -> Result<(), AppError> {
-    let response = ZidEnrollMachineResponse {
-        result: Ok(tokens),
-    };
+    let response = ZidEnrollMachineResponse { result: Ok(tokens) };
     send_response_to_pid(
         client_pid,
         cap_slots,
@@ -440,6 +430,53 @@ pub fn send_zid_enroll_error(
         client_pid,
         cap_slots,
         identity_zid::MSG_ZID_ENROLL_MACHINE_RESPONSE,
+        &response,
+    )
+}
+
+// =============================================================================
+// Identity Preferences responses
+// =============================================================================
+
+/// Send get identity preferences response.
+pub fn send_get_identity_preferences_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    response: zos_identity::ipc::GetIdentityPreferencesResponse,
+) -> Result<(), AppError> {
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_prefs::MSG_GET_IDENTITY_PREFERENCES_RESPONSE,
+        &response,
+    )
+}
+
+/// Send set default key scheme success response.
+pub fn send_set_default_key_scheme_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    response: zos_identity::ipc::SetDefaultKeySchemeResponse,
+) -> Result<(), AppError> {
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_prefs::MSG_SET_DEFAULT_KEY_SCHEME_RESPONSE,
+        &response,
+    )
+}
+
+/// Send set default key scheme error response.
+pub fn send_set_default_key_scheme_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: KeyError,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::SetDefaultKeySchemeResponse { result: Err(error) };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_prefs::MSG_SET_DEFAULT_KEY_SCHEME_RESPONSE,
         &response,
     )
 }

@@ -2,8 +2,8 @@
 //!
 //! WASM-bindgen wrapper for the WebGPU background renderer from zos-desktop.
 
-use zos_desktop::background;
 use wasm_bindgen::prelude::*;
+use zos_desktop::background;
 
 #[wasm_bindgen]
 extern "C" {

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement, createRef } from 'react';
 import { WindowContent } from './WindowContent';
-import { DesktopControllerProvider, SupervisorProvider } from '../../../desktop/hooks/useSupervisor';
+import {
+  DesktopControllerProvider,
+  SupervisorProvider,
+} from '../../../desktop/hooks/useSupervisor';
 import { createMockDesktopController, createMockSupervisor } from '../../../test/mocks';
 import type { WindowInfo } from '../../../desktop/hooks/useWindows';
 

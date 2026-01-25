@@ -3,7 +3,7 @@
 //! Serialization for user input events (UI → App).
 
 use super::type_tags::{TYPE_BUTTON_PRESS, TYPE_FOCUS_CHANGE, TYPE_KEY_PRESS, TYPE_TEXT_INPUT};
-use super::wire::{decode_string, decode_u8, decode_u32, encode_string, Envelope};
+use super::wire::{decode_string, decode_u32, decode_u8, encode_string, Envelope};
 use crate::error::ProtocolError;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -51,7 +51,10 @@ impl InputEvent {
 
     /// Create a key press event
     pub fn key(key_code: u32, modifiers: u8) -> Self {
-        InputEvent::KeyPress { key_code, modifiers }
+        InputEvent::KeyPress {
+            key_code,
+            modifiers,
+        }
     }
 
     /// Create a focus change event
@@ -74,7 +77,10 @@ impl InputEvent {
                 payload.extend_from_slice(&encode_string(text));
                 (TYPE_TEXT_INPUT, payload)
             }
-            InputEvent::KeyPress { key_code, modifiers } => {
+            InputEvent::KeyPress {
+                key_code,
+                modifiers,
+            } => {
                 let mut payload = Vec::new();
                 payload.push(TYPE_KEY_PRESS);
                 payload.extend_from_slice(&key_code.to_le_bytes());
@@ -119,7 +125,10 @@ impl InputEvent {
             TYPE_KEY_PRESS => {
                 let key_code = decode_u32(payload, &mut cursor)?;
                 let modifiers = decode_u8(payload, &mut cursor)?;
-                Ok(InputEvent::KeyPress { key_code, modifiers })
+                Ok(InputEvent::KeyPress {
+                    key_code,
+                    modifiers,
+                })
             }
             TYPE_FOCUS_CHANGE => {
                 let gained = decode_u8(payload, &mut cursor)? != 0;
@@ -194,7 +203,10 @@ mod tests {
         let decoded = InputEvent::from_bytes(&bytes).unwrap();
 
         match decoded {
-            InputEvent::KeyPress { key_code, modifiers } => {
+            InputEvent::KeyPress {
+                key_code,
+                modifiers,
+            } => {
                 assert_eq!(key_code, 65);
                 assert_eq!(modifiers, 3); // SHIFT | CTRL
             }

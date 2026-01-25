@@ -26,7 +26,12 @@ pub struct ClockState {
 
 impl ClockState {
     /// Create a new ClockState
-    pub fn new(time_display: String, date_display: String, is_24_hour: bool, timezone: String) -> Self {
+    pub fn new(
+        time_display: String,
+        date_display: String,
+        is_24_hour: bool,
+        timezone: String,
+    ) -> Self {
         Self {
             time_display,
             date_display,
@@ -129,6 +134,6 @@ mod tests {
         let bytes = state.to_bytes();
         let decoded = ClockState::from_bytes(&bytes).unwrap();
 
-        assert_eq!(decoded.is_24_hour, false);
+        assert!(!decoded.is_24_hour);
     }
 }

@@ -191,11 +191,19 @@ pub struct LocalKeyStore {
     pub epoch: u64,
 
     /// Post-quantum signing public key (if PqHybrid scheme)
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "option_bytes_hex"
+    )]
     pub pq_signing_public_key: Option<Vec<u8>>,
 
     /// Post-quantum encryption public key (if PqHybrid scheme)
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "option_bytes_hex"
+    )]
     pub pq_encryption_public_key: Option<Vec<u8>>,
 
     /// Timestamp when the key was created (milliseconds since Unix epoch)
@@ -206,7 +214,7 @@ pub struct LocalKeyStore {
 impl LocalKeyStore {
     /// Path where public keys are stored.
     pub fn storage_path(user_id: UserId) -> String {
-        alloc::format!("/home/{:032x}/.zos/identity/public_keys.json", user_id)
+        alloc::format!("/home/{}/.zos/identity/public_keys.json", user_id)
     }
 
     /// Create a new key store with the given keys.
@@ -233,22 +241,17 @@ impl LocalKeyStore {
 }
 
 /// Cryptographic key scheme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyScheme {
     /// Ed25519 signing + X25519 encryption (default)
     #[serde(alias = "Ed25519X25519")]
+    #[default]
     Classical,
 
     /// Hybrid: Ed25519/X25519 + ML-DSA-65/ML-KEM-768 (post-quantum)
     #[serde(alias = "PqHybrid")]
     PqHybrid,
-}
-
-impl Default for KeyScheme {
-    fn default() -> Self {
-        Self::Classical
-    }
 }
 
 // ============================================================================
@@ -359,10 +362,7 @@ impl From<CapabilitiesFormat> for MachineKeyCapabilities {
 impl Default for MachineKeyCapabilities {
     fn default() -> Self {
         Self {
-            capabilities: vec![
-                capability::AUTHENTICATE.into(),
-                capability::ENCRYPT.into(),
-            ],
+            capabilities: vec![capability::AUTHENTICATE.into(), capability::ENCRYPT.into()],
             expires_at: None,
         }
     }
@@ -398,11 +398,11 @@ impl MachineKeyCapabilities {
 
     /// Check if the capabilities are expired.
     pub fn is_expired(&self, now: u64) -> bool {
-        self.expires_at.map_or(false, |exp| now >= exp)
+        self.expires_at.is_some_and(|exp| now >= exp)
     }
 
     // Legacy accessors for backward compatibility
-    
+
     /// Can sign authentication challenges
     pub fn can_authenticate(&self) -> bool {
         self.has(capability::AUTHENTICATE)
@@ -451,7 +451,7 @@ pub struct EncryptedPrivateKeys {
 impl EncryptedPrivateKeys {
     /// Path where encrypted keys are stored.
     pub fn storage_path(user_id: UserId) -> String {
-        alloc::format!("/home/{:032x}/.zos/identity/private_keys.enc", user_id)
+        alloc::format!("/home/{}/.zos/identity/private_keys.enc", user_id)
     }
 }
 
@@ -499,6 +499,14 @@ pub struct MachineKeyRecord {
     /// Machine-specific encryption public key (X25519, 32 bytes)
     pub encryption_public_key: [u8; 32],
 
+    /// Signing secret key (32 bytes) - stored securely, used to reconstruct keypair for signing
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_sk: Option<[u8; 32]>,
+
+    /// Encryption secret key (32 bytes) - stored securely, used to reconstruct keypair for encryption
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption_sk: Option<[u8; 32]>,
+
     /// When this machine was authorized
     pub authorized_at: u64,
 
@@ -524,11 +532,19 @@ pub struct MachineKeyRecord {
     pub key_scheme: KeyScheme,
 
     /// ML-DSA-65 PQ signing public key (1952 bytes, only for PqHybrid)
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "option_bytes_hex"
+    )]
     pub pq_signing_public_key: Option<Vec<u8>>,
 
     /// ML-KEM-768 PQ encryption public key (1184 bytes, only for PqHybrid)
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "option_bytes_hex"
+    )]
     pub pq_encryption_public_key: Option<Vec<u8>>,
 }
 
@@ -541,8 +557,9 @@ impl MachineKeyRecord {
     /// Path where machine key is stored.
     pub fn storage_path(user_id: UserId, machine_id: u128) -> String {
         alloc::format!(
-            "/home/{:032x}/.zos/identity/machine/{:032x}.json",
-            user_id, machine_id
+            "/home/{}/.zos/identity/machine/{:032x}.json",
+            user_id,
+            machine_id
         )
     }
 }
@@ -560,10 +577,7 @@ pub struct CredentialStore {
 impl CredentialStore {
     /// Path where credentials are stored.
     pub fn storage_path(user_id: UserId) -> String {
-        alloc::format!(
-            "/home/{:032x}/.zos/credentials/credentials.json",
-            user_id
-        )
+        alloc::format!("/home/{}/.zos/credentials/credentials.json", user_id)
     }
 
     /// Create a new empty credential store.
@@ -656,10 +670,7 @@ mod tests {
 
     #[test]
     fn test_machine_capabilities_from_strings() {
-        let caps = MachineKeyCapabilities::from_strings(vec![
-            "AUTHENTICATE".into(),
-            "SIGN".into(),
-        ]);
+        let caps = MachineKeyCapabilities::from_strings(vec!["AUTHENTICATE".into(), "SIGN".into()]);
         assert!(caps.can_authenticate());
         assert!(caps.can_sign_messages());
         assert!(!caps.can_encrypt());

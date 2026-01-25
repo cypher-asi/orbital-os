@@ -39,6 +39,12 @@ vi.mock('@cypher-asi/zui', () => ({
       </div>
     );
   },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ButtonPlus: ({ onClick }: Record<string, any>) => (
+    <button onClick={onClick} data-testid="button-plus">
+      +
+    </button>
+  ),
 }));
 
 // Mock lucide-react icons
@@ -81,6 +87,24 @@ vi.mock('./panels/ThemePanel', () => ({
 
 vi.mock('./panels/NetworkPanel', () => ({
   NetworkPanel: () => <div data-testid="network-panel">Network Panel</div>,
+}));
+
+vi.mock('./panels/NeuralKeyPanel', () => ({
+  NeuralKeyPanel: () => <div data-testid="neural-key-panel">Neural Key Panel</div>,
+}));
+
+vi.mock('./panels/MachineKeysPanel', () => ({
+  MachineKeysPanel: () => <div data-testid="machine-keys-panel">Machine Keys Panel</div>,
+}));
+
+vi.mock('./panels/LinkedAccountsPanel', () => ({
+  LinkedAccountsPanel: () => <div data-testid="linked-accounts-panel">Linked Accounts Panel</div>,
+}));
+
+vi.mock('./panels/GenerateMachineKeyPanel', () => ({
+  GenerateMachineKeyPanel: () => (
+    <div data-testid="generate-machine-key-panel">Generate Machine Key Panel</div>
+  ),
 }));
 
 // Mock CSS module

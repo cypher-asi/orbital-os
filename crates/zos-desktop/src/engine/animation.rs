@@ -1,9 +1,9 @@
 //! Camera animation
 
+use super::DesktopEngine;
 use crate::math::Camera;
 use crate::transition::CameraAnimation;
 use crate::window::WindowId;
-use super::DesktopEngine;
 
 impl DesktopEngine {
     /// Pan the camera to center on a window

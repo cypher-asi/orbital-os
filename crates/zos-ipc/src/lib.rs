@@ -1,10 +1,25 @@
-//! IPC Protocol Constants for Zero OS
+//! IPC Protocol & Syscall Constants for Zero OS
 //!
-//! This crate defines all IPC message tags used for inter-process
-//! communication in Zero OS. It is the **single source of truth** for
-//! message constants, eliminating duplication across crates.
+//! This crate defines:
+//! - **Syscall numbers** (Process → Kernel operations)
+//! - **IPC message tags** (Process ↔ Process communication)
 //!
-//! # Message Range Allocation
+//! It is the **single source of truth** for all protocol constants,
+//! eliminating duplication across crates.
+//!
+//! # Syscall Number Ranges
+//!
+//! | Range | Category |
+//! |-------|----------|
+//! | 0x01-0x0F | Misc (debug, time, info) |
+//! | 0x10-0x1F | Process (create, exit, kill) |
+//! | 0x30-0x3F | Capability (grant, revoke, inspect) |
+//! | 0x40-0x4F | IPC (send, receive, call, reply) |
+//! | 0x50-0x5F | System (list processes) |
+//! | 0x70-0x7F | Platform Storage (async ops) |
+//! | 0x90-0x9F | Network (async HTTP) |
+//!
+//! # IPC Message Range Allocation
 //!
 //! | Range         | Service                              |
 //! |---------------|--------------------------------------|
@@ -21,6 +36,7 @@
 //! | 0x5000-0x50FF | Identity permission checks           |
 //! | 0x7000-0x70FF | Identity service                     |
 //! | 0x8000-0x80FF | VFS service                          |
+//! | 0x8100-0x810F | Time service                         |
 //! | 0x9000-0x901F | Network service                      |
 //!
 //! # Usage
@@ -39,6 +55,92 @@
 //! ```
 
 #![no_std]
+
+// =============================================================================
+// Syscall Numbers (Process → Kernel operations)
+// =============================================================================
+
+/// Syscall numbers - these are used by processes to invoke kernel operations.
+pub mod syscall {
+    // === Misc (0x01 - 0x0F) ===
+    /// Debug print syscall
+    pub const SYS_DEBUG: u32 = 0x01;
+    /// Yield/cooperative scheduling hint
+    pub const SYS_YIELD: u32 = 0x02;
+    /// Exit process
+    pub const SYS_EXIT: u32 = 0x03;
+    /// Get current time (nanos since boot)
+    pub const SYS_TIME: u32 = 0x04;
+    /// Get wallclock time (milliseconds since Unix epoch)
+    pub const SYS_WALLCLOCK: u32 = 0x06;
+    /// Console write syscall - write text to console output
+    pub const SYS_CONSOLE_WRITE: u32 = 0x07;
+
+    // === Process (0x10 - 0x1F) ===
+    /// Create an IPC endpoint
+    pub const SYS_CREATE_ENDPOINT: u32 = 0x11;
+    /// Delete an endpoint
+    pub const SYS_DELETE_ENDPOINT: u32 = 0x12;
+    /// Kill a process (requires Process capability with kill permission)
+    pub const SYS_KILL: u32 = 0x13;
+    /// Register a new process (Init-only syscall for spawn protocol)
+    pub const SYS_REGISTER_PROCESS: u32 = 0x14;
+    /// Create an endpoint for another process (Init-only syscall for spawn protocol)
+    pub const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
+
+    // === Capability (0x30 - 0x3F) ===
+    /// Grant a capability to another process
+    pub const SYS_CAP_GRANT: u32 = 0x30;
+    /// Revoke a capability (requires grant permission)
+    pub const SYS_CAP_REVOKE: u32 = 0x31;
+    /// Delete a capability from own CSpace
+    pub const SYS_CAP_DELETE: u32 = 0x32;
+    /// Inspect a capability (get info)
+    pub const SYS_CAP_INSPECT: u32 = 0x33;
+    /// Derive a new capability with reduced permissions
+    pub const SYS_CAP_DERIVE: u32 = 0x34;
+    /// List all capabilities
+    pub const SYS_CAP_LIST: u32 = 0x35;
+
+    // === IPC (0x40 - 0x4F) ===
+    /// Send a message
+    pub const SYS_SEND: u32 = 0x40;
+    /// Receive a message
+    pub const SYS_RECV: u32 = 0x41;
+    /// Call (send + wait for reply)
+    pub const SYS_CALL: u32 = 0x42;
+    /// Reply to a call
+    pub const SYS_REPLY: u32 = 0x43;
+    /// Send with capability transfer
+    pub const SYS_SEND_CAP: u32 = 0x44;
+
+    // === System (0x50 - 0x5F) ===
+    /// List all processes (supervisor only)
+    pub const SYS_PS: u32 = 0x50;
+
+    // === Platform Storage (0x70 - 0x7F) ===
+    // HAL-level key-value storage operations. VfsService uses these for persistence.
+    // Applications should use zos_vfs::VfsClient. All storage syscalls are ASYNC.
+    /// Read blob from platform storage (async - returns request_id)
+    pub const SYS_STORAGE_READ: u32 = 0x70;
+    /// Write blob to platform storage (async - returns request_id)
+    pub const SYS_STORAGE_WRITE: u32 = 0x71;
+    /// Delete blob from platform storage (async - returns request_id)
+    pub const SYS_STORAGE_DELETE: u32 = 0x72;
+    /// List keys with prefix (async - returns request_id)
+    pub const SYS_STORAGE_LIST: u32 = 0x73;
+    /// Check if key exists (async - returns request_id)
+    pub const SYS_STORAGE_EXISTS: u32 = 0x74;
+
+    // === Network (0x90 - 0x9F) ===
+    // HAL-level HTTP fetch operations. Applications use Network Service via IPC.
+    // Network syscalls are ASYNC and return a request_id immediately.
+    /// Start async HTTP fetch (returns request_id)
+    pub const SYS_NETWORK_FETCH: u32 = 0x90;
+}
+
+// Re-export syscall constants at crate root for convenience
+pub use syscall::*;
 
 // =============================================================================
 // Console Messages (0x0001 - 0x000F)
@@ -179,29 +281,29 @@ pub mod supervisor {
     /// Payload: [name_len: u8, name: [u8]]
     /// Init responds with MSG_SUPERVISOR_SPAWN_RESPONSE.
     pub const MSG_SUPERVISOR_SPAWN_PROCESS: u32 = 0x2004;
-    
+
     /// Init response with registered PID.
     /// Payload: [success: u8, pid: u32]
     /// success=1: pid contains the new PID
     /// success=0: spawn failed
     pub const MSG_SUPERVISOR_SPAWN_RESPONSE: u32 = 0x2005;
-    
+
     /// Supervisor requests Init to create endpoint for a process.
     /// This is called after MSG_SUPERVISOR_SPAWN_RESPONSE to set up IPC.
     /// Payload: [target_pid: u32]
     /// Init responds with MSG_SUPERVISOR_ENDPOINT_RESPONSE.
     pub const MSG_SUPERVISOR_CREATE_ENDPOINT: u32 = 0x2006;
-    
+
     /// Init response with created endpoint info.
     /// Payload: [success: u8, endpoint_id: u64, slot: u32]
     pub const MSG_SUPERVISOR_ENDPOINT_RESPONSE: u32 = 0x2007;
-    
+
     /// Supervisor requests Init to grant capability.
     /// This enables setting up capabilities during spawn.
     /// Payload: [from_pid: u32, from_slot: u32, to_pid: u32, perms: u8]
     /// Init responds with MSG_SUPERVISOR_CAP_RESPONSE.
     pub const MSG_SUPERVISOR_GRANT_CAP: u32 = 0x2008;
-    
+
     /// Init response with capability grant result.
     /// Payload: [success: u8, new_slot: u32]
     pub const MSG_SUPERVISOR_CAP_RESPONSE: u32 = 0x2009;
@@ -472,6 +574,25 @@ pub mod identity_zid {
     pub const MSG_ZID_ENROLL_MACHINE_RESPONSE: u32 = 0x7085;
 }
 
+/// Identity service messages - Identity Preferences (0x7090-0x7099).
+///
+/// These messages handle identity preferences stored in VFS
+/// such as default key scheme for new machine keys.
+pub mod identity_prefs {
+    /// Get identity preferences request.
+    /// Payload: JSON-serialized GetIdentityPreferencesRequest
+    pub const MSG_GET_IDENTITY_PREFERENCES: u32 = 0x7090;
+    /// Get identity preferences response.
+    /// Payload: JSON-serialized GetIdentityPreferencesResponse
+    pub const MSG_GET_IDENTITY_PREFERENCES_RESPONSE: u32 = 0x7091;
+    /// Set default key scheme request.
+    /// Payload: JSON-serialized SetDefaultKeySchemeRequest
+    pub const MSG_SET_DEFAULT_KEY_SCHEME: u32 = 0x7092;
+    /// Set default key scheme response.
+    /// Payload: JSON-serialized SetDefaultKeySchemeResponse
+    pub const MSG_SET_DEFAULT_KEY_SCHEME_RESPONSE: u32 = 0x7093;
+}
+
 // =============================================================================
 // VFS Service (0x8000 - 0x80FF)
 // =============================================================================
@@ -549,6 +670,29 @@ pub mod vfs_quota {
 }
 
 // =============================================================================
+// Time Service (0x8100 - 0x810F)
+// =============================================================================
+
+/// Time service messages (0x8100-0x810F).
+///
+/// The Time Service manages time-related settings like time format (12h/24h)
+/// and timezone preferences. Settings are persisted to VFS.
+pub mod time {
+    /// Request current time settings.
+    /// Payload: (empty)
+    pub const MSG_GET_TIME_SETTINGS: u32 = 0x8100;
+    /// Response with time settings.
+    /// Payload: JSON {"time_format_24h": bool, "timezone": string}
+    pub const MSG_GET_TIME_SETTINGS_RESPONSE: u32 = 0x8101;
+    /// Set time settings.
+    /// Payload: JSON {"time_format_24h": bool, "timezone": string}
+    pub const MSG_SET_TIME_SETTINGS: u32 = 0x8102;
+    /// Response confirming settings update.
+    /// Payload: JSON {"time_format_24h": bool, "timezone": string} or {"error": string}
+    pub const MSG_SET_TIME_SETTINGS_RESPONSE: u32 = 0x8103;
+}
+
+// =============================================================================
 // Network Service (0x9000 - 0x901F)
 // =============================================================================
 
@@ -601,19 +745,23 @@ mod tests {
     #[test]
     fn test_message_ranges() {
         // Init service in 0x1000-0x100F
-        assert!(init::MSG_REGISTER_SERVICE >= 0x1000);
-        assert!(init::MSG_VFS_RESPONSE_CAP_GRANTED <= 0x100F);
+        const { assert!(init::MSG_REGISTER_SERVICE >= 0x1000) };
+        const { assert!(init::MSG_VFS_RESPONSE_CAP_GRANTED <= 0x100F) };
 
         // PM in 0x2010-0x201F
-        assert!(pm::MSG_REQUEST_CAPABILITY >= 0x2010);
-        assert!(pm::MSG_CAPS_LIST_RESPONSE <= 0x201F);
+        const { assert!(pm::MSG_REQUEST_CAPABILITY >= 0x2010) };
+        const { assert!(pm::MSG_CAPS_LIST_RESPONSE <= 0x201F) };
 
         // Identity in 0x7000-0x70FF
-        assert!(identity_user::MSG_CREATE_USER >= 0x7000);
-        assert!(identity_machine::MSG_ROTATE_MACHINE_KEY_RESPONSE <= 0x70FF);
+        const { assert!(identity_user::MSG_CREATE_USER >= 0x7000) };
+        const { assert!(identity_machine::MSG_ROTATE_MACHINE_KEY_RESPONSE <= 0x70FF) };
 
         // VFS in 0x8000-0x80FF
-        assert!(vfs_dir::MSG_VFS_MKDIR >= 0x8000);
-        assert!(vfs_quota::MSG_VFS_GET_QUOTA_RESPONSE <= 0x80FF);
+        const { assert!(vfs_dir::MSG_VFS_MKDIR >= 0x8000) };
+        const { assert!(vfs_quota::MSG_VFS_GET_QUOTA_RESPONSE <= 0x80FF) };
+
+        // Time service in 0x8100-0x810F
+        const { assert!(time::MSG_GET_TIME_SETTINGS >= 0x8100) };
+        const { assert!(time::MSG_SET_TIME_SETTINGS_RESPONSE <= 0x810F) };
     }
 }

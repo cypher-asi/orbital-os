@@ -86,7 +86,10 @@ pub fn handle_write_unlinked_content(
         Ok(inode_json) => StorageHandlerResult::ContinueWrite {
             key: format!("inode:{}", cred_path),
             value: inode_json,
-            next_op: PendingStorageOp::WriteUnlinkedCredentialInode { client_pid, cap_slots },
+            next_op: PendingStorageOp::WriteUnlinkedCredentialInode {
+                client_pid,
+                cap_slots,
+            },
         },
         Err(e) => StorageHandlerResult::Done(response::send_unlink_credential_error(
             client_pid,
@@ -152,7 +155,10 @@ pub fn handle_write_email_cred_content(
         Ok(inode_json) => StorageHandlerResult::ContinueWrite {
             key: format!("inode:{}", cred_path),
             value: inode_json,
-            next_op: PendingStorageOp::WriteEmailCredentialInode { client_pid, cap_slots },
+            next_op: PendingStorageOp::WriteEmailCredentialInode {
+                client_pid,
+                cap_slots,
+            },
         },
         Err(e) => StorageHandlerResult::Done(response::send_attach_email_error(
             client_pid,

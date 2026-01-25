@@ -2,9 +2,9 @@
 //!
 //! Provides JSON-serialized metrics and process data for the dashboard.
 
+use wasm_bindgen::prelude::*;
 use zos_hal::HAL;
 use zos_kernel::ProcessId;
-use wasm_bindgen::prelude::*;
 
 use super::Supervisor;
 use crate::axiom;

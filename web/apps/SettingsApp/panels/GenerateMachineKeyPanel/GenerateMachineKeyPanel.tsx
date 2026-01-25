@@ -1,31 +1,66 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button, Card, CardItem, Input, Text } from '@cypher-asi/zui';
-import { Cpu, Check, X, AlertTriangle, Loader, Shield } from 'lucide-react';
-import { useMachineKeys, type KeyScheme } from '../../../../desktop/hooks/useMachineKeys';
+import { Cpu, Check, X, AlertTriangle, Loader, Shield, Key } from 'lucide-react';
+import {
+  useMachineKeys,
+  type KeyScheme,
+  type NeuralShard,
+} from '../../../../desktop/hooks/useMachineKeys';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 import { usePanelDrill } from '../../context';
 import styles from './GenerateMachineKeyPanel.module.css';
+
+/**
+ * Check if a string is valid hex (optionally with 0x prefix)
+ */
+function isValidHex(value: string): boolean {
+  const cleaned = value.trim().replace(/^0x/i, '');
+  if (cleaned.length === 0) return false;
+  return /^[0-9a-fA-F]+$/.test(cleaned);
+}
 
 /**
  * Generate Machine Key Panel
  *
  * Drill-down panel for creating a new machine key.
- * Shows a form with machine name input, key scheme selector, and Generate/Cancel buttons.
+ * Requires 3 Neural shards for key derivation.
  */
 export function GenerateMachineKeyPanel() {
   const { createMachineKey } = useMachineKeys();
   const { navigateBack } = usePanelDrill();
+  const { defaultKeyScheme } = useSettingsStore();
   const [machineName, setMachineName] = useState('');
-  const [keyScheme, setKeyScheme] = useState<KeyScheme>('classical');
+  const [keyScheme, setKeyScheme] = useState<KeyScheme>(defaultKeyScheme);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // State for 3 Neural shards
+  const [shard1, setShard1] = useState('');
+  const [shard2, setShard2] = useState('');
+  const [shard3, setShard3] = useState('');
+
+  // Validate shards
+  const shardsValid = useMemo(() => {
+    const shards = [shard1, shard2, shard3];
+    return shards.every((s) => s.trim().length > 0 && isValidHex(s));
+  }, [shard1, shard2, shard3]);
+
+  const canGenerate = machineName.trim().length > 0 && shardsValid;
+
   const handleGenerate = useCallback(async () => {
-    if (!machineName.trim()) return;
+    if (!canGenerate) return;
 
     setIsGenerating(true);
     setError(null);
     try {
-      await createMachineKey(machineName.trim(), undefined, keyScheme);
+      // Build Neural shards array
+      const shards: NeuralShard[] = [
+        { index: 1, hex: shard1.trim().replace(/^0x/i, '') },
+        { index: 2, hex: shard2.trim().replace(/^0x/i, '') },
+        { index: 3, hex: shard3.trim().replace(/^0x/i, '') },
+      ];
+
+      await createMachineKey(machineName.trim(), undefined, keyScheme, shards);
       // Navigate back after successful creation
       navigateBack();
     } catch (err) {
@@ -34,7 +69,7 @@ export function GenerateMachineKeyPanel() {
     } finally {
       setIsGenerating(false);
     }
-  }, [machineName, keyScheme, createMachineKey, navigateBack]);
+  }, [canGenerate, machineName, keyScheme, shard1, shard2, shard3, createMachineKey, navigateBack]);
 
   const handleCancel = useCallback(() => {
     // Navigate back to Machine Keys panel
@@ -51,8 +86,8 @@ export function GenerateMachineKeyPanel() {
           Generate Machine Key
         </Text>
         <Text size="sm" className={styles.heroDescription}>
-          Give this machine a recognizable name and choose a key scheme for cryptographic
-          operations.
+          Create a new machine key derived from your Neural Key. You&apos;ll need 3 of your 5 Neural
+          shards.
         </Text>
 
         <div className={styles.addForm}>
@@ -61,11 +96,6 @@ export function GenerateMachineKeyPanel() {
             onChange={(e) => setMachineName(e.target.value)}
             placeholder="Machine name (e.g., Work Laptop)"
             autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && machineName.trim() && !isGenerating) {
-                handleGenerate();
-              }
-            }}
           />
 
           <div className={styles.schemeSection}>
@@ -82,7 +112,7 @@ export function GenerateMachineKeyPanel() {
             </select>
           </div>
 
-          {keyScheme === 'pq_hybrid' && (
+          {keyScheme === 'PqHybrid' && (
             <Card className={styles.infoCard}>
               <CardItem
                 icon={<Shield size={14} />}
@@ -92,6 +122,66 @@ export function GenerateMachineKeyPanel() {
               />
             </Card>
           )}
+
+          {/* Neural Shards Section */}
+          <div className={styles.shardsSection}>
+            <div className={styles.shardsSectionHeader}>
+              <Key size={14} />
+              <Text size="xs" className={styles.shardsLabel}>
+                Neural Shards (3 of 5 required)
+              </Text>
+            </div>
+
+            <Card className={styles.infoCard}>
+              <CardItem
+                icon={<Key size={14} />}
+                title="Shard-Based Key Derivation"
+                description="Enter any 3 of your 5 Neural shards. Your machine key will be deterministically derived from your Neural Key."
+                className={styles.infoCardItem}
+              />
+            </Card>
+
+            <div className={styles.shardInputs}>
+              <div className={styles.shardInputGroup}>
+                <label className={styles.shardLabel}>Shard 1</label>
+                <textarea
+                  className={`${styles.shardInput} ${shard1 && !isValidHex(shard1) ? styles.shardInputError : ''}`}
+                  value={shard1}
+                  onChange={(e) => setShard1(e.target.value)}
+                  placeholder="Paste hex shard (e.g., 01abc23def...)"
+                  rows={2}
+                />
+              </div>
+
+              <div className={styles.shardInputGroup}>
+                <label className={styles.shardLabel}>Shard 2</label>
+                <textarea
+                  className={`${styles.shardInput} ${shard2 && !isValidHex(shard2) ? styles.shardInputError : ''}`}
+                  value={shard2}
+                  onChange={(e) => setShard2(e.target.value)}
+                  placeholder="Paste hex shard (e.g., 01abc23def...)"
+                  rows={2}
+                />
+              </div>
+
+              <div className={styles.shardInputGroup}>
+                <label className={styles.shardLabel}>Shard 3</label>
+                <textarea
+                  className={`${styles.shardInput} ${shard3 && !isValidHex(shard3) ? styles.shardInputError : ''}`}
+                  value={shard3}
+                  onChange={(e) => setShard3(e.target.value)}
+                  placeholder="Paste hex shard (e.g., 01abc23def...)"
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            {!shardsValid && (shard1 || shard2 || shard3) && (
+              <Text size="xs" className={styles.shardsHint}>
+                All 3 shards must be valid hexadecimal strings
+              </Text>
+            )}
+          </div>
 
           {error && (
             <Card className={styles.dangerCard}>
@@ -113,7 +203,7 @@ export function GenerateMachineKeyPanel() {
               variant="primary"
               size="md"
               onClick={handleGenerate}
-              disabled={isGenerating || !machineName.trim()}
+              disabled={isGenerating || !canGenerate}
             >
               {isGenerating ? (
                 <>

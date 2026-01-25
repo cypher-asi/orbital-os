@@ -69,7 +69,10 @@ export function addPendingRequest<T>(tagHex: string, request: PendingRequest<T>)
     pendingRequestsByTag.set(tagHex, queue);
   }
   queue.push(request as PendingRequest<unknown>);
-  pendingRequestsById.set(request.uniqueId, { tagHex, request: request as PendingRequest<unknown> });
+  pendingRequestsById.set(request.uniqueId, {
+    tagHex,
+    request: request as PendingRequest<unknown>,
+  });
 }
 
 /**

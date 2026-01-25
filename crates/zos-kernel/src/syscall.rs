@@ -15,66 +15,18 @@ use crate::types::{ObjectType, ProcessId, ProcessState};
 use zos_axiom::CapSlot;
 
 // ============================================================================
-// Canonical Syscall Numbers (ABI)
+// Canonical Syscall Numbers (re-exported from zos-ipc)
 // ============================================================================
+// zos-ipc is the single source of truth for all syscall numbers.
+// The kernel re-exports them here for convenience.
 
-/// Debug print syscall
-pub const SYS_DEBUG: u32 = 0x01;
-/// Yield/cooperative scheduling hint
-pub const SYS_YIELD: u32 = 0x02;
-/// Exit process
-pub const SYS_EXIT: u32 = 0x03;
-/// Get current time (nanos since boot)
-pub const SYS_TIME: u32 = 0x04;
-/// Console write syscall - write text to console output
-/// The supervisor receives a callback notification after this syscall completes.
-pub const SYS_CONSOLE_WRITE: u32 = 0x07;
+pub use zos_ipc::syscall::*;
 
 // Console input message tag (supervisor -> terminal input endpoint)
-// Re-exported from zos-ipc (the single source of truth)
 pub use zos_ipc::MSG_CONSOLE_INPUT;
 
 // Capability revocation notification message tag (supervisor -> process input endpoint)
-// Re-exported from zos-ipc (the single source of truth)
 pub use zos_ipc::kernel::MSG_CAP_REVOKED;
-
-/// Create an IPC endpoint
-pub const SYS_CREATE_ENDPOINT: u32 = 0x11;
-/// Delete an endpoint
-pub const SYS_DELETE_ENDPOINT: u32 = 0x12;
-/// Kill a process (requires Process capability with kill permission)
-pub const SYS_KILL: u32 = 0x13;
-/// Register a new process (Init-only syscall for spawn protocol)
-pub const SYS_REGISTER_PROCESS: u32 = 0x14;
-/// Create an endpoint for another process (Init-only syscall for spawn protocol)
-pub const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
-
-/// Grant a capability to another process
-pub const SYS_CAP_GRANT: u32 = 0x30;
-/// Revoke a capability (requires grant permission)
-pub const SYS_CAP_REVOKE: u32 = 0x31;
-/// Delete a capability from own CSpace
-pub const SYS_CAP_DELETE: u32 = 0x32;
-/// Inspect a capability (get info)
-pub const SYS_CAP_INSPECT: u32 = 0x33;
-/// Derive a new capability with reduced permissions
-pub const SYS_CAP_DERIVE: u32 = 0x34;
-/// List all capabilities
-pub const SYS_CAP_LIST: u32 = 0x35;
-
-/// Send a message
-pub const SYS_SEND: u32 = 0x40;
-/// Receive a message
-pub const SYS_RECV: u32 = 0x41;
-/// Call (send + wait for reply)
-pub const SYS_CALL: u32 = 0x42;
-/// Reply to a call
-pub const SYS_REPLY: u32 = 0x43;
-/// Send with capability transfer
-pub const SYS_SEND_CAP: u32 = 0x44;
-
-/// List all processes (supervisor only)
-pub const SYS_PS: u32 = 0x50;
 
 /// Syscall request from a process
 #[derive(Clone, Debug)]

@@ -7,9 +7,7 @@ use alloc::vec::Vec;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, Message};
 use zos_process::storage_result;
-use zos_vfs::ipc::{
-    vfs_msg, MkdirRequest, MkdirResponse, WriteFileRequest, WriteFileResponse,
-};
+use zos_vfs::ipc::{vfs_msg, MkdirRequest, MkdirResponse, WriteFileRequest, WriteFileResponse};
 use zos_vfs::types::Inode;
 use zos_vfs::{parent_path, VfsError};
 

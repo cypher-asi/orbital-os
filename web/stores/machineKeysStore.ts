@@ -7,13 +7,14 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { useSettingsStore } from './settingsStore';
 
 // =============================================================================
 // Machine Key Types (mirrors zos-identity/src/keystore.rs and ipc.rs)
 // =============================================================================
 
 /** Key scheme for machine keys */
-export type KeyScheme = 'classical' | 'pq_hybrid';
+export type KeyScheme = 'Classical' | 'PqHybrid';
 
 /** Machine key capability strings */
 export type MachineKeyCapability =
@@ -101,6 +102,9 @@ interface MachineKeysStoreState extends MachineKeysState {
   setInitializing: (initializing: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;
+  
+  // Helper to set default key scheme from a machine (delegates to settings store)
+  setDefaultKeySchemeFromMachine: (userId: bigint, machineId: string) => Promise<void>;
 }
 
 // =============================================================================
@@ -126,10 +130,18 @@ export const useMachineKeysStore = create<MachineKeysStoreState>()(
     setMachines: (machines) => set({ machines, isLoading: false, isInitializing: false }),
 
     addMachine: (machine) =>
-      set((state) => ({
-        machines: [...state.machines, machine],
-        isLoading: false,
-      })),
+      set((state) => {
+        // Prevent duplicates - check if machine with same ID already exists
+        const exists = state.machines.some(m => m.machineId === machine.machineId);
+        if (exists) {
+          console.warn(`[machineKeysStore] Ignoring duplicate addMachine for ID: ${machine.machineId}`);
+          return { isLoading: false };
+        }
+        return {
+          machines: [...state.machines, machine],
+          isLoading: false,
+        };
+      }),
 
     removeMachine: (machineId) =>
       set((state) => ({
@@ -152,6 +164,15 @@ export const useMachineKeysStore = create<MachineKeysStoreState>()(
     setError: (error) => set({ error, isLoading: false, isInitializing: false }),
 
     reset: () => set(INITIAL_STATE),
+
+    setDefaultKeySchemeFromMachine: async (userId, machineId) => {
+      const machine = useMachineKeysStore.getState().machines.find((m) => m.machineId === machineId);
+      if (!machine) {
+        throw new Error(`Machine ${machineId} not found`);
+      }
+      // Delegate to settings store which handles VFS persistence
+      await useSettingsStore.getState().setDefaultKeyScheme(userId, machine.keyScheme);
+    },
   }))
 );
 

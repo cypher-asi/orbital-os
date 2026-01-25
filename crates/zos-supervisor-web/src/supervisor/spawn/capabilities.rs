@@ -6,8 +6,8 @@
 //! - VFS service capabilities
 //! - Identity service capabilities
 
-use zos_kernel::ProcessId;
 use super::super::{log, Supervisor};
+use zos_kernel::ProcessId;
 
 impl Supervisor {
     /// Set up capabilities for a spawned process
@@ -15,7 +15,7 @@ impl Supervisor {
         if name == "init" {
             self.init_spawned = true;
             log("[supervisor] Init process spawned (PID 1)");
-            
+
             // Grant supervisor (PID 0) capability to Init's endpoint for IPC
             self.grant_supervisor_capability_to_init(process_pid);
         } else if name == "permission_manager" {
@@ -47,11 +47,11 @@ impl Supervisor {
                     ));
                 }
             }
-            
+
             // If VFS service is running, grant this process a capability to VFS endpoint
             // This goes in slot 3 (VFS_ENDPOINT_SLOT) for VfsClient to use
             self.grant_vfs_capability_to_process(process_pid, name);
-            
+
             // Create a dedicated endpoint for VFS responses (slot 4)
             // This prevents race conditions where the VFS client's blocking receive
             // on the general input endpoint (slot 1) could consume other IPC messages.
@@ -61,43 +61,50 @@ impl Supervisor {
                     "[supervisor] Created VFS response endpoint {} at slot {} for {}",
                     eid.0, slot, name
                 ));
-                
+
                 // Grant Init capability to this VFS response endpoint
                 // This enables Init to deliver VFS responses to the correct endpoint (slot 4)
                 self.grant_init_vfs_response_capability(name, process_pid);
             }
-            
+
             // If Identity service is running, grant this process a capability to Identity endpoint
             // This enables proper capability-mediated IPC for identity operations
             self.grant_identity_capability_to_process(process_pid, name);
         }
-        
+
         // When terminal is spawned, grant Init (PID 1) capability to terminal's input endpoint
         // and grant supervisor capability for console input routing
         if name == "terminal" {
             self.grant_terminal_capabilities(process_pid);
         }
-        
+
         // When vfs_service is spawned, grant its endpoint to processes that need VFS access
         // and grant Init (PID 1) capability to deliver IPC messages to VFS
         if name == "vfs_service" {
             self.grant_vfs_capabilities_to_existing_processes(process_pid);
             self.grant_init_capability_to_service("vfs_service", process_pid);
         }
-        
+
         // When identity_service is spawned, grant its endpoint to processes that need identity access
         // and grant Init (PID 1) capability to deliver IPC messages to Identity
         if name == "identity_service" {
+            // #region agent log - hypothesis B,E
+            log(&format!(
+                "AGENT_LOG:spawn_caps:identity_spawned:pid={}:will_grant",
+                process_pid.0
+            ));
+            // #endregion
+            
             self.grant_identity_capabilities_to_existing_processes(process_pid);
             self.grant_init_capability_to_service("identity_service", process_pid);
         }
-        
+
         // When time_service is spawned, grant Init (PID 1) capability to deliver IPC messages
         if name == "time_service" {
             self.grant_init_capability_to_service("time_service", process_pid);
         }
     }
-    
+
     /// Grant supervisor (PID 0) capability to Init's endpoint
     ///
     /// This enables the supervisor to send IPC messages to Init for operations
@@ -106,7 +113,7 @@ impl Supervisor {
         // Init's endpoint is at slot 0
         const INIT_ENDPOINT_SLOT: u32 = 0;
         let supervisor_pid = ProcessId(0);
-        
+
         // Get Init's endpoint ID from slot 0
         let endpoint_id = match self.system.get_cap_space(init_pid) {
             Some(cspace) => match cspace.get(INIT_ENDPOINT_SLOT) {
@@ -121,7 +128,7 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         // Grant supervisor capability to Init's endpoint
         match self.system.grant_capability_to_endpoint(
             init_pid,
@@ -148,13 +155,13 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant supervisor (PID 0) capability to PermissionManager's endpoint
     fn grant_supervisor_capability_to_pm(&mut self, pm_pid: ProcessId) {
         // PM's input endpoint is at slot 1
         const PM_INPUT_SLOT: u32 = 1;
         let supervisor_pid = ProcessId(0);
-        
+
         // Get PM's endpoint ID from slot 1
         let endpoint_id = match self.system.get_cap_space(pm_pid) {
             Some(cspace) => match cspace.get(PM_INPUT_SLOT) {
@@ -169,7 +176,7 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         // Grant supervisor capability to PM's endpoint
         match self.system.grant_capability_to_endpoint(
             pm_pid,
@@ -196,7 +203,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant capabilities for terminal process
     ///
     /// - Grant Init (PID 1) capability to terminal's input endpoint
@@ -206,7 +213,7 @@ impl Supervisor {
         const TERMINAL_INPUT_SLOT: u32 = 1;
         let init_pid = ProcessId(1);
         let supervisor_pid = ProcessId(0);
-        
+
         // Get terminal's input endpoint ID
         let endpoint_id = match self.system.get_cap_space(terminal_pid) {
             Some(cspace) => match cspace.get(TERMINAL_INPUT_SLOT) {
@@ -227,7 +234,7 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         // Grant Init capability to terminal's input endpoint
         match self.system.grant_capability_to_endpoint(
             terminal_pid,
@@ -252,7 +259,7 @@ impl Supervisor {
                 ));
             }
         }
-        
+
         // Grant supervisor capability to terminal's input endpoint
         match self.system.grant_capability_to_endpoint(
             terminal_pid,
@@ -279,7 +286,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant VFS endpoint capability to a specific process
     fn grant_vfs_capability_to_process(&mut self, target_pid: ProcessId, target_name: &str) {
         // Find VFS service process
@@ -287,7 +294,7 @@ impl Supervisor {
         if let Some(vfs_pid) = vfs_pid {
             // VFS service's input endpoint is at slot 1
             const VFS_INPUT_SLOT: u32 = 1;
-            
+
             match self.system.grant_capability(
                 vfs_pid,
                 VFS_INPUT_SLOT,
@@ -313,12 +320,12 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant VFS endpoint capabilities to existing processes that need VFS access
     fn grant_vfs_capabilities_to_existing_processes(&mut self, vfs_pid: ProcessId) {
         // VFS service's input endpoint is at slot 1
         const VFS_INPUT_SLOT: u32 = 1;
-        
+
         // Get list of processes that need VFS access
         let processes: Vec<(ProcessId, String)> = self
             .system
@@ -330,7 +337,7 @@ impl Supervisor {
             })
             .map(|(pid, proc)| (pid, proc.name.clone()))
             .collect();
-        
+
         for (pid, name) in processes {
             match self.system.grant_capability(
                 vfs_pid,
@@ -355,7 +362,7 @@ impl Supervisor {
                     ));
                 }
             }
-            
+
             // Also create a dedicated VFS response endpoint for this process (slot 4)
             // This prevents race conditions where VFS client's blocking receive
             // could consume other IPC messages on the general input endpoint.
@@ -364,14 +371,14 @@ impl Supervisor {
                     "[supervisor] Created VFS response endpoint {} at slot {} for {} (PID {})",
                     eid.0, slot, name, pid.0
                 ));
-                
+
                 // Grant Init capability to this VFS response endpoint
                 // This enables Init to deliver VFS responses to the correct endpoint (slot 4)
                 self.grant_init_vfs_response_capability(&name, pid);
             }
         }
     }
-    
+
     /// Find the VFS service process ID
     fn find_vfs_service_pid(&self) -> Option<ProcessId> {
         for (pid, proc) in self.system.list_processes() {
@@ -381,7 +388,7 @@ impl Supervisor {
         }
         None
     }
-    
+
     /// Grant Identity Service endpoint capability to a specific process
     ///
     /// This enables the process to send IPC requests to the Identity Service.
@@ -393,13 +400,13 @@ impl Supervisor {
         if let Some(identity_pid) = identity_pid {
             // Identity service's input endpoint is at slot 1
             const IDENTITY_INPUT_SLOT: u32 = 1;
-            
+
             match self.system.grant_capability(
                 identity_pid,
                 IDENTITY_INPUT_SLOT,
                 target_pid,
                 zos_kernel::Permissions {
-                    read: false,  // Only need write (send) permission
+                    read: false, // Only need write (send) permission
                     write: true,
                     grant: false,
                 },
@@ -419,7 +426,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant Identity Service endpoint capabilities to existing processes
     ///
     /// Called when identity_service spawns to grant its endpoint capability
@@ -427,7 +434,7 @@ impl Supervisor {
     fn grant_identity_capabilities_to_existing_processes(&mut self, identity_pid: ProcessId) {
         // Identity service's input endpoint is at slot 1
         const IDENTITY_INPUT_SLOT: u32 = 1;
-        
+
         // Get list of processes that need Identity access
         let processes: Vec<(ProcessId, String)> = self
             .system
@@ -436,21 +443,21 @@ impl Supervisor {
             .filter(|(pid, proc)| {
                 // Grant to all processes except init, supervisor, and identity_service itself
                 // Also exclude vfs_service since it doesn't need identity access
-                pid.0 > 1 
-                    && *pid != identity_pid 
+                pid.0 > 1
+                    && *pid != identity_pid
                     && proc.name != "identity_service"
                     && proc.name != "vfs_service"
             })
             .map(|(pid, proc)| (pid, proc.name.clone()))
             .collect();
-        
+
         for (pid, name) in processes {
             match self.system.grant_capability(
                 identity_pid,
                 IDENTITY_INPUT_SLOT,
                 pid,
                 zos_kernel::Permissions {
-                    read: false,  // Only need write (send) permission
+                    read: false, // Only need write (send) permission
                     write: true,
                     grant: false,
                 },
@@ -470,7 +477,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Find the Identity service process ID (internal helper)
     fn find_identity_service_pid_internal(&self) -> Option<ProcessId> {
         for (pid, proc) in self.system.list_processes() {
@@ -480,7 +487,7 @@ impl Supervisor {
         }
         None
     }
-    
+
     /// Grant Init (PID 1) a capability to a service's input endpoint.
     ///
     /// This enables Init to deliver IPC messages to the service via
@@ -493,7 +500,7 @@ impl Supervisor {
         // Service's input endpoint is at slot 1
         const SERVICE_INPUT_SLOT: u32 = 1;
         let init_pid = ProcessId(1);
-        
+
         // Get service's input endpoint ID from slot 1
         let endpoint_id = match self.system.get_cap_space(service_pid) {
             Some(cspace) => match cspace.get(SERVICE_INPUT_SLOT) {
@@ -511,7 +518,7 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         // Grant Init capability to service's endpoint
         match self.system.grant_capability_to_endpoint(
             service_pid,
@@ -528,7 +535,14 @@ impl Supervisor {
                     "[supervisor] Granted {} endpoint to Init at slot {}",
                     service_name, slot
                 ));
-                
+
+                // #region agent log - hypothesis B
+                log(&format!(
+                    "AGENT_LOG:grant_init_cap:granted:service={}:pid={}:slot={}:will_notify",
+                    service_name, service_pid.0, slot
+                ));
+                // #endregion
+
                 // Notify Init about the capability via IPC message
                 self.notify_init_service_cap(service_pid.0, slot);
             }
@@ -540,7 +554,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Notify Init about a granted service capability via IPC.
     ///
     /// Sends MSG_SERVICE_CAP_GRANTED to Init with [service_pid, cap_slot].
@@ -552,24 +566,41 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         use zos_ipc::init::MSG_SERVICE_CAP_GRANTED;
-        
+
         // Build message: [service_pid: u32, cap_slot: u32]
         let mut payload = Vec::with_capacity(8);
         payload.extend_from_slice(&(service_pid as u32).to_le_bytes());
         payload.extend_from_slice(&cap_slot.to_le_bytes());
-        
+
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_GRANTED, payload) {
+
+        match self
+            .system
+            .ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_GRANTED, payload)
+        {
             Ok(()) => {
+                // #region agent log - hypothesis B
+                log(&format!(
+                    "AGENT_LOG:notify_init:sent:service_pid={}:cap_slot={}:init_slot={}",
+                    service_pid, cap_slot, init_slot
+                ));
+                // #endregion
+                
                 log(&format!(
                     "[supervisor] Notified Init of service PID {} cap at slot {}",
                     service_pid, cap_slot
                 ));
             }
             Err(e) => {
+                // #region agent log - hypothesis B
+                log(&format!(
+                    "AGENT_LOG:notify_init:failed:service_pid={}:error={:?}",
+                    service_pid, e
+                ));
+                // #endregion
+                
                 log(&format!(
                     "[supervisor] Failed to notify Init of service cap: {:?}",
                     e
@@ -577,7 +608,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Grant Init (PID 1) a capability to a process's VFS response endpoint (slot 4).
     ///
     /// This enables Init to deliver VFS responses to the correct endpoint,
@@ -588,7 +619,7 @@ impl Supervisor {
         // VFS response endpoint is at slot 4
         const VFS_RESPONSE_SLOT: u32 = 4;
         let init_pid = ProcessId(1);
-        
+
         // Get process's VFS response endpoint ID from slot 4
         let endpoint_id = match self.system.get_cap_space(process_pid) {
             Some(cspace) => match cspace.get(VFS_RESPONSE_SLOT) {
@@ -602,11 +633,14 @@ impl Supervisor {
                 }
             },
             None => {
-                log(&format!("[supervisor] {} (PID {}) has no CSpace", process_name, process_pid.0));
+                log(&format!(
+                    "[supervisor] {} (PID {}) has no CSpace",
+                    process_name, process_pid.0
+                ));
                 return;
             }
         };
-        
+
         // Grant Init capability to process's VFS response endpoint
         match self.system.grant_capability_to_endpoint(
             process_pid,
@@ -623,7 +657,7 @@ impl Supervisor {
                     "[supervisor] Granted {} (PID {}) VFS response endpoint to Init at slot {}",
                     process_name, process_pid.0, slot
                 ));
-                
+
                 // Notify Init about the VFS response capability via IPC message
                 self.notify_init_vfs_response_cap(process_pid.0, slot);
             }
@@ -635,7 +669,7 @@ impl Supervisor {
             }
         }
     }
-    
+
     /// Notify Init about a granted VFS response endpoint capability via IPC.
     ///
     /// Sends MSG_VFS_RESPONSE_CAP_GRANTED to Init with [service_pid, cap_slot].
@@ -647,17 +681,22 @@ impl Supervisor {
                 return;
             }
         };
-        
+
         use zos_ipc::init::MSG_VFS_RESPONSE_CAP_GRANTED;
-        
+
         // Build message: [process_pid: u32, cap_slot: u32]
         let mut payload = Vec::with_capacity(8);
         payload.extend_from_slice(&(process_pid as u32).to_le_bytes());
         payload.extend_from_slice(&cap_slot.to_le_bytes());
-        
+
         let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_VFS_RESPONSE_CAP_GRANTED, payload) {
+
+        match self.system.ipc_send(
+            supervisor_pid,
+            init_slot,
+            MSG_VFS_RESPONSE_CAP_GRANTED,
+            payload,
+        ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Notified Init of PID {} VFS response cap at slot {}",

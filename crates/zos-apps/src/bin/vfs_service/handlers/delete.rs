@@ -6,9 +6,7 @@ use alloc::format;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, Message};
 use zos_process::storage_result;
-use zos_vfs::ipc::{
-    vfs_msg, RmdirRequest, RmdirResponse, UnlinkRequest, UnlinkResponse,
-};
+use zos_vfs::ipc::{vfs_msg, RmdirRequest, RmdirResponse, UnlinkRequest, UnlinkResponse};
 use zos_vfs::types::Inode;
 use zos_vfs::VfsError;
 
@@ -114,21 +112,13 @@ impl VfsService {
                 let response = RmdirResponse {
                     result: Err(VfsError::NotADirectory),
                 };
-                self.send_response_via_debug(
-                    client_pid,
-                    vfs_msg::MSG_VFS_RMDIR_RESPONSE,
-                    &response,
-                )
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
             }
             Err(e) => {
                 let response = RmdirResponse {
                     result: Err(VfsError::StorageError(e.to_string())),
                 };
-                self.send_response_via_debug(
-                    client_pid,
-                    vfs_msg::MSG_VFS_RMDIR_RESPONSE,
-                    &response,
-                )
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
             }
         }
     }

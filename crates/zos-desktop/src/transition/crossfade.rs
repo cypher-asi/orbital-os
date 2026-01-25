@@ -161,7 +161,11 @@ mod tests {
 
         // During blackout period (40-60%), opacity should be 0
         let (desktop, _) = crossfade.opacities((DESKTOP_SWITCH_DURATION_MS * 50 / 100) as f64);
-        assert!(desktop < 0.01, "Desktop opacity during blackout should be 0, was {}", desktop);
+        assert!(
+            desktop < 0.01,
+            "Desktop opacity during blackout should be 0, was {}",
+            desktop
+        );
     }
 
     #[test]

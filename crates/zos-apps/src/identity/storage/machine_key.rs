@@ -79,9 +79,7 @@ pub fn handle_write_machine_key_inode(
             record.machine_id
         ));
         StorageHandlerResult::Done(response::send_create_machine_key_success(
-            client_pid,
-            &cap_slots,
-            record,
+            client_pid, &cap_slots, record,
         ))
     } else {
         StorageHandlerResult::Done(response::send_create_machine_key_error(
@@ -167,9 +165,7 @@ pub fn handle_read_machine_key(
             records.len()
         ));
         return StorageHandlerResult::Done(response::send_list_machine_keys(
-            client_pid,
-            &cap_slots,
-            records,
+            client_pid, &cap_slots, records,
         ));
     }
 
@@ -199,7 +195,10 @@ pub fn handle_delete_machine_key(
         let machine_path = MachineKeyRecord::storage_path(user_id, machine_id);
         StorageHandlerResult::ContinueDelete {
             key: format!("inode:{}", machine_path),
-            next_op: PendingStorageOp::DeleteMachineKeyInode { client_pid, cap_slots },
+            next_op: PendingStorageOp::DeleteMachineKeyInode {
+                client_pid,
+                cap_slots,
+            },
         }
     } else {
         StorageHandlerResult::Done(response::send_revoke_machine_key_error(
@@ -258,9 +257,7 @@ pub fn handle_read_single_machine_key(
         }
     } else {
         StorageHandlerResult::Done(response::send_get_machine_key_success(
-            client_pid,
-            &cap_slots,
-            None,
+            client_pid, &cap_slots, None,
         ))
     }
 }
@@ -329,9 +326,7 @@ pub fn handle_write_rotated_inode(
             record.machine_id, record.epoch
         ));
         StorageHandlerResult::Done(response::send_rotate_machine_key_success(
-            client_pid,
-            &cap_slots,
-            record,
+            client_pid, &cap_slots, record,
         ))
     } else {
         StorageHandlerResult::Done(response::send_rotate_machine_key_error(

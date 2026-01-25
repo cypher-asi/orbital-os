@@ -85,17 +85,17 @@ pub fn handle_read_machine_for_zid_login(
             cap_slots,
         })
     } else if result_type == storage_result::NOT_FOUND {
-        Err(Box::new(StorageHandlerResult::Done(response::send_zid_login_error(
-            client_pid,
-            &cap_slots,
-            ZidError::MachineKeyNotFound,
-        ))))
+        Err(Box::new(StorageHandlerResult::Done(
+            response::send_zid_login_error(client_pid, &cap_slots, ZidError::MachineKeyNotFound),
+        )))
     } else {
-        Err(Box::new(StorageHandlerResult::Done(response::send_zid_login_error(
-            client_pid,
-            &cap_slots,
-            ZidError::NetworkError("Storage read failed".into()),
-        ))))
+        Err(Box::new(StorageHandlerResult::Done(
+            response::send_zid_login_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError("Storage read failed".into()),
+            ),
+        )))
     }
 }
 
@@ -148,17 +148,17 @@ pub fn handle_read_machine_for_zid_enroll(
             cap_slots,
         })
     } else if result_type == storage_result::NOT_FOUND {
-        Err(Box::new(StorageHandlerResult::Done(response::send_zid_enroll_error(
-            client_pid,
-            &cap_slots,
-            ZidError::MachineKeyNotFound,
-        ))))
+        Err(Box::new(StorageHandlerResult::Done(
+            response::send_zid_enroll_error(client_pid, &cap_slots, ZidError::MachineKeyNotFound),
+        )))
     } else {
-        Err(Box::new(StorageHandlerResult::Done(response::send_zid_enroll_error(
-            client_pid,
-            &cap_slots,
-            ZidError::NetworkError("Storage read failed".into()),
-        ))))
+        Err(Box::new(StorageHandlerResult::Done(
+            response::send_zid_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError("Storage read failed".into()),
+            ),
+        )))
     }
 }
 

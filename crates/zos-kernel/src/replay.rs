@@ -7,8 +7,10 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 
 use crate::ipc::Endpoint;
-use crate::types::{EndpointId, EndpointMetrics, ObjectType, Process, ProcessId, ProcessMetrics, ProcessState};
 use crate::system::System;
+use crate::types::{
+    EndpointId, EndpointMetrics, ObjectType, Process, ProcessId, ProcessMetrics, ProcessState,
+};
 use crate::{Capability, CapabilitySpace, Permissions};
 use zos_axiom::{ReplayError, ReplayResult, Replayable, StateHasher};
 use zos_hal::HAL;
@@ -26,7 +28,9 @@ impl<H: HAL> Replayable for System<H> {
             metrics: ProcessMetrics::default(),
         };
         self.kernel.processes.insert(ProcessId(pid), process);
-        self.kernel.cap_spaces.insert(ProcessId(pid), CapabilitySpace::new());
+        self.kernel
+            .cap_spaces
+            .insert(ProcessId(pid), CapabilitySpace::new());
 
         // Update next_pid to avoid collisions
         if pid >= self.kernel.next_pid {

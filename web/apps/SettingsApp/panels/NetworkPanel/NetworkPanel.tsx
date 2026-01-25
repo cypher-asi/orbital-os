@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { GroupCollapsible, Input, Button, Label } from '@cypher-asi/zui';
-import { Network, Check, RotateCcw } from 'lucide-react';
+import { GroupCollapsible, Input, Button, Label, Text } from '@cypher-asi/zui';
+import { Check, RotateCcw } from 'lucide-react';
 import { DEFAULT_RPC_ENDPOINT } from '../../../../stores';
 import styles from './NetworkPanel.module.css';
 
@@ -48,37 +48,38 @@ export function NetworkPanel({ rpcEndpoint, onRpcEndpointChange }: NetworkPanelP
   return (
     <div className={styles.panelContainer}>
       <GroupCollapsible title="Zero-ID RPC" defaultOpen className={styles.collapsibleSection}>
-        <div className={styles.networkSection}>
-          <div className={styles.networkField}>
-            <div className={styles.networkFieldHeader}>
-              <Network size={14} />
-              <span className={styles.networkFieldLabel}>Endpoint</span>
-              {rpcEndpoint !== DEFAULT_RPC_ENDPOINT && (
-                <Label size="xs" variant="warning">
-                  Modified
-                </Label>
-              )}
-            </div>
-            <div className={styles.networkFieldInput}>
-              <Input
-                value={editValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={DEFAULT_RPC_ENDPOINT}
-              />
-              <div className={styles.networkFieldActions}>
-                {isDirty && (
-                  <Button variant="primary" size="sm" onClick={handleSave}>
-                    <Check size={14} />
-                  </Button>
-                )}
-                <Button variant="ghost" size="sm" onClick={handleReset} title="Reset to default">
-                  <RotateCcw size={14} />
-                </Button>
-              </div>
-            </div>
-            <span className={styles.networkFieldHint}>Default: {DEFAULT_RPC_ENDPOINT}</span>
+        <div className={styles.fieldContent}>
+          <Text size="xs" variant="muted" className={styles.fieldLabel}>
+            Endpoint
+          </Text>
+
+          <div className={styles.inputRow}>
+            <Input
+              value={editValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={DEFAULT_RPC_ENDPOINT}
+              className={styles.endpointInput}
+            />
+            {isDirty && (
+              <Button variant="primary" size="sm" onClick={handleSave}>
+                <Check size={14} />
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleReset} title="Reset to default">
+              <RotateCcw size={14} />
+            </Button>
           </div>
+
+          {rpcEndpoint !== DEFAULT_RPC_ENDPOINT && (
+            <Label size="xs" variant="warning">
+              Modified
+            </Label>
+          )}
+
+          <Text size="xs" variant="muted">
+            Default: {DEFAULT_RPC_ENDPOINT}
+          </Text>
         </div>
       </GroupCollapsible>
     </div>

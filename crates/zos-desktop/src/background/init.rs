@@ -71,11 +71,7 @@ pub fn create_uniform_resources(
     device: &wgpu::Device,
     width: u32,
     height: u32,
-) -> (
-    wgpu::Buffer,
-    wgpu::BindGroupLayout,
-    wgpu::BindGroup,
-) {
+) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
     let uniforms = Uniforms::default_with_resolution(width, height);
     let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Background Uniform Buffer"),
@@ -194,7 +190,7 @@ pub fn create_smoke_texture(
 ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
     let scene_width = (width / 4).clamp(1, 480);
     let scene_height = (height / 4).clamp(1, 270);
-    
+
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Smoke Texture"),
         size: wgpu::Extent3d {
@@ -209,9 +205,9 @@ pub fn create_smoke_texture(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    
+
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    
+
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Smoke Sampler"),
         address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -247,9 +243,9 @@ pub fn create_glass_texture(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    
+
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    
+
     (texture, view)
 }
 
@@ -280,9 +276,7 @@ pub fn create_glass_static_pipeline(
 }
 
 /// Create composite bind group layout
-pub fn create_composite_bind_group_layout(
-    device: &wgpu::Device,
-) -> wgpu::BindGroupLayout {
+pub fn create_composite_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Composite Bind Group Layout"),
         entries: &[
@@ -373,7 +367,7 @@ pub fn create_composite_pipeline(
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     use super::shaders::SHADER_MIST_COMPOSITE;
-    
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Composite Pipeline Layout"),
         bind_group_layouts: &[uniform_layout, composite_layout],

@@ -61,11 +61,7 @@ export { type CalculatorState, decodeCalculatorState } from './calculator';
 export { type SettingsState, decodeSettingsState } from './settings';
 
 // Input events
-export {
-  type InputEvent,
-  buttonPress,
-  encodeInputEvent,
-} from './input';
+export { type InputEvent, buttonPress, encodeInputEvent } from './input';
 
 // Permissions
 export {

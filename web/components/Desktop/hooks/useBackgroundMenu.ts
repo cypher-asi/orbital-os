@@ -5,9 +5,16 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import type { BackgroundMenuState, BackgroundInfo, WorkspaceInfo, DesktopBackgroundType } from '../types';
+import type { DesktopController } from '../../../desktop/hooks/useSupervisor';
+import type {
+  BackgroundMenuState,
+  BackgroundInfo,
+  WorkspaceInfo,
+  DesktopBackgroundType,
+} from '../types';
 
 interface UseBackgroundMenuProps {
+  desktop: DesktopController;
   backgroundRef: React.MutableRefObject<DesktopBackgroundType | null>;
   workspaceInfoRef: React.MutableRefObject<WorkspaceInfo | null>;
 }
@@ -25,6 +32,7 @@ interface UseBackgroundMenuResult {
 }
 
 export function useBackgroundMenu({
+  desktop,
   backgroundRef,
   workspaceInfoRef,
 }: UseBackgroundMenuProps): UseBackgroundMenuResult {
@@ -43,14 +51,21 @@ export function useBackgroundMenu({
     return 'grain';
   }, [workspaceInfoRef]);
 
-  // Set background via the background renderer
+  // Set background for the current desktop
+  // This updates the desktop state, and the render loop will sync the renderer
   const setBackground = useCallback(
     (id: string): void => {
-      if (backgroundRef.current?.is_initialized()) {
-        backgroundRef.current.set_background(id);
+      const workspaceInfo = workspaceInfoRef.current;
+      if (!workspaceInfo) {
+        console.warn('[useBackgroundMenu] No workspace info available');
+        return;
       }
+
+      const activeDesktop = workspaceInfo.actualActive;
+      // Update the desktop state (this will persist and the render loop will sync the renderer)
+      desktop.set_desktop_background(activeDesktop, id);
     },
-    [backgroundRef]
+    [desktop, workspaceInfoRef]
   );
 
   const closeBackgroundMenu = useCallback((): void => {
@@ -73,7 +88,7 @@ export function useBackgroundMenu({
         const available = JSON.parse(availableJson) as BackgroundInfo[];
         setBackgrounds(available);
       } catch (e) {
-        console.error('[desktop] Failed to initialize backgrounds:', e);
+        console.error('[useBackgroundMenu] Failed to initialize backgrounds:', e);
       }
     }
   }, [backgroundRef]);

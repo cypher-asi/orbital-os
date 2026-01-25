@@ -15,50 +15,25 @@
   border-bottom: none;
 }
 
-/* Network section container */
-.networkSection {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.networkField {
+/* Field content container */
+.fieldContent {
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.networkFieldHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
-}
-
-.networkFieldLabel {
-  font-size: 12px;
+.fieldLabel {
   font-weight: 500;
-  color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
 }
 
-.networkFieldInput {
+.inputRow {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
-.networkFieldInput input {
+.endpointInput {
   flex: 1;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-}
-
-.networkFieldActions {
-  display: flex;
-  gap: 4px;
-}
-
-.networkFieldHint {
-  font-size: 11px;
-  color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
 }

@@ -125,7 +125,7 @@ impl NetworkService {
     fn handle_net_request(&mut self, _ctx: &AppContext, msg: &Message) -> Result<(), AppError> {
         // Parse the request
         let request_json = &msg.data;
-        
+
         syscall::debug(&format!(
             "NetworkService: Received request from PID {}, len={}",
             msg.from_pid,
@@ -162,7 +162,11 @@ impl NetworkService {
                     e
                 ));
                 // Send error response immediately
-                self.send_error_response(msg.from_pid, client_request_id, "Failed to start network operation")
+                self.send_error_response(
+                    msg.from_pid,
+                    client_request_id,
+                    "Failed to start network operation",
+                )
             }
         }
     }
@@ -219,7 +223,12 @@ impl NetworkService {
     }
 
     /// Send successful response to client
-    fn send_response(&self, to_pid: u32, request_id: u32, response_data: &[u8]) -> Result<(), AppError> {
+    fn send_response(
+        &self,
+        to_pid: u32,
+        request_id: u32,
+        response_data: &[u8],
+    ) -> Result<(), AppError> {
         // Build response message
         // Format: [request_id: u32, response_data: [u8]]
         let mut data = Vec::with_capacity(4 + response_data.len());
@@ -228,13 +237,23 @@ impl NetworkService {
 
         // Send via debug message for supervisor to route via IPC
         let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
-        syscall::debug(&format!("NET:RESPONSE:{}:{:08x}:{}", to_pid, net::MSG_NET_RESPONSE, hex));
-        
+        syscall::debug(&format!(
+            "NET:RESPONSE:{}:{:08x}:{}",
+            to_pid,
+            net::MSG_NET_RESPONSE,
+            hex
+        ));
+
         Ok(())
     }
 
     /// Send error response to client
-    fn send_error_response(&self, to_pid: u32, request_id: u32, error_msg: &str) -> Result<(), AppError> {
+    fn send_error_response(
+        &self,
+        to_pid: u32,
+        request_id: u32,
+        error_msg: &str,
+    ) -> Result<(), AppError> {
         // Build error response JSON
         let error_json = format!(
             r#"{{"result":{{"Err":{{"Other":"{}"}}}}}}"#,
@@ -249,8 +268,13 @@ impl NetworkService {
 
         // Send via debug message for supervisor to route via IPC
         let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
-        syscall::debug(&format!("NET:RESPONSE:{}:{:08x}:{}", to_pid, net::MSG_NET_RESPONSE, hex));
-        
+        syscall::debug(&format!(
+            "NET:RESPONSE:{}:{:08x}:{}",
+            to_pid,
+            net::MSG_NET_RESPONSE,
+            hex
+        ));
+
         Ok(())
     }
 }
@@ -273,7 +297,11 @@ impl ZeroApp for NetworkService {
         data.extend_from_slice(&0u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes());
 
-        let _ = syscall::send(syscall::INIT_ENDPOINT_SLOT, syscall::MSG_REGISTER_SERVICE, &data);
+        let _ = syscall::send(
+            syscall::INIT_ENDPOINT_SLOT,
+            syscall::MSG_REGISTER_SERVICE,
+            &data,
+        );
         self.registered = true;
 
         syscall::debug("NetworkService: Registered with init");

@@ -1,7 +1,7 @@
 //! Camera animation for smooth viewport transitions
 
-use crate::math::Camera;
 use super::{ease_out_cubic, CAMERA_ANIMATION_DURATION_MS};
+use crate::math::Camera;
 
 /// Camera animation state
 #[derive(Clone, Debug)]

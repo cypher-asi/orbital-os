@@ -85,15 +85,24 @@ mod tests {
 
     #[test]
     fn test_background_type_from_id() {
-        assert_eq!(BackgroundType::from_id("grain"), Some(BackgroundType::Grain));
+        assert_eq!(
+            BackgroundType::from_id("grain"),
+            Some(BackgroundType::Grain)
+        );
         assert_eq!(BackgroundType::from_id("mist"), Some(BackgroundType::Mist));
         assert_eq!(BackgroundType::from_id("invalid"), None);
     }
 
     #[test]
     fn test_background_type_from_id_case_insensitive() {
-        assert_eq!(BackgroundType::from_id("GRAIN"), Some(BackgroundType::Grain));
-        assert_eq!(BackgroundType::from_id("Grain"), Some(BackgroundType::Grain));
+        assert_eq!(
+            BackgroundType::from_id("GRAIN"),
+            Some(BackgroundType::Grain)
+        );
+        assert_eq!(
+            BackgroundType::from_id("Grain"),
+            Some(BackgroundType::Grain)
+        );
         assert_eq!(BackgroundType::from_id("MIST"), Some(BackgroundType::Mist));
         assert_eq!(BackgroundType::from_id("Mist"), Some(BackgroundType::Mist));
     }
@@ -111,7 +120,11 @@ mod tests {
     fn test_background_type_shader_source_not_empty() {
         for bg in BackgroundType::all() {
             let source = bg.shader_source();
-            assert!(!source.is_empty(), "Shader source for {:?} should not be empty", bg);
+            assert!(
+                !source.is_empty(),
+                "Shader source for {:?} should not be empty",
+                bg
+            );
         }
     }
 
@@ -142,7 +155,7 @@ mod tests {
     #[test]
     fn test_background_type_clone() {
         let bg = BackgroundType::Grain;
-        let cloned = bg.clone();
+        let cloned = bg;
         assert_eq!(bg, cloned);
     }
 
@@ -165,13 +178,12 @@ mod tests {
     #[test]
     fn test_background_type_hash() {
         use std::collections::HashSet;
-        
+
         let mut set = HashSet::new();
         set.insert(BackgroundType::Grain);
         set.insert(BackgroundType::Mist);
         set.insert(BackgroundType::Grain); // Duplicate
-        
+
         assert_eq!(set.len(), 2);
     }
 }
-

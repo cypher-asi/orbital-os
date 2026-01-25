@@ -1,7 +1,7 @@
 //! Axis-aligned rectangle type
 
-use serde::{Deserialize, Serialize};
 use super::{Size, Vec2};
+use serde::{Deserialize, Serialize};
 
 /// Axis-aligned rectangle
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -24,7 +24,12 @@ impl Rect {
     /// Create a new rectangle
     #[inline]
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// Create from position and size
@@ -128,7 +133,12 @@ impl Rect {
     /// Translate rectangle by offset
     #[inline]
     pub fn translate(&self, offset: Vec2) -> Rect {
-        Rect::new(self.x + offset.x, self.y + offset.y, self.width, self.height)
+        Rect::new(
+            self.x + offset.x,
+            self.y + offset.y,
+            self.width,
+            self.height,
+        )
     }
 }
 

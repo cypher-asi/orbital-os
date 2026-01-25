@@ -64,8 +64,8 @@ impl ClockApp {
         let state = ClockState::new(
             self.cached_time.clone(),
             self.cached_date.clone(),
-            true,                        // is_24_hour
-            String::from("UTC"),         // timezone
+            true,                // is_24_hour
+            String::from("UTC"), // timezone
         );
 
         let bytes = state.to_bytes();

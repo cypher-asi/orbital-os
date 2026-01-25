@@ -6,7 +6,15 @@ import { useWindowStore, selectWindows, useDesktopStore, selectDesktops } from '
 import { BeginMenu } from './BeginMenu/BeginMenu';
 import { IdentityPanel } from './IdentityPanel';
 import { DateTime } from './DateTime';
-import { TerminalSquare, AppWindow, Circle, Plus, KeyRound, CreditCard } from 'lucide-react';
+import {
+  TerminalSquare,
+  AppWindow,
+  Circle,
+  Plus,
+  KeyRound,
+  CreditCard,
+  Settings,
+} from 'lucide-react';
 import styles from './Taskbar.module.css';
 
 // Get the appropriate icon for a window based on its title
@@ -18,6 +26,9 @@ function getWindowIcon(title: string) {
     lowerTitle.includes('bash')
   ) {
     return <TerminalSquare size={16} />;
+  }
+  if (lowerTitle.includes('settings')) {
+    return <Settings size={16} />;
   }
   // Default icon for other apps
   return <AppWindow size={16} />;

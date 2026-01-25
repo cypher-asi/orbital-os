@@ -406,7 +406,7 @@ pub struct GetIdentityKeyResponse {
 /// Create machine key request.
 ///
 /// Creates a new machine key record. Requires identity key to be registered first.
-/// The service will generate machine keys using entropy - no public keys needed in request.
+/// Machine keys are derived from the user's Neural Key using 3 Shamir shards.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateMachineKeyRequest {
     /// User ID
@@ -419,6 +419,8 @@ pub struct CreateMachineKeyRequest {
     /// Key scheme to use (defaults to Classical)
     #[serde(default)]
     pub key_scheme: KeyScheme,
+    /// Neural shards for key derivation (at least 3 required)
+    pub shards: Vec<NeuralShard>,
 }
 
 /// Create machine key response.
@@ -561,6 +563,69 @@ pub struct ZidSession {
     pub created_at: u64,
 }
 
+impl ZidSession {
+    /// Path where ZID session is stored.
+    pub fn storage_path(user_id: UserId) -> String {
+        alloc::format!("/home/{}/.zos/identity/zid_session.json", user_id)
+    }
+}
+
+// ============================================================================
+// Identity Preferences (0x7090-0x7099)
+// ============================================================================
+
+/// Identity preferences stored in VFS.
+///
+/// Path: `/home/{user_id}/.zos/identity/preferences.json`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IdentityPreferences {
+    /// Default key scheme for new machine keys
+    #[serde(default)]
+    pub default_key_scheme: KeyScheme,
+}
+
+impl Default for IdentityPreferences {
+    fn default() -> Self {
+        Self {
+            default_key_scheme: KeyScheme::Classical,
+        }
+    }
+}
+
+impl IdentityPreferences {
+    /// VFS path where preferences are stored
+    pub fn storage_path(user_id: UserId) -> String {
+        alloc::format!("/home/{}/.zos/identity/preferences.json", user_id)
+    }
+}
+
+/// Get identity preferences request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetIdentityPreferencesRequest {
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+}
+
+/// Get identity preferences response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetIdentityPreferencesResponse {
+    pub preferences: IdentityPreferences,
+}
+
+/// Set default key scheme request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultKeySchemeRequest {
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    pub key_scheme: KeyScheme,
+}
+
+/// Set default key scheme response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultKeySchemeResponse {
+    pub result: Result<(), KeyError>,
+}
+
 /// ZID token refresh request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZidRefreshRequest {
@@ -601,6 +666,53 @@ pub struct ZidEnrollMachineResponse {
     pub result: Result<ZidTokens, ZidError>,
 }
 
+// ============================================================================
+// ZID Server Enrollment Types (sent to ZID server)
+// ============================================================================
+
+/// Machine key structure for ZID server enrollment (simplified).
+///
+/// This is the format the ZID server expects when creating a new identity.
+/// Only includes essential fields required for first-time registration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidMachineKey {
+    /// Unique machine identifier (UUID format)
+    pub machine_id: String,
+    /// Ed25519 signing public key (hex encoded)
+    pub signing_public_key: String,
+    /// X25519 encryption public key (hex encoded)
+    pub encryption_public_key: String,
+    /// Capabilities of this machine key (e.g., ["SIGN", "ENCRYPT", "VAULT_OPERATIONS"])
+    pub capabilities: Vec<String>,
+    /// Human-readable device name (e.g., "Browser")
+    pub device_name: String,
+    /// Device platform (e.g., "web", "wasm32", "linux")
+    pub device_platform: String,
+}
+
+/// Create identity request for ZID server enrollment.
+///
+/// This is the complete payload structure expected by the ZID server
+/// when creating a new identity with its first machine.
+///
+/// The authorization_signature should be a signature over:
+/// "create" + identity_id.bytes + machine_key.signing_public_key.bytes + created_at.bytes
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateIdentityRequest {
+    /// New identity ID (UUID format, hyphenated)
+    pub identity_id: String,
+    /// Identity-level Ed25519 signing public key (hex encoded)
+    pub identity_signing_public_key: String,
+    /// Authorization signature proving ownership (hex encoded, signs "create" message)
+    pub authorization_signature: String,
+    /// First machine key for this identity
+    pub machine_key: ZidMachineKey,
+    /// Namespace name (e.g., "personal")
+    pub namespace_name: String,
+    /// Timestamp when identity was created (Unix seconds, not milliseconds)
+    pub created_at: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,6 +725,39 @@ mod tests {
 
         // This would need serde_json for full test, just check it compiles
         let _ = req.display_name.len();
+    }
+
+    #[test]
+    fn test_create_identity_serialization() {
+        use alloc::string::ToString;
+        
+        let request = CreateIdentityRequest {
+            identity_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            identity_signing_public_key: "a1b2c3d4".to_string(),
+            authorization_signature: "d3a4b5c6".to_string(),
+            machine_key: ZidMachineKey {
+                machine_id: "660e8400-e29b-41d4-a716-446655440001".to_string(),
+                signing_public_key: "f0e1d2c3".to_string(),
+                encryption_public_key: "01234567".to_string(),
+                capabilities: alloc::vec!["SIGN".to_string()],
+                device_name: "Browser".to_string(),
+                device_platform: "web".to_string(),
+            },
+            namespace_name: "personal".to_string(),
+            created_at: 1737504000,
+        };
+
+        // Verify all fields are present
+        assert_eq!(request.identity_id, "550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(request.namespace_name, "personal");
+        assert_eq!(request.created_at, 1737504000);
+        
+        // Test JSON serialization
+        let json = serde_json::to_string(&request).unwrap();
+        
+        // Verify identity_id is present in the JSON
+        assert!(json.contains("\"identity_id\""));
+        assert!(json.contains("550e8400-e29b-41d4-a716-446655440000"));
     }
 
     #[test]
@@ -636,9 +781,15 @@ mod tests {
             machine_name: Some(String::from("My Laptop")),
             capabilities: MachineKeyCapabilities::default(),
             key_scheme: crate::keystore::KeyScheme::default(),
+            shards: alloc::vec![
+                NeuralShard { index: 1, hex: "abc123".to_string() },
+                NeuralShard { index: 2, hex: "def456".to_string() },
+                NeuralShard { index: 3, hex: "789012".to_string() },
+            ],
         };
         assert_eq!(create_req.user_id, 3);
         assert!(create_req.machine_name.is_some());
+        assert_eq!(create_req.shards.len(), 3);
 
         // Test ListMachineKeysRequest
         let list_req = ListMachineKeysRequest { user_id: 4 };

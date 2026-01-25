@@ -129,7 +129,11 @@ mod tests {
             start_center: Vec2::new(-100.0, 200.0),
         };
 
-        if let DragState::PanCanvas { start, start_center } = state {
+        if let DragState::PanCanvas {
+            start,
+            start_center,
+        } = state
+        {
             assert!((start.x - 500.0).abs() < 0.001);
             assert!((start.y - 400.0).abs() < 0.001);
             assert!((start_center.x - (-100.0)).abs() < 0.001);
@@ -149,7 +153,14 @@ mod tests {
             start_mouse: Vec2::new(60.0, 85.0),
         };
 
-        if let DragState::ResizeWindow { window_id, handle, start_pos, start_size, start_mouse } = state {
+        if let DragState::ResizeWindow {
+            window_id,
+            handle,
+            start_pos,
+            start_size,
+            start_mouse,
+        } = state
+        {
             assert_eq!(window_id, 99);
             assert_eq!(handle, WindowRegion::ResizeNW);
             assert!((start_pos.x - 50.0).abs() < 0.001);

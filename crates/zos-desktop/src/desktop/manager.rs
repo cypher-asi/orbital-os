@@ -1,8 +1,8 @@
 //! Desktop manager for multiple desktops
 
+use super::{Desktop, DesktopId, PersistedDesktop};
 use crate::math::{Camera, Rect, Size, Vec2};
 use crate::window::WindowId;
-use super::{Desktop, DesktopId, PersistedDesktop};
 
 /// Desktop manager for managing multiple desktops
 pub struct DesktopManager {
@@ -45,7 +45,12 @@ impl DesktopManager {
         let x = index as f32 * (self.desktop_size.width + self.desktop_gap);
         let half_w = self.desktop_size.width / 2.0;
         let half_h = self.desktop_size.height / 2.0;
-        let bounds = Rect::new(x - half_w, -half_h, self.desktop_size.width, self.desktop_size.height);
+        let bounds = Rect::new(
+            x - half_w,
+            -half_h,
+            self.desktop_size.width,
+            self.desktop_size.height,
+        );
 
         let desktop = Desktop::new(id, name.to_string(), bounds);
         self.desktops.push(desktop);

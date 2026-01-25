@@ -217,8 +217,7 @@ export function useLinkedAccounts(): UseLinkedAccountsReturn {
           error: null,
         }));
       } catch (err) {
-        const errorMsg =
-          err instanceof Error ? err.message : 'Failed to attach email';
+        const errorMsg = err instanceof Error ? err.message : 'Failed to attach email';
         console.error('[useLinkedAccounts] attachEmail error:', errorMsg);
         setState((prev) => ({
           ...prev,

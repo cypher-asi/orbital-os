@@ -1,8 +1,8 @@
 //! Window rendering and screen coordinate calculations
 
+use super::DesktopEngine;
 use crate::math::Rect;
 use crate::window::{WindowId, WindowState, WindowType};
-use super::DesktopEngine;
 
 /// Window with screen-space coordinates for rendering
 #[derive(Clone, Debug)]

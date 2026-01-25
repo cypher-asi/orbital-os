@@ -175,7 +175,10 @@ impl<H: HAL> KernelCore<H> {
                 prev_commit: [0u8; 32],
                 seq: 0,
                 timestamp,
-                commit_type: CommitType::ProcessExited { pid: pid.0, code: -1 },
+                commit_type: CommitType::ProcessExited {
+                    pid: pid.0,
+                    code: -1,
+                },
                 caused_by: None,
             });
         }
@@ -215,7 +218,9 @@ impl<H: HAL> KernelCore<H> {
         if self.processes.contains_key(&pid) {
             self.hal.debug_write(&alloc::format!(
                 "[kernel] Process {} faulted: {} (reason {})",
-                pid.0, description, reason
+                pid.0,
+                description,
+                reason
             ));
 
             commits.push(Commit {
@@ -285,7 +290,7 @@ impl<H: HAL> KernelCore<H> {
 
     /// Check if caller has permission to kill target process
     fn has_kill_permission(&self, caller: ProcessId, target: ProcessId) -> bool {
-        self.cap_spaces.get(&caller).map_or(false, |cspace| {
+        self.cap_spaces.get(&caller).is_some_and(|cspace| {
             cspace.slots.values().any(|cap| {
                 cap.object_type == ObjectType::Process
                     && cap.object_id == target.0

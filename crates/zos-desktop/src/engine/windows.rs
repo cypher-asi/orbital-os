@@ -1,9 +1,9 @@
 //! Window lifecycle and operations
 
+use super::DesktopEngine;
 use crate::desktop::DesktopId;
 use crate::math::{Camera, Rect, Size, Vec2};
 use crate::window::{WindowConfig, WindowId, WindowType};
-use super::DesktopEngine;
 
 impl DesktopEngine {
     /// Create a window
@@ -11,11 +11,11 @@ impl DesktopEngine {
         if config.position.is_none() {
             config.position = Some(self.calculate_cascade_position(&config));
         }
-        
+
         let id = self.windows.create(config);
         let active = self.desktops.active_index();
         self.desktops.add_window_to_desktop(active, id);
-        
+
         id
     }
 
@@ -23,30 +23,26 @@ impl DesktopEngine {
     fn calculate_cascade_position(&self, config: &WindowConfig) -> Vec2 {
         let cascade_offset = 50.0;
         let max_cascade = 5.0;
-        
+
         // Get the most recently CREATED window to cascade from (highest window ID)
-        let last_window_pos = self.windows.all_windows()
+        let last_window_pos = self
+            .windows
+            .all_windows()
             .max_by_key(|w| w.id)
             .map(|w| w.position);
-        
+
         if let Some(last_pos) = last_window_pos {
             // Cascade from the last window's position
             let _window_count = self.windows.count() as f32;
             let _cascade_index = (_window_count % max_cascade).max(1.0);
-            
-            Vec2::new(
-                last_pos.x + cascade_offset,
-                last_pos.y + cascade_offset,
-            )
+
+            Vec2::new(last_pos.x + cascade_offset, last_pos.y + cascade_offset)
         } else {
             // First window - center on desktop canvas origin (0, 0)
             let desktop_center = Vec2::ZERO;
             let half_w = config.size.width / 2.0;
             let half_h = config.size.height / 2.0;
-            Vec2::new(
-                desktop_center.x - half_w,
-                desktop_center.y - half_h,
-            )
+            Vec2::new(desktop_center.x - half_w, desktop_center.y - half_h)
         }
     }
 
@@ -54,7 +50,7 @@ impl DesktopEngine {
     pub fn close_window(&mut self, id: WindowId) {
         // Cancel any camera animation when closing a window to prevent unwanted panning
         self.camera_animation = None;
-        
+
         self.desktops.remove_window(id);
         self.windows.close(id);
         // Clean up saved camera position for this window
@@ -67,7 +63,7 @@ impl DesktopEngine {
     }
 
     /// Set the process ID for a window
-    /// 
+    ///
     /// This links a window to its associated process, enabling:
     /// - Process termination when window is closed
     /// - Per-process console callbacks routing
@@ -75,7 +71,7 @@ impl DesktopEngine {
     pub fn set_window_process_id(&mut self, id: WindowId, process_id: u64) {
         if let Some(window) = self.windows.get_mut(id) {
             window.process_id = Some(process_id);
-            
+
             // Update title to show PID for terminal windows
             if window.app_id == "terminal" {
                 window.title = format!("Terminal p{}", process_id);
@@ -88,10 +84,13 @@ impl DesktopEngine {
         // Save current camera position for the previously focused window
         if let Some(prev_id) = self.windows.focused() {
             if prev_id != id {
-                self.window_cameras.insert(prev_id, Camera::at(self.viewport.center, self.viewport.zoom));
+                self.window_cameras.insert(
+                    prev_id,
+                    Camera::at(self.viewport.center, self.viewport.zoom),
+                );
             }
         }
-        
+
         self.windows.focus(id);
     }
 
@@ -113,10 +112,10 @@ impl DesktopEngine {
     /// Maximize a window
     pub fn maximize_window(&mut self, id: WindowId) {
         let taskbar_height = 48.0;
-        
+
         // Get the visible canvas area considering current camera position and zoom
         let visible = self.viewport.visible_rect();
-        
+
         // Adjust for taskbar at bottom of screen (taskbar height is in screen pixels, so scale by zoom)
         let maximize_bounds = Rect::new(
             visible.x,
@@ -139,7 +138,8 @@ impl DesktopEngine {
 
     /// Set background for a desktop by index
     pub fn set_desktop_background(&mut self, desktop_index: usize, background: &str) {
-        self.desktops.set_desktop_background(desktop_index, background);
+        self.desktops
+            .set_desktop_background(desktop_index, background);
     }
 
     /// Switch to desktop by index
@@ -153,11 +153,16 @@ impl DesktopEngine {
             return;
         }
 
-        self.desktops.save_desktop_camera(current_index, self.viewport.center, self.viewport.zoom);
+        self.desktops
+            .save_desktop_camera(current_index, self.viewport.center, self.viewport.zoom);
 
         if self.desktops.switch_to(index) {
             self.focus_top_window_on_desktop(index);
-            self.crossfade = Some(crate::transition::Crossfade::switch_desktop(now_ms, current_index, index));
+            self.crossfade = Some(crate::transition::Crossfade::switch_desktop(
+                now_ms,
+                current_index,
+                index,
+            ));
         }
     }
 
@@ -167,12 +172,12 @@ impl DesktopEngine {
         if self.input.is_dragging() {
             return false;
         }
-        
+
         // Block if transitioning to/from void (preserve those animations)
         // but allow interrupting desktop-to-desktop switches for responsive navigation
         if let Some(ref crossfade) = self.crossfade {
             match crossfade.direction {
-                crate::transition::CrossfadeDirection::ToVoid 
+                crate::transition::CrossfadeDirection::ToVoid
                 | crate::transition::CrossfadeDirection::ToDesktop => false,
                 crate::transition::CrossfadeDirection::SwitchDesktop => true,
             }
@@ -220,63 +225,54 @@ impl DesktopEngine {
     /// Get configuration for an app
     fn get_app_config<'a>(&self, app_id: &'a str) -> AppConfig<'a> {
         match app_id {
-            "terminal" => AppConfig {
-                title: "Terminal",
-                content_interactive: false,
-                window_type: WindowType::Standard,
-                min_width: 200.0,
-                min_height: 150.0,
-                preferred_width: 900.0,
-                preferred_height: 600.0,
-            },
-            "browser" => AppConfig {
-                title: "Browser",
-                content_interactive: false,
-                window_type: WindowType::Standard,
-                min_width: 200.0,
-                min_height: 150.0,
-                preferred_width: 900.0,
-                preferred_height: 600.0,
-            },
-            "settings" => AppConfig {
-                title: "Settings",
-                content_interactive: false,
-                window_type: WindowType::Standard,
-                min_width: 200.0,
-                min_height: 150.0,
-                preferred_width: 900.0,
-                preferred_height: 600.0,
-            },
-            "clock" | "com.zero.clock" => AppConfig {
-                title: "Clock",
-                content_interactive: false,
-                window_type: WindowType::Widget,
-                min_width: 150.0,
-                min_height: 100.0,
+            "terminal" => standard_app_config("Terminal"),
+            "browser" => standard_app_config("Browser"),
+            "settings" => standard_app_config("Settings"),
+            "clock" | "com.zero.clock" => widget_app_config(
+                "Clock", 150.0, 100.0,
                 // Clock: icon (64px) + time (48px) + date + info row + padding
-                preferred_width: 280.0,
-                preferred_height: 280.0,
-            },
-            "calculator" | "com.zero.calculator" => AppConfig {
-                title: "Calculator",
-                content_interactive: false,
-                window_type: WindowType::Widget,
-                min_width: 200.0,
-                min_height: 200.0,
+                280.0, 280.0,
+            ),
+            "calculator" | "com.zero.calculator" => widget_app_config(
+                "Calculator",
+                200.0,
+                200.0,
                 // Calculator: display (~100px) + 5 rows of buttons (52px each) + gaps + padding + space for close button
-                preferred_width: 360.0,
-                preferred_height: 480.0,
-            },
-            _ => AppConfig {
-                title: app_id,
-                content_interactive: false,
-                window_type: WindowType::Standard,
-                min_width: 200.0,
-                min_height: 150.0,
-                preferred_width: 900.0,
-                preferred_height: 600.0,
-            },
+                360.0,
+                480.0,
+            ),
+            _ => standard_app_config(app_id),
         }
+    }
+}
+
+fn standard_app_config(title: &str) -> AppConfig<'_> {
+    AppConfig {
+        title,
+        content_interactive: false,
+        window_type: WindowType::Standard,
+        min_width: 200.0,
+        min_height: 150.0,
+        preferred_width: 900.0,
+        preferred_height: 600.0,
+    }
+}
+
+fn widget_app_config(
+    title: &str,
+    min_width: f32,
+    min_height: f32,
+    preferred_width: f32,
+    preferred_height: f32,
+) -> AppConfig<'_> {
+    AppConfig {
+        title,
+        content_interactive: false,
+        window_type: WindowType::Widget,
+        min_width,
+        min_height,
+        preferred_width,
+        preferred_height,
     }
 }
 
@@ -487,7 +483,10 @@ mod tests {
         });
 
         engine.minimize_window(id);
-        assert_eq!(engine.windows.get(id).unwrap().state, WindowState::Minimized);
+        assert_eq!(
+            engine.windows.get(id).unwrap().state,
+            WindowState::Minimized
+        );
 
         engine.restore_window(id);
         assert_eq!(engine.windows.get(id).unwrap().state, WindowState::Normal);
@@ -608,11 +607,11 @@ mod tests {
         let mut engine = create_test_engine();
 
         let id = engine.launch_app("terminal");
-        
+
         // Before setting process ID, title is just "Terminal"
         let window = engine.windows.get(id).unwrap();
         assert_eq!(window.title, "Terminal");
-        
+
         // After setting process ID, title includes PID
         engine.set_window_process_id(id, 42);
         let window = engine.windows.get(id).unwrap();

@@ -22,11 +22,11 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use zos_apps::app_protocol::{tags, TerminalInput, InputAction, MSG_CONSOLE_INPUT};
+use zos_apps::app_protocol::{tags, InputAction, TerminalInput, MSG_CONSOLE_INPUT};
 use zos_apps::manifest::TERMINAL_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{app_main, AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
-use zos_process::{MSG_CAP_REVOKED, ObjectType, error};
+use zos_process::{error, ObjectType, MSG_CAP_REVOKED};
 
 // TODO: Used for future capability requests to PermissionManager
 // const PERMISSION_MANAGER_PID: u32 = 2;
@@ -155,11 +155,11 @@ impl TerminalApp {
             let object_type = data[4];
             // object_id at bytes 5-12 (u64)
             // reason at byte 13
-            
+
             let type_name = ObjectType::from_u8(object_type)
                 .map(|t| t.name())
                 .unwrap_or("Unknown");
-            
+
             // Print warning in yellow (ANSI escape code)
             self.println("");
             self.println(&format!(
@@ -176,8 +176,12 @@ impl TerminalApp {
     fn format_cap_error(&self, error_code: u32) -> String {
         match error_code {
             e if e == error::E_BADF => "Permission denied: capability has been revoked".to_string(),
-            e if e == error::E_PERM => "Permission denied: insufficient capability permissions".to_string(),
-            e if e == error::E_NOENT => "Resource not found: capability may have been revoked".to_string(),
+            e if e == error::E_PERM => {
+                "Permission denied: insufficient capability permissions".to_string()
+            }
+            e if e == error::E_NOENT => {
+                "Resource not found: capability may have been revoked".to_string()
+            }
             code => format!("Operation failed (error code {})", code),
         }
     }
