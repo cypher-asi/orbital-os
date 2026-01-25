@@ -33,7 +33,7 @@ path = "src/bin/settings.rs"
 
 [[bin]]
 name = "vfs_service"
-path = "src/bin/vfs_service.rs"
+path = "src/bin/vfs_service/main.rs"
 
 [[bin]]
 name = "time_service"
