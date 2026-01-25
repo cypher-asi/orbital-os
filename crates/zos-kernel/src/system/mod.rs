@@ -35,7 +35,9 @@
 //!
 //! All syscalls flow: `Process → System.process_syscall() → Axiom (log) → KernelCore (execute) → Axiom (record) → Process`
 
-use alloc::string::String;
+mod lifecycle;
+mod metrics;
+
 use alloc::vec::Vec;
 
 use crate::capability::Permissions;
@@ -133,7 +135,7 @@ impl<H: HAL> System<H> {
 
         // 4. Get rich result and response data
         let (rich_result, response_data) =
-            get_syscall_rich_result(&mut self.kernel, sender, syscall_num, args, data, result, timestamp);
+            metrics::get_syscall_rich_result(&mut self.kernel, sender, syscall_num, args, data, result, timestamp);
 
         // 5. Log response to SysLog
         self.axiom
@@ -171,7 +173,7 @@ impl<H: HAL> System<H> {
     }
 
     /// Record a process fault and terminate it.
-    pub fn fault_process(&mut self, pid: ProcessId, reason: u32, description: String) {
+    pub fn fault_process(&mut self, pid: ProcessId, reason: u32, description: alloc::string::String) {
         let timestamp = self.uptime_nanos();
         let commits = self.kernel.fault_process(pid, reason, description, timestamp);
         self.record_commits(commits, timestamp);
@@ -507,13 +509,27 @@ fn execute_syscall_kernel_fn<H: HAL>(
     timestamp: u64,
 ) -> (i64, Vec<CommitType>) {
     match syscall_num {
-        // NOP
+        0x00..=0x07 => execute_basic_syscall(core, syscall_num, sender, args),
+        0x11..=0x15 => {
+            execute_process_syscall(core, syscall_num, sender, args, data, timestamp)
+        }
+        0x30 | 0x31 | 0x35 => execute_capability_syscall(core, syscall_num, sender, args, timestamp),
+        0x40 | 0x41 => execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp),
+        0x70..=0x74 => execute_storage_syscall(core, syscall_num, sender, data),
+        0x90 => execute_network_syscall(core, sender, data),
+        _ => (-1, Vec::new()),
+    }
+}
+
+fn execute_basic_syscall<H: HAL>(
+    core: &KernelCore<H>,
+    syscall_num: u32,
+    sender: ProcessId,
+    args: [u32; 4],
+) -> (i64, Vec<CommitType>) {
+    match syscall_num {
         0x00 => (0, Vec::new()),
-
-        // SYS_DEBUG - Just returns 0, supervisor handles the message
         0x01 => (0, Vec::new()),
-
-        // SYS_GET_TIME
         0x02 => {
             let nanos = core.hal().now_nanos();
             let result = if args[0] == 0 {
@@ -523,17 +539,9 @@ fn execute_syscall_kernel_fn<H: HAL>(
             };
             (result, Vec::new())
         }
-
-        // SYS_GET_PID
         0x03 => (sender.0 as i64, Vec::new()),
-
-        // SYS_LIST_CAPS
         0x04 => (0, Vec::new()),
-
-        // SYS_LIST_PROCS
         0x05 => (0, Vec::new()),
-
-        // SYS_GET_WALLCLOCK
         0x06 => {
             let millis = core.hal().wallclock_ms();
             let result = if args[0] == 0 {
@@ -543,62 +551,37 @@ fn execute_syscall_kernel_fn<H: HAL>(
             };
             (result, Vec::new())
         }
-
-        // SYS_CONSOLE_WRITE
         0x07 => (0, Vec::new()),
+        _ => (-1, Vec::new()),
+    }
+}
 
-        // SYS_EXIT
-        0x11 => {
-            let commits = core.kill_process(sender, timestamp);
-            let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
-            (0, commit_types)
-        }
-
-        // SYS_YIELD
+fn execute_process_syscall<H: HAL>(
+    core: &mut KernelCore<H>,
+    syscall_num: u32,
+    sender: ProcessId,
+    args: [u32; 4],
+    data: &[u8],
+    timestamp: u64,
+) -> (i64, Vec<CommitType>) {
+    match syscall_num {
+        0x11 => lifecycle::execute_exit(core, sender, timestamp),
         0x12 => (0, Vec::new()),
+        0x13 => lifecycle::execute_kill_with_cap(core, sender, args, timestamp),
+        0x14 => lifecycle::execute_register_process(core, sender, data, timestamp),
+        0x15 => lifecycle::execute_create_endpoint_for(core, sender, args, timestamp),
+        _ => (-1, Vec::new()),
+    }
+}
 
-        // SYS_KILL - Kill a process (requires Process capability)
-        0x13 => {
-            let target_pid = ProcessId(args[0] as u64);
-            match core.kill_process_with_cap_check(sender, target_pid, timestamp) {
-                (Ok(()), commits) => {
-                    let commit_types: Vec<CommitType> =
-                        commits.into_iter().map(|c| c.commit_type).collect();
-                    (0, commit_types)
-                }
-                (Err(_), _) => (-1, Vec::new()),
-            }
-        }
-
-        // SYS_REGISTER_PROCESS (0x14) - Register a new process (Init-only)
-        0x14 => {
-            if sender.0 != 1 {
-                return (-1, Vec::new());
-            }
-            let name = core::str::from_utf8(data).unwrap_or("unknown");
-            let (pid, commits) = core.register_process(name, timestamp);
-            let commit_types = commits.into_iter().map(|c| c.commit_type).collect();
-            (pid.0 as i64, commit_types)
-        }
-
-        // SYS_CREATE_ENDPOINT_FOR (0x15) - Create an endpoint for another process (Init-only)
-        0x15 => {
-            if sender.0 != 1 {
-                return (-1, Vec::new());
-            }
-            let target_pid = ProcessId(args[0] as u64);
-            let (result, commits) = core.create_endpoint(target_pid, timestamp);
-            let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
-            match result {
-                Ok((eid, slot)) => {
-                    let packed = ((slot as i64) << 32) | (eid.0 as i64 & 0xFFFFFFFF);
-                    (packed, commit_types)
-                }
-                Err(_) => (-1, commit_types),
-            }
-        }
-
-        // SYS_CAP_GRANT
+fn execute_capability_syscall<H: HAL>(
+    core: &mut KernelCore<H>,
+    syscall_num: u32,
+    sender: ProcessId,
+    args: [u32; 4],
+    timestamp: u64,
+) -> (i64, Vec<CommitType>) {
+    match syscall_num {
         0x30 => {
             let from_slot = args[0];
             let to_pid = ProcessId(args[1] as u64);
@@ -613,8 +596,6 @@ fn execute_syscall_kernel_fn<H: HAL>(
                 (Err(_), _) => (-1, Vec::new()),
             }
         }
-
-        // SYS_CAP_REVOKE
         0x31 => {
             let target_pid = ProcessId(args[0] as u64);
             let slot = args[1];
@@ -628,8 +609,6 @@ fn execute_syscall_kernel_fn<H: HAL>(
                 (Err(_), _) => (-1, Vec::new()),
             }
         }
-
-        // SYS_EP_CREATE
         0x35 => {
             let (result, commits) = core.create_endpoint(sender, timestamp);
             let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
@@ -638,8 +617,19 @@ fn execute_syscall_kernel_fn<H: HAL>(
                 Err(_) => (-1, commit_types),
             }
         }
+        _ => (-1, Vec::new()),
+    }
+}
 
-        // SYS_SEND
+fn execute_ipc_syscall<H: HAL>(
+    core: &mut KernelCore<H>,
+    syscall_num: u32,
+    sender: ProcessId,
+    args: [u32; 4],
+    data: &[u8],
+    timestamp: u64,
+) -> (i64, Vec<CommitType>) {
+    match syscall_num {
         0x40 => {
             let slot = args[0];
             let tag = args[1];
@@ -650,8 +640,6 @@ fn execute_syscall_kernel_fn<H: HAL>(
                 Err(_) => (-1, commit_types),
             }
         }
-
-        // SYS_RECEIVE
         0x41 => {
             let slot = args[0];
             match core.ipc_has_message(sender, slot, timestamp) {
@@ -660,170 +648,117 @@ fn execute_syscall_kernel_fn<H: HAL>(
                 Err(_) => (-1, Vec::new()),
             }
         }
-
-        // === Platform Storage (0x70 - 0x7F) ===
-        0x70 => {
-            let key = match core::str::from_utf8(data) {
-                Ok(k) => k,
-                Err(_) => return (-1, Vec::new()),
-            };
-            match core.hal().storage_read_async(sender.0, key) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        0x71 => {
-            if data.len() < 4 {
-                return (-1, Vec::new());
-            }
-            let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-            if data.len() < 4 + key_len {
-                return (-1, Vec::new());
-            }
-            let key = match core::str::from_utf8(&data[4..4 + key_len]) {
-                Ok(k) => k,
-                Err(_) => return (-1, Vec::new()),
-            };
-            let value = &data[4 + key_len..];
-            match core.hal().storage_write_async(sender.0, key, value) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        0x72 => {
-            let key = match core::str::from_utf8(data) {
-                Ok(k) => k,
-                Err(_) => return (-1, Vec::new()),
-            };
-            match core.hal().storage_delete_async(sender.0, key) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        0x73 => {
-            let prefix = match core::str::from_utf8(data) {
-                Ok(p) => p,
-                Err(_) => return (-1, Vec::new()),
-            };
-            match core.hal().storage_list_async(sender.0, prefix) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        0x74 => {
-            let key = match core::str::from_utf8(data) {
-                Ok(k) => k,
-                Err(_) => return (-1, Vec::new()),
-            };
-            match core.hal().storage_exists_async(sender.0, key) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        // === Network (0x90 - 0x9F) ===
-        0x90 => {
-            match core.hal().network_fetch_async(sender.0, data) {
-                Ok(request_id) => (request_id as i64, Vec::new()),
-                Err(_) => (-1, Vec::new()),
-            }
-        }
-
-        // Unknown syscall
         _ => (-1, Vec::new()),
     }
 }
 
-/// Get rich result and response data for a syscall.
-fn get_syscall_rich_result<H: HAL>(
-    kernel: &mut KernelCore<H>,
-    sender: ProcessId,
+fn execute_storage_syscall<H: HAL>(
+    core: &KernelCore<H>,
     syscall_num: u32,
-    args: [u32; 4],
-    _data: &[u8],
-    result: i64,
-    timestamp: u64,
-) -> (SyscallResult, Vec<u8>) {
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
     match syscall_num {
-        // SYS_LIST_CAPS
-        0x04 => {
-            let syscall = Syscall::ListCaps;
-            let (rich_result, _) = kernel.handle_syscall(sender, syscall, timestamp);
-            if let SyscallResult::CapList(ref caps) = rich_result {
-                let mut bytes = Vec::new();
-                bytes.extend_from_slice(&(caps.len() as u32).to_le_bytes());
-                for (slot, cap) in caps {
-                    bytes.extend_from_slice(&slot.to_le_bytes());
-                    bytes.push(cap.object_type as u8);
-                    bytes.extend_from_slice(&cap.object_id.to_le_bytes());
-                }
-                (rich_result, bytes)
-            } else {
-                (SyscallResult::Ok(result as u64), Vec::new())
-            }
-        }
+        0x70 => execute_storage_read(core, sender, data),
+        0x71 => execute_storage_write(core, sender, data),
+        0x72 => execute_storage_delete(core, sender, data),
+        0x73 => execute_storage_list(core, sender, data),
+        0x74 => execute_storage_exists(core, sender, data),
+        _ => (-1, Vec::new()),
+    }
+}
 
-        // SYS_LIST_PROCS
-        0x05 => {
-            let syscall = Syscall::ListProcesses;
-            let (rich_result, _) = kernel.handle_syscall(sender, syscall, timestamp);
-            if let SyscallResult::ProcessList(ref procs) = rich_result {
-                let mut bytes = Vec::new();
-                bytes.extend_from_slice(&(procs.len() as u32).to_le_bytes());
-                for (proc_pid, name, _state) in procs {
-                    bytes.extend_from_slice(&(proc_pid.0 as u32).to_le_bytes());
-                    bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
-                    bytes.extend_from_slice(name.as_bytes());
-                }
-                (rich_result, bytes)
-            } else {
-                (SyscallResult::Ok(result as u64), Vec::new())
-            }
-        }
+fn execute_storage_read<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().storage_read_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
 
-        // SYS_RECEIVE
-        0x41 => {
-            if result == 1 {
-                let slot = args[0];
-                let (recv_result, commits) = kernel.ipc_receive_with_caps(sender, slot, timestamp);
+fn execute_storage_write<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    if data.len() < 4 {
+        return (-1, Vec::new());
+    }
+    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if data.len() < 4 + key_len {
+        return (-1, Vec::new());
+    }
+    let key = match core::str::from_utf8(&data[4..4 + key_len]) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    let value = &data[4 + key_len..];
+    match core.hal().storage_write_async(sender.0, key, value) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
 
-                // Note: commits are NOT recorded here - they should be recorded by the caller
-                // This is a read-only helper that just formats the response
-                let _ = commits; // Suppress unused warning - caller handles commit recording
+fn execute_storage_delete<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().storage_delete_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
 
-                match recv_result {
-                    Ok(Some((msg, installed_slots))) => {
-                        let mut msg_bytes = Vec::new();
-                        msg_bytes.extend_from_slice(&(msg.from.0 as u32).to_le_bytes());
-                        msg_bytes.extend_from_slice(&msg.tag.to_le_bytes());
-                        msg_bytes.push(installed_slots.len() as u8);
-                        for cap_slot in &installed_slots {
-                            msg_bytes.extend_from_slice(&cap_slot.to_le_bytes());
-                        }
-                        msg_bytes.extend_from_slice(&msg.data);
-                        (SyscallResult::Message(msg), msg_bytes)
-                    }
-                    _ => (SyscallResult::Ok(result as u64), Vec::new()),
-                }
-            } else if result == 0 {
-                (SyscallResult::WouldBlock, Vec::new())
-            } else {
-                (SyscallResult::Err(KernelError::PermissionDenied), Vec::new())
-            }
-        }
+fn execute_storage_list<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let prefix = match core::str::from_utf8(data) {
+        Ok(p) => p,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().storage_list_async(sender.0, prefix) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
 
-        // Default
-        _ => {
-            if result >= 0 {
-                (SyscallResult::Ok(result as u64), Vec::new())
-            } else {
-                (SyscallResult::Err(KernelError::PermissionDenied), Vec::new())
-            }
-        }
+fn execute_storage_exists<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().storage_exists_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+fn execute_network_syscall<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    match core.hal().network_fetch_async(sender.0, data) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
     }
 }
 
