@@ -64,7 +64,7 @@ impl Supervisor {
             }
 
             // If VFS service is running, grant this process a capability to VFS endpoint
-            // This goes in slot 3 (VFS_ENDPOINT_SLOT) for VfsClient to use
+            // This goes in slot 3 for VfsClient to use
             self.grant_vfs_capability_to_process(process_pid, name);
 
             // Create a dedicated endpoint for VFS responses (slot 4)

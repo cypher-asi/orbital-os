@@ -25,11 +25,6 @@ pub const INIT_ENDPOINT_SLOT: u32 = 0;
 /// This is where they receive incoming IPC messages.
 pub const SERVICE_INPUT_SLOT: u32 = 1;
 
-/// VFS endpoint slot in client processes
-///
-/// When a process is granted access to VFS, the capability is placed here.
-pub const VFS_ENDPOINT_SLOT: u32 = 3;
-
 /// VFS response endpoint slot (dedicated to avoid race conditions)
 ///
 /// VFS responses are routed here instead of the general input endpoint (slot 1)

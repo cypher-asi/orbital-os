@@ -51,7 +51,7 @@
 mod capabilities;
 mod state;
 
-pub use state::{PendingSpawn, SpawnState, SpawnTracker};
+pub use state::SpawnTracker;
 
 use wasm_bindgen::prelude::*;
 use zos_hal::HAL;
@@ -102,7 +102,7 @@ impl Supervisor {
 
         // Start tracking this spawn operation
         let current_time = self.system.hal().wallclock_ms();
-        let request_id = self.spawn_tracker.start_spawn("app", name, current_time);
+        let request_id = self.spawn_tracker.start_spawn(name, current_time);
 
         // Mark binary as received (transitioning from WaitingForBinary to WaitingForPid)
         if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {

@@ -115,22 +115,6 @@ impl WasmHal {
         }
     }
 
-    /// Get the current count of pending storage requests.
-    pub fn pending_storage_count(&self) -> usize {
-        self.pending_storage_requests
-            .lock()
-            .map(|p| p.len())
-            .unwrap_or(0)
-    }
-
-    /// Get the current count of pending network requests.
-    pub fn pending_network_count(&self) -> usize {
-        self.pending_network_requests
-            .lock()
-            .map(|p| p.len())
-            .unwrap_or(0)
-    }
-
     /// Get a clone of the incoming messages queue Arc
     pub fn incoming_messages(&self) -> Arc<Mutex<Vec<WorkerMessage>>> {
         self.incoming_messages.clone()

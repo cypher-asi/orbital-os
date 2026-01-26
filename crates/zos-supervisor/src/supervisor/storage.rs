@@ -240,98 +240,98 @@ impl super::Supervisor {
     }
 }
 
-// =============================================================================
-// Payload Building Helpers (testable without WASM)
-// =============================================================================
-
-/// Build a storage read result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
-pub(crate) fn build_storage_read_payload(request_id: u32, data: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(9 + data.len());
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_READ_OK);
-    payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    payload.extend_from_slice(data);
-    payload
-}
-
-/// Build a storage write result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32]
-pub(crate) fn build_storage_write_payload(request_id: u32) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(9);
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_WRITE_OK);
-    payload.extend_from_slice(&0u32.to_le_bytes());
-    payload
-}
-
-/// Build a storage not found result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32]
-pub(crate) fn build_storage_not_found_payload(request_id: u32) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(9);
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_NOT_FOUND);
-    payload.extend_from_slice(&0u32.to_le_bytes());
-    payload
-}
-
-/// Build a storage list result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
-pub(crate) fn build_storage_list_payload(request_id: u32, keys_json: &str) -> Vec<u8> {
-    let data = keys_json.as_bytes();
-    let mut payload = Vec::with_capacity(9 + data.len());
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_LIST_OK);
-    payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    payload.extend_from_slice(data);
-    payload
-}
-
-/// Build a storage exists result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32, exists: u8]
-pub(crate) fn build_storage_exists_payload(request_id: u32, exists: bool) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(10);
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_EXISTS_OK);
-    payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
-    payload.push(if exists { 1 } else { 0 });
-    payload
-}
-
-/// Build a storage error result payload.
-///
-/// Format: [request_id: u32, result_type: u8, data_len: u32, error: [u8]]
-pub(crate) fn build_storage_error_payload(request_id: u32, error: &str) -> Vec<u8> {
-    let error_bytes = error.as_bytes();
-    let mut payload = Vec::with_capacity(9 + error_bytes.len());
-    payload.extend_from_slice(&request_id.to_le_bytes());
-    payload.push(storage_const::STORAGE_ERROR);
-    payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
-    payload.extend_from_slice(error_bytes);
-    payload
-}
-
-/// Parse a storage result payload header.
-///
-/// Returns (request_id, result_type, data_len) or None if invalid.
-pub(crate) fn parse_storage_result_header(payload: &[u8]) -> Option<(u32, u8, u32)> {
-    if payload.len() < 9 {
-        return None;
-    }
-    let request_id = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
-    let result_type = payload[4];
-    let data_len = u32::from_le_bytes([payload[5], payload[6], payload[7], payload[8]]);
-    Some((request_id, result_type, data_len))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::storage_const;
+
+    // =========================================================================
+    // Payload Building Helpers (test-only)
+    // =========================================================================
+
+    /// Build a storage read result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+    fn build_storage_read_payload(request_id: u32, data: &[u8]) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(9 + data.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_READ_OK);
+        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        payload.extend_from_slice(data);
+        payload
+    }
+
+    /// Build a storage write result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32]
+    fn build_storage_write_payload(request_id: u32) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(9);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_WRITE_OK);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload
+    }
+
+    /// Build a storage not found result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32]
+    fn build_storage_not_found_payload(request_id: u32) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(9);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_NOT_FOUND);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload
+    }
+
+    /// Build a storage list result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+    fn build_storage_list_payload(request_id: u32, keys_json: &str) -> Vec<u8> {
+        let data = keys_json.as_bytes();
+        let mut payload = Vec::with_capacity(9 + data.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_LIST_OK);
+        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        payload.extend_from_slice(data);
+        payload
+    }
+
+    /// Build a storage exists result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32, exists: u8]
+    fn build_storage_exists_payload(request_id: u32, exists: bool) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(10);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_EXISTS_OK);
+        payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
+        payload.push(if exists { 1 } else { 0 });
+        payload
+    }
+
+    /// Build a storage error result payload.
+    ///
+    /// Format: [request_id: u32, result_type: u8, data_len: u32, error: [u8]]
+    fn build_storage_error_payload(request_id: u32, error: &str) -> Vec<u8> {
+        let error_bytes = error.as_bytes();
+        let mut payload = Vec::with_capacity(9 + error_bytes.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_ERROR);
+        payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
+        payload.extend_from_slice(error_bytes);
+        payload
+    }
+
+    /// Parse a storage result payload header.
+    ///
+    /// Returns (request_id, result_type, data_len) or None if invalid.
+    fn parse_storage_result_header(payload: &[u8]) -> Option<(u32, u8, u32)> {
+        if payload.len() < 9 {
+            return None;
+        }
+        let request_id = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+        let result_type = payload[4];
+        let data_len = u32::from_le_bytes([payload[5], payload[6], payload[7], payload[8]]);
+        Some((request_id, result_type, data_len))
+    }
 
     #[test]
     fn test_storage_read_payload_format() {
