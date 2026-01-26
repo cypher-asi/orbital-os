@@ -3,8 +3,8 @@ import { useIdentityStore, selectCurrentUser } from '@/stores';
 import { useIdentityServiceClient } from './useIdentityServiceClient';
 import {
   type LocalKeyStore as ServiceLocalKeyStore,
-  VfsStorageClient,
-  getIdentityKeyStorePath,
+  KeystoreClient,
+  getIdentityKeystorePath,
   bytesToHex,
 } from '@/client-services';
 
@@ -163,20 +163,20 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       return;
     }
 
-    // Read directly from VfsStorage cache (synchronous, no IPC deadlock)
-    // This follows the canonical pattern: React reads from VFS cache, services write via async syscalls
-    const keyPath = getIdentityKeyStorePath(userId);
+    // Read directly from keystore cache (synchronous, no IPC deadlock)
+    // This follows the canonical pattern: React reads from keystore cache, services write via async syscalls
+    const keyPath = getIdentityKeystorePath(userId);
 
-    console.log(`[useNeuralKey] Refreshing Neural Key state from VFS cache: ${keyPath}`);
+    console.log(`[useNeuralKey] Refreshing Neural Key state from keystore cache: ${keyPath}`);
 
-    // Check VfsStorage availability
-    if (!VfsStorageClient.isAvailable()) {
-      console.warn('[useNeuralKey] VfsStorage not available yet');
+    // Check keystore availability
+    if (!KeystoreClient.isAvailable()) {
+      console.warn('[useNeuralKey] Keystore not available yet');
       setState((prev) => ({
         ...prev,
         isLoading: false,
         isInitializing: false,
-        error: 'VFS cache not ready',
+        error: 'Keystore cache not ready',
       }));
       return;
     }
@@ -186,17 +186,17 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     // Helper to read key store and update state
     const readAndUpdateState = (): boolean => {
       try {
-        // Read key store directly from VFS cache (synchronous)
-        const keyStore = VfsStorageClient.readJsonSync<ServiceLocalKeyStore>(keyPath);
+        // Read key store directly from keystore cache (synchronous)
+        const keyStore = KeystoreClient.readJsonSync<ServiceLocalKeyStore>(keyPath);
 
         // Log received data for debugging
-        console.log('[useNeuralKey] Read keyStore from VFS cache:', {
+        console.log('[useNeuralKey] Read keyStore from keystore cache:', {
           hasKey: !!keyStore,
           userId: keyStore?.user_id,
           hasCreatedAt: keyStore?.created_at !== undefined,
           createdAt: keyStore?.created_at,
           epoch: keyStore?.epoch,
-          cacheStats: VfsStorageClient.getCacheStats(),
+          cacheStats: KeystoreClient.getCacheStats(),
         });
 
         if (keyStore) {
@@ -239,7 +239,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
 
     if (!foundKey && !hasCompletedInitialLoadRef.current) {
       // On initial load, wait and retry before showing "no key" message
-      // This gives the VFS cache time to populate
+      // This gives the keystore cache time to populate
       console.log('[useNeuralKey] No key found on initial load, waiting before retry...');
       await new Promise((resolve) => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
 
@@ -279,7 +279,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
   }, [userId]);
 
   // Auto-refresh on mount and when user changes
-  // Reads directly from VfsStorage cache, no IPC client needed
+  // Reads directly from keystore cache, no IPC client needed
   useEffect(() => {
     if (currentUser?.id) {
       refresh();

@@ -4,10 +4,11 @@
 //!
 //! These manifests define the core system services that run in Zero OS:
 //! - PermissionService (PID 2): System capability authority
-//! - IdentityService (PID 3): User identity and key management
+//! - IdentityService (PID 5): User identity and key management
 //! - VfsService (PID 4): Virtual filesystem operations
-//! - TimeService (PID 5): Time settings management
-//! - NetworkService (PID 6): HTTP request mediation
+//! - TimeService (PID 6): Time settings management
+//! - KeystoreService (PID 7): Cryptographic key storage
+//! - NetworkService (PID 8): HTTP request mediation
 
 use zos_apps::{AppManifest, CapabilityRequest, ObjectType, Permissions};
 
@@ -117,7 +118,7 @@ pub static TIME_SERVICE_MANIFEST: AppManifest = AppManifest {
     ],
 };
 
-/// Network Service manifest (PID 6)
+/// Network Service manifest (PID 8)
 pub static NETWORK_SERVICE_MANIFEST: AppManifest = AppManifest {
     id: "com.zero.network_service",
     name: "Network Service",
@@ -134,6 +135,28 @@ pub static NETWORK_SERVICE_MANIFEST: AppManifest = AppManifest {
             object_type: ObjectType::Network,
             permissions: Permissions::full(),
             reason: "Perform HTTP requests on behalf of other processes",
+            required: true,
+        },
+    ],
+};
+
+/// Keystore Service manifest (PID 7)
+pub static KEYSTORE_SERVICE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.keystore_service",
+    name: "Keystore Service",
+    version: "1.0.0",
+    description: "Cryptographic key storage service for Zero OS",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::full(),
+            reason: "Receive keystore requests and send responses",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Keystore,
+            permissions: Permissions::full(),
+            reason: "Access zos-keystore IndexedDB for secure key storage",
             required: true,
         },
     ],

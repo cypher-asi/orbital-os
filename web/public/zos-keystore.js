@@ -1,5 +1,5 @@
 /**
- * ZosStorageKeys - IndexedDB persistence for Zero OS Key Storage
+ * ZosKeystore - IndexedDB persistence for Zero OS Key Storage
  *
  * This is the dedicated storage layer for cryptographic key data.
  * It is separate from the filesystem to provide:
@@ -7,31 +7,31 @@
  * - Dedicated access control (only KeyService can access)
  * - Independent lifecycle management
  *
- * Database: zos-keys
+ * Database: zos-keystore
  * Object Stores:
  *   - keys: Key data (path -> key bytes)
  *   - key_metadata: Key metadata (path -> metadata object)
  *
  * ## Architecture
  *
- * ZosStorageKeys provides async access for KeyService:
+ * ZosKeystore provides async access for KeyService:
  *
- * 1. **Runtime Path (KeyService)**: KeyService → syscall → HAL → ZosStorageKeys
+ * 1. **Runtime Path (KeyService)**: KeyService → syscall → HAL → ZosKeystore
  *
  * ## Security
  *
- * - Only accessible via key_storage_* syscalls
+ * - Only accessible via keystore_* syscalls
  * - KeyService is the sole accessor (PID 5)
  * - Key material never exposed to filesystem or other storage layers
  */
 
-const ZosStorageKeys = {
+const ZosKeystore = {
   // === Database ===
   /** @type {IDBDatabase|null} */
   db: null,
 
   /** Database name */
-  DB_NAME: 'zos-keys',
+  DB_NAME: 'zos-keystore',
 
   /** Database version */
   DB_VERSION: 1,
@@ -56,12 +56,12 @@ const ZosStorageKeys = {
   // ==========================================================================
 
   /**
-   * Initialize the ZosStorageKeys database.
+   * Initialize the ZosKeystore database.
    * @returns {Promise<boolean>} True if successful
    */
   async init() {
     if (this.db) {
-      console.log('[ZosStorageKeys] Already initialized');
+      console.log('[ZosKeystore] Already initialized');
       return true;
     }
 
@@ -70,7 +70,7 @@ const ZosStorageKeys = {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
-        console.log('[ZosStorageKeys] Creating object stores...');
+        console.log('[ZosKeystore] Creating object stores...');
 
         // Keys store: path (string) -> key data
         if (!db.objectStoreNames.contains(this.KEYS_STORE)) {
@@ -89,7 +89,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = async (event) => {
         this.db = event.target.result;
-        console.log('[ZosStorageKeys] Database initialized');
+        console.log('[ZosKeystore] Database initialized');
 
         // Populate caches for synchronous reads
         await this.populateCaches();
@@ -98,20 +98,20 @@ const ZosStorageKeys = {
       };
 
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] Failed to open database:', event.target.error);
+        console.error('[ZosKeystore] Failed to open database:', event.target.error);
         reject(event.target.error);
       };
     });
   },
 
   /**
-   * Initialize ZosStorageKeys with the supervisor reference.
+   * Initialize ZosKeystore with the supervisor reference.
    * Must be called before supervisor key storage operations.
    * @param {object} supervisor - The WASM supervisor instance
    */
   initSupervisor(supervisor) {
     this.supervisor = supervisor;
-    console.log('[ZosStorageKeys] Supervisor reference set');
+    console.log('[ZosKeystore] Supervisor reference set');
   },
 
   /**
@@ -139,7 +139,7 @@ const ZosStorageKeys = {
     }
 
     console.log(
-      `[ZosStorageKeys] Caches populated: ${this.keyCache.size} keys, ${this.metadataCache.size} metadata entries`
+      `[ZosKeystore] Caches populated: ${this.keyCache.size} keys, ${this.metadataCache.size} metadata entries`
     );
   },
 
@@ -149,10 +149,10 @@ const ZosStorageKeys = {
    */
   async refreshCaches() {
     if (!this.db) {
-      console.warn('[ZosStorageKeys] Cannot refresh caches - not initialized');
+      console.warn('[ZosKeystore] Cannot refresh caches - not initialized');
       return;
     }
-    console.log('[ZosStorageKeys] Refreshing caches from IndexedDB...');
+    console.log('[ZosKeystore] Refreshing caches from IndexedDB...');
     await this.populateCaches();
   },
 
@@ -162,10 +162,10 @@ const ZosStorageKeys = {
    */
   async clearAll() {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
-    console.log('[ZosStorageKeys] Clearing all data...');
+    console.log('[ZosKeystore] Clearing all data...');
 
     await new Promise((resolve, reject) => {
       const tx = this.db.transaction([this.KEYS_STORE, this.METADATA_STORE], 'readwrite');
@@ -179,7 +179,7 @@ const ZosStorageKeys = {
     this.keyCache.clear();
     this.metadataCache.clear();
 
-    console.log('[ZosStorageKeys] All data cleared');
+    console.log('[ZosKeystore] All data cleared');
   },
 
   // ==========================================================================
@@ -241,7 +241,7 @@ const ZosStorageKeys = {
    */
   async putKey(path, data, userId) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     const record = { path, data, user_id: userId };
@@ -256,7 +256,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = () => resolve(true);
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] putKey failed:', event.target.error);
+        console.error('[ZosKeystore] putKey failed:', event.target.error);
         // Revert cache on failure
         this.keyCache.delete(path);
         reject(event.target.error);
@@ -271,7 +271,7 @@ const ZosStorageKeys = {
    */
   async getKey(path) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -284,7 +284,7 @@ const ZosStorageKeys = {
         resolve(result ? result.data : null);
       };
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] getKey failed:', event.target.error);
+        console.error('[ZosKeystore] getKey failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -297,7 +297,7 @@ const ZosStorageKeys = {
    */
   async deleteKey(path) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     // Update cache synchronously (optimistic)
@@ -311,7 +311,7 @@ const ZosStorageKeys = {
 
       tx.oncomplete = () => resolve(true);
       tx.onerror = (event) => {
-        console.error('[ZosStorageKeys] deleteKey failed:', event.target.error);
+        console.error('[ZosKeystore] deleteKey failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -324,7 +324,7 @@ const ZosStorageKeys = {
    */
   async listKeys(prefix) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -340,7 +340,7 @@ const ZosStorageKeys = {
         resolve(paths);
       };
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] listKeys failed:', event.target.error);
+        console.error('[ZosKeystore] listKeys failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -362,7 +362,7 @@ const ZosStorageKeys = {
    */
   async getAllKeys() {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -372,7 +372,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = () => resolve(request.result || []);
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] getAllKeys failed:', event.target.error);
+        console.error('[ZosKeystore] getAllKeys failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -384,7 +384,7 @@ const ZosStorageKeys = {
    */
   async getAllMetadata() {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -394,7 +394,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = () => resolve(request.result || []);
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] getAllMetadata failed:', event.target.error);
+        console.error('[ZosKeystore] getAllMetadata failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -408,7 +408,7 @@ const ZosStorageKeys = {
    */
   async putMetadata(path, metadata) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     const record = { ...metadata, path };
@@ -423,7 +423,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = () => resolve(true);
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] putMetadata failed:', event.target.error);
+        console.error('[ZosKeystore] putMetadata failed:', event.target.error);
         // Revert cache on failure
         this.metadataCache.delete(path);
         reject(event.target.error);
@@ -438,7 +438,7 @@ const ZosStorageKeys = {
    */
   async getMetadata(path) {
     if (!this.db) {
-      throw new Error('ZosStorageKeys not initialized');
+      throw new Error('ZosKeystore not initialized');
     }
 
     return new Promise((resolve, reject) => {
@@ -448,7 +448,7 @@ const ZosStorageKeys = {
 
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] getMetadata failed:', event.target.error);
+        console.error('[ZosKeystore] getMetadata failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -472,12 +472,12 @@ const ZosStorageKeys = {
       const request = indexedDB.deleteDatabase(this.DB_NAME);
 
       request.onsuccess = () => {
-        console.log('[ZosStorageKeys] Database deleted');
+        console.log('[ZosKeystore] Database deleted');
         resolve(true);
       };
 
       request.onerror = (event) => {
-        console.error('[ZosStorageKeys] deleteDatabase failed:', event.target.error);
+        console.error('[ZosKeystore] deleteDatabase failed:', event.target.error);
         reject(event.target.error);
       };
     });
@@ -490,15 +490,15 @@ const ZosStorageKeys = {
 
   /**
    * Start async key read operation.
-   * Calls supervisor.notify_key_storage_read_complete or notify_key_storage_not_found when done.
+   * Calls supervisor.notify_keystore_read_complete or notify_keystore_not_found when done.
    * @param {number} requestId - Unique request ID
    * @param {string} path - Key path to read
    */
   async startRead(requestId, path) {
-    console.log(`[ZosStorageKeys] startRead: request_id=${requestId}, path=${path}`);
+    console.log(`[ZosKeystore] startRead: request_id=${requestId}, path=${path}`);
 
     if (!this.supervisor) {
-      console.error('[ZosStorageKeys] startRead: supervisor not initialized');
+      console.error('[ZosKeystore] startRead: supervisor not initialized');
       return;
     }
 
@@ -512,30 +512,30 @@ const ZosStorageKeys = {
 
       // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
       if (data) {
-        setTimeout(() => supervisor.notify_key_storage_read_complete(requestId, data), 0);
+        setTimeout(() => supervisor.notify_keystore_read_complete(requestId, data), 0);
       } else {
-        setTimeout(() => supervisor.notify_key_storage_not_found(requestId), 0);
+        setTimeout(() => supervisor.notify_keystore_not_found(requestId), 0);
       }
     } catch (e) {
-      console.error(`[ZosStorageKeys] startRead error: ${e.message}`);
-      setTimeout(() => supervisor.notify_key_storage_error(requestId, e.message), 0);
+      console.error(`[ZosKeystore] startRead error: ${e.message}`);
+      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
     }
   },
 
   /**
    * Start async key write operation.
-   * Calls supervisor.notify_key_storage_write_complete when done.
+   * Calls supervisor.notify_keystore_write_complete when done.
    * @param {number} requestId - Unique request ID
    * @param {string} path - Key path to write
    * @param {Uint8Array} value - Key data to store
    */
   async startWrite(requestId, path, value) {
     console.log(
-      `[ZosStorageKeys] startWrite: request_id=${requestId}, path=${path}, len=${value.length}`
+      `[ZosKeystore] startWrite: request_id=${requestId}, path=${path}, len=${value.length}`
     );
 
     if (!this.supervisor) {
-      console.error('[ZosStorageKeys] startWrite: supervisor not initialized');
+      console.error('[ZosKeystore] startWrite: supervisor not initialized');
       return;
     }
 
@@ -550,24 +550,24 @@ const ZosStorageKeys = {
       await this.putKey(path, value, userId);
 
       // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_key_storage_write_complete(requestId), 0);
+      setTimeout(() => supervisor.notify_keystore_write_complete(requestId), 0);
     } catch (e) {
-      console.error(`[ZosStorageKeys] startWrite error: ${e.message}`);
-      setTimeout(() => supervisor.notify_key_storage_error(requestId, e.message), 0);
+      console.error(`[ZosKeystore] startWrite error: ${e.message}`);
+      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
     }
   },
 
   /**
    * Start async key delete operation.
-   * Calls supervisor.notify_key_storage_write_complete when done.
+   * Calls supervisor.notify_keystore_write_complete when done.
    * @param {number} requestId - Unique request ID
    * @param {string} path - Key path to delete
    */
   async startDelete(requestId, path) {
-    console.log(`[ZosStorageKeys] startDelete: request_id=${requestId}, path=${path}`);
+    console.log(`[ZosKeystore] startDelete: request_id=${requestId}, path=${path}`);
 
     if (!this.supervisor) {
-      console.error('[ZosStorageKeys] startDelete: supervisor not initialized');
+      console.error('[ZosKeystore] startDelete: supervisor not initialized');
       return;
     }
 
@@ -579,24 +579,24 @@ const ZosStorageKeys = {
       await this.deleteKey(path);
 
       // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_key_storage_write_complete(requestId), 0);
+      setTimeout(() => supervisor.notify_keystore_write_complete(requestId), 0);
     } catch (e) {
-      console.error(`[ZosStorageKeys] startDelete error: ${e.message}`);
-      setTimeout(() => supervisor.notify_key_storage_error(requestId, e.message), 0);
+      console.error(`[ZosKeystore] startDelete error: ${e.message}`);
+      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
     }
   },
 
   /**
    * Start async key list operation.
-   * Calls supervisor.notify_key_storage_list_complete with JSON array of paths.
+   * Calls supervisor.notify_keystore_list_complete with JSON array of paths.
    * @param {number} requestId - Unique request ID
    * @param {string} prefix - Path prefix to match
    */
   async startList(requestId, prefix) {
-    console.log(`[ZosStorageKeys] startList: request_id=${requestId}, prefix=${prefix}`);
+    console.log(`[ZosKeystore] startList: request_id=${requestId}, prefix=${prefix}`);
 
     if (!this.supervisor) {
-      console.error('[ZosStorageKeys] startList: supervisor not initialized');
+      console.error('[ZosKeystore] startList: supervisor not initialized');
       return;
     }
 
@@ -610,24 +610,24 @@ const ZosStorageKeys = {
       const pathsJson = JSON.stringify(paths);
 
       // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_key_storage_list_complete(requestId, pathsJson), 0);
+      setTimeout(() => supervisor.notify_keystore_list_complete(requestId, pathsJson), 0);
     } catch (e) {
-      console.error(`[ZosStorageKeys] startList error: ${e.message}`);
-      setTimeout(() => supervisor.notify_key_storage_error(requestId, e.message), 0);
+      console.error(`[ZosKeystore] startList error: ${e.message}`);
+      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
     }
   },
 
   /**
    * Start async key exists check.
-   * Calls supervisor.notify_key_storage_exists_complete with boolean.
+   * Calls supervisor.notify_keystore_exists_complete with boolean.
    * @param {number} requestId - Unique request ID
    * @param {string} path - Key path to check
    */
   async startExists(requestId, path) {
-    console.log(`[ZosStorageKeys] startExists: request_id=${requestId}, path=${path}`);
+    console.log(`[ZosKeystore] startExists: request_id=${requestId}, path=${path}`);
 
     if (!this.supervisor) {
-      console.error('[ZosStorageKeys] startExists: supervisor not initialized');
+      console.error('[ZosKeystore] startExists: supervisor not initialized');
       return;
     }
 
@@ -645,10 +645,10 @@ const ZosStorageKeys = {
       }
 
       // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_key_storage_exists_complete(requestId, exists), 0);
+      setTimeout(() => supervisor.notify_keystore_exists_complete(requestId, exists), 0);
     } catch (e) {
-      console.error(`[ZosStorageKeys] startExists error: ${e.message}`);
-      setTimeout(() => supervisor.notify_key_storage_error(requestId, e.message), 0);
+      console.error(`[ZosKeystore] startExists error: ${e.message}`);
+      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
     }
   },
 
@@ -672,7 +672,7 @@ const ZosStorageKeys = {
   },
 };
 
-// Make ZosStorageKeys available globally
+// Make ZosKeystore available globally
 if (typeof window !== 'undefined') {
-  window.ZosStorageKeys = ZosStorageKeys;
+  window.ZosKeystore = ZosKeystore;
 }

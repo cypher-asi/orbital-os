@@ -319,18 +319,27 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
 
     * Process storage operations use syscalls which route through HAL
     * Supervisor bootstrap uses HAL's `bootstrap_storage_*` methods or internal async vfs module (before processes exist)
-    * React UI may read from ZosStorage caches (read-only, caches populated via HAL)
-    * No direct IndexedDB access outside HAL/ZosStorage implementation
-    * Single `ZosStorage` JS object is the only IndexedDB interface
+    * React UI may read from ZosStorage/ZosKeystore caches (read-only, caches populated via HAL)
+    * No direct IndexedDB access outside HAL/ZosStorage/ZosKeystore implementation
+    * Two physically isolated IndexedDB databases:
+      * `zos-storage`: General filesystem data (via ZosStorage)
+      * `zos-keystore`: Cryptographic key material (via ZosKeystore)
 
-29. **Unified ZosStorage Object**
+29. **Dual Storage Objects (Filesystem + Keystore)**
 
-    * `VfsStorage` and `ZosStorage` are consolidated into a single `ZosStorage` object
-    * All IndexedDB operations flow through this single object
-    * Provides three access patterns:
-      * **Runtime Path**: VFS Service → syscall → HAL → ZosStorage
-      * **Bootstrap Path**: Supervisor Boot → HAL/vfs → ZosStorage
-      * **Read-Only Path**: React Components → ZosStorageClient → ZosStorage sync caches
+    Storage is split into two physically isolated IndexedDB databases with separate JavaScript interfaces:
+
+    | Database | JS Object | Purpose | Access Pattern |
+    |----------|-----------|---------|----------------|
+    | `zos-storage` | `ZosStorage` | General filesystem (files, directories, metadata) | VFS IPC → storage syscalls |
+    | `zos-keystore` | `ZosKeystore` | Cryptographic key material only | Keystore syscalls (direct) |
+
+    **Rationale for Physical Isolation:**
+
+    * Key material never exposed to filesystem path traversal attacks
+    * Separate access control - keystore syscalls vs storage syscalls
+    * Independent lifecycle (keys persist across filesystem wipes)
+    * Reduced attack surface - VFS bugs cannot leak key material
 
 30. **Bootstrap Storage Exception**
 
@@ -341,9 +350,9 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
       * After Init starts, all storage access goes through processes
     * The vfs module is internal to zos-supervisor
 
-31. **Storage Hierarchy Enforcement**
+31. **Filesystem Hierarchy Enforcement**
 
-    All disk read/write operations must flow through the following hierarchy:
+    All **filesystem** read/write operations must flow through VFS:
 
     ```
     ┌─────────────────────────────────────────────────────────────┐
@@ -407,22 +416,22 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
                          │
                          │ IndexedDB async operation
                          ▼
-                    IndexedDB
+                  IndexedDB (zos-storage)
     ```
 
     **Layer Responsibilities:**
 
-    * **Services/Apps**: All processes needing disk storage MUST use VFS IPC protocol
+    * **Services/Apps**: All processes needing filesystem storage MUST use VFS IPC protocol
     * **VFS Service**: The ONLY process authorized to make storage syscalls
     * **Supervisor**: Routes syscalls through Axiom gateway
     * **Axiom**: Verification and audit layer - logs all requests/responses, records commits
     * **Kernel**: Executes storage syscall logic, calls HAL methods
     * **HAL**: Platform abstraction - tracks pending requests, calls JavaScript
-    * **ZosStorage**: Single JavaScript object interfacing with IndexedDB
+    * **ZosStorage**: JavaScript object interfacing with `zos-storage` IndexedDB
 
     **Rationale:**
 
-    * Single point of control for all disk I/O
+    * Single point of control for all filesystem I/O
     * Enables consistent permission checking, quota enforcement, encryption
     * Simplifies audit trail for data access
     * Allows VFS to implement filesystem semantics (paths, directories, metadata)
@@ -458,6 +467,90 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
     * Multiple storage operations can be in-flight simultaneously
 
     **Exception:** Bootstrap operations before VFS Service exists may use HAL's `bootstrap_storage_*` methods (see invariant 30).
+
+32. **Keystore Hierarchy Enforcement (Cryptographic Key Material)**
+
+    Cryptographic key operations use **dedicated keystore syscalls** that bypass VFS entirely:
+
+    ```
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    Identity Service (PID 5)                  │
+    │              Authorized to use keystore syscalls             │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ Keystore Syscalls (Direct - No VFS)
+                         │ (SYS_KEYSTORE_READ, SYS_KEYSTORE_WRITE, etc.)
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    Supervisor (Main Thread)                  │
+    │              system.process_syscall(pid, syscall)            │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ Axiom Gateway Entry Point
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                   Axiom (Verification Layer)                 │
+    │    - Logs request to SysLog                                  │
+    │    - Verifies sender identity (PID check)                    │
+    │    - Calls kernel function                                   │
+    │    - Records commits to CommitLog                            │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ kernel_fn callback
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                 Kernel (Execution Layer)                     │
+    │    execute_keystore_read/write(core, sender, data)          │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ HAL trait call
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                         HAL (WasmHal)                        │
+    │    do_keystore_read_async(pid, key) → request_id            │
+    │    - Generates unique request_id                             │
+    │    - Tracks pending_keystore_requests[request_id] = pid      │
+    │    - Calls JavaScript FFI                                    │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ JavaScript FFI call
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                  ZosKeystore (JavaScript)                    │
+    │    startRead(request_id, key)                                │
+    │    - Async IndexedDB operation                               │
+    │    - supervisor.notify_keystore_read_complete(request_id)    │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ IndexedDB async operation
+                         ▼
+                  IndexedDB (zos-keystore)
+    ```
+
+    **Why Keystore Bypasses VFS:**
+
+    * **Security Isolation**: Key material never passes through VFS, eliminating path traversal and filesystem-level attack vectors
+    * **Reduced Attack Surface**: VFS bugs (path parsing, permission checks, directory traversal) cannot leak cryptographic keys
+    * **Physical Separation**: `zos-keystore` is a separate IndexedDB database from `zos-storage`
+    * **Direct Access**: Identity Service needs fast, direct key access without VFS overhead
+    * **No Filesystem Semantics**: Keys don't need directories, permissions, or metadata - just key-value storage
+
+    **Access Control:**
+
+    * Keystore syscalls are restricted to authorized processes (currently Identity Service, PID 5)
+    * Axiom logs all keystore operations to SysLog for audit
+    * React UI may read from `ZosKeystore.keyCache` (read-only, synchronous)
+
+    **Keystore Path Format:**
+
+    Keystore paths follow a convention for human readability but are NOT filesystem paths:
+
+    ```
+    /keys/{user_id}/identity/public_keys.json
+    /keys/{user_id}/identity/machine/{machine_id}.json
+    ```
+
+    These paths are **keystore keys**, not VFS paths. They are never routed through VFS.
 
 ---
 
@@ -496,7 +589,7 @@ This single rule:
 
 ## 12. Protocol Constants Consolidation
 
-31. **Single Source of Truth for All Constants**
+33. **Single Source of Truth for All Constants**
 
     * The `zos-ipc` crate is the **single source of truth** for:
       * Syscall numbers (Process → Kernel operations)
@@ -505,7 +598,7 @@ This single rule:
     * No duplicate constant definitions are allowed anywhere else
     * Both `zos-kernel` and `zos-process` re-export from `zos-ipc`
 
-32. **Constant Organization in zos-ipc**
+34. **Constant Organization in zos-ipc**
 
     * **Syscalls** (`zos_ipc::syscall` module):
       * 0x01-0x0F: Misc (debug, time, info)
@@ -513,10 +606,12 @@ This single rule:
       * 0x30-0x3F: Capability (grant, revoke, inspect)
       * 0x40-0x4F: IPC (send, receive, call, reply)
       * 0x50-0x5F: System (list processes)
-      * 0x70-0x7F: Platform Storage (async ops)
+      * 0x60-0x6F: Keystore (cryptographic key storage - bypasses VFS)
+      * 0x70-0x7F: Platform Storage (async ops - VFS only)
       * 0x90-0x9F: Network (async HTTP)
     * **IPC Messages** (various modules):
       * 0x0001-0x000F: Console/System
+      * 0x0080-0x008F: Keystore results (MSG_KEYSTORE_RESULT)
       * 0x1000-0x100F: Init service
       * 0x2000-0x200F: Supervisor → Init
       * 0x2010-0x201F: PermissionService
@@ -532,6 +627,7 @@ This single rule:
     * Prevents constant value conflicts
     * Makes protocol versioning and evolution easier
     * Both syscalls and IPC messages are part of the kernel interface
+    * Keystore syscalls (0x60-0x6F) are separate from storage syscalls (0x70-0x7F) to enforce separation at the syscall boundary
 
 ---
 

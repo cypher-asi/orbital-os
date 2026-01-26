@@ -58,6 +58,8 @@ extern crate alloc;
 
 // Split modules for dispatch logic
 mod auth;
+mod keystore_dispatch;
+mod keystore_helpers;
 mod network_dispatch;
 mod vfs_dispatch;
 mod vfs_helpers;
@@ -75,6 +77,9 @@ pub use auth::{check_user_authorization, log_denial, AuthResult};
 /// Maximum number of pending VFS operations (Rule 11: Resource & DoS)
 pub const MAX_PENDING_VFS_OPS: usize = 64;
 
+/// Maximum number of pending keystore operations (Rule 11: Resource & DoS)
+pub const MAX_PENDING_KEYSTORE_OPS: usize = 64;
+
 /// Maximum number of pending network operations (Rule 11: Resource & DoS)
 pub const MAX_PENDING_NET_OPS: usize = 32;
 
@@ -84,13 +89,14 @@ mod tests;
 use alloc::collections::BTreeMap;
 
 use crate::manifests::IDENTITY_SERVICE_MANIFEST;
-use pending::{PendingNetworkOp, PendingStorageOp};
+use pending::{PendingKeystoreOp, PendingNetworkOp, PendingStorageOp};
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_process::{
     identity_cred, identity_key, identity_machine, identity_prefs, identity_zid, net,
 };
 use zos_vfs::async_client;
+use zos_vfs::client::keystore_async;
 
 /// IdentityService - manages user cryptographic identities
 #[derive(Default)]
@@ -102,6 +108,11 @@ pub struct IdentityService {
     pub pending_vfs_ops: BTreeMap<u32, PendingStorageOp>,
     /// Counter for generating VFS operation IDs
     pub next_vfs_op_id: u32,
+    /// Pending keystore operations: keystore_op_id -> operation context
+    /// Keystore IPC doesn't return request IDs, so we use our own counter.
+    pub pending_keystore_ops: BTreeMap<u32, PendingKeystoreOp>,
+    /// Counter for generating keystore operation IDs
+    pub next_keystore_op_id: u32,
     /// Pending network operations: request_id -> operation context
     pub pending_net_ops: BTreeMap<u32, PendingNetworkOp>,
 }
@@ -155,9 +166,14 @@ impl ZeroApp for IdentityService {
             msg.tag, msg.from_pid
         ));
 
-        // Check for VFS responses first (Invariant 31 compliant - storage via VFS IPC)
+        // Check for VFS responses first (for directory operations)
         if async_client::is_vfs_response(msg.tag) {
             return self.handle_vfs_result(&msg);
+        }
+
+        // Check for Keystore responses (for key storage operations)
+        if keystore_async::is_keystore_response(msg.tag) {
+            return self.handle_keystore_result(&msg);
         }
 
         match msg.tag {

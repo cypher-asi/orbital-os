@@ -578,43 +578,43 @@ impl Supervisor {
     }
 
     // ==========================================================================
-    // Wasm-bindgen wrappers for key storage callbacks (ZosStorageKeys)
+    // Wasm-bindgen wrappers for keystore callbacks (ZosKeystore)
     // ==========================================================================
 
-    /// Called by JavaScript ZosStorageKeys when key read completes successfully.
+    /// Called by JavaScript ZosKeystore when key read completes successfully.
     #[wasm_bindgen]
-    pub fn notify_key_storage_read_complete(&mut self, request_id: u32, data: &[u8]) {
-        self.notify_key_storage_read_complete_internal(request_id, data)
+    pub fn notify_keystore_read_complete(&mut self, request_id: u32, data: &[u8]) {
+        self.notify_keystore_read_complete_internal(request_id, data)
     }
 
-    /// Called by JavaScript ZosStorageKeys when key read returns not found.
+    /// Called by JavaScript ZosKeystore when key read returns not found.
     #[wasm_bindgen]
-    pub fn notify_key_storage_not_found(&mut self, request_id: u32) {
-        self.notify_key_storage_not_found_internal(request_id)
+    pub fn notify_keystore_not_found(&mut self, request_id: u32) {
+        self.notify_keystore_not_found_internal(request_id)
     }
 
-    /// Called by JavaScript ZosStorageKeys when key write/delete completes successfully.
+    /// Called by JavaScript ZosKeystore when key write/delete completes successfully.
     #[wasm_bindgen]
-    pub fn notify_key_storage_write_complete(&mut self, request_id: u32) {
-        self.notify_key_storage_write_complete_internal(request_id)
+    pub fn notify_keystore_write_complete(&mut self, request_id: u32) {
+        self.notify_keystore_write_complete_internal(request_id)
     }
 
-    /// Called by JavaScript ZosStorageKeys when key list completes.
+    /// Called by JavaScript ZosKeystore when key list completes.
     #[wasm_bindgen]
-    pub fn notify_key_storage_list_complete(&mut self, request_id: u32, keys_json: &str) {
-        self.notify_key_storage_list_complete_internal(request_id, keys_json)
+    pub fn notify_keystore_list_complete(&mut self, request_id: u32, keys_json: &str) {
+        self.notify_keystore_list_complete_internal(request_id, keys_json)
     }
 
-    /// Called by JavaScript ZosStorageKeys when key exists check completes.
+    /// Called by JavaScript ZosKeystore when key exists check completes.
     #[wasm_bindgen]
-    pub fn notify_key_storage_exists_complete(&mut self, request_id: u32, exists: bool) {
-        self.notify_key_storage_exists_complete_internal(request_id, exists)
+    pub fn notify_keystore_exists_complete(&mut self, request_id: u32, exists: bool) {
+        self.notify_keystore_exists_complete_internal(request_id, exists)
     }
 
-    /// Called by JavaScript ZosStorageKeys when key operation fails.
+    /// Called by JavaScript ZosKeystore when key operation fails.
     #[wasm_bindgen]
-    pub fn notify_key_storage_error(&mut self, request_id: u32, error: &str) {
-        self.notify_key_storage_error_internal(request_id, error)
+    pub fn notify_keystore_error(&mut self, request_id: u32, error: &str) {
+        self.notify_keystore_error_internal(request_id, error)
     }
 
     // ==========================================================================

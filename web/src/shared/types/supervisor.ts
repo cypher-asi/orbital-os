@@ -59,6 +59,10 @@ export interface Supervisor {
 
   /** Initialize the Axiom storage backend */
   init_axiom_storage(): Promise<boolean>;
+  /** Initialize the VFS storage backend (zos-filesystem IndexedDB) */
+  init_vfs_storage(): Promise<boolean>;
+  /** Initialize the Keystore storage backend (zos-keystore IndexedDB) */
+  init_keystore(): Promise<boolean>;
   /** Sync Axiom commit log to persistent storage */
   sync_axiom_log(): Promise<number>;
 

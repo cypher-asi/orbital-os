@@ -71,16 +71,25 @@ export {
 } from './TimeServiceClient';
 
 // VFS direct access for React components (reads only)
+// NOTE: Identity keys are stored in keystore at /keys/ paths, not in VFS
 export {
   VfsStorageClient,
   formatUserId,
-  getIdentityKeyStorePath,
-  getMachineKeysDir,
-  getMachineKeyPath,
+  getUserHomeDir,
   getCredentialsPath,
   getZidSessionPath,
   type VfsInode,
 } from './VfsStorageClient';
+
+// Keystore direct access for React components (reads only) - for identity keys
+// All cryptographic key material is stored in the dedicated keystore at /keys/ paths
+export {
+  KeystoreClient,
+  formatMachineIdHex,
+  getIdentityKeystorePath,
+  getMachineKeysDir,
+  getMachineKeyPath,
+} from './KeystoreClient';
 
 // Identity utilities
 export { userIdToBigInt, bytesToHex, u128ToHex } from './identityUtils';

@@ -4,15 +4,20 @@
 //! - Neural key generation and recovery
 //! - Machine key CRUD operations (create, list, get, revoke, rotate)
 //!
+//! # Invariant 32 Compliance
+//!
+//! All `/keys/` paths use Keystore IPC (via KeystoreService PID 7), NOT VFS.
+//! Directory operations (e.g., `/home/{user_id}/.zos/identity/`) still use VFS.
+//!
 //! # Safety Invariants (per zos-service.md Rule 0)
 //!
 //! ## Success Conditions
-//! - Neural key generation: Key generated, split into shards, stored to VFS, response sent
+//! - Neural key generation: Key generated, split into shards, stored to Keystore, response sent
 //! - Machine key creation: Neural Key verified against stored identity, keypair derived, stored
 //! - Key rotation: Existing key read, new keys generated, stored atomically
 //!
 //! ## Acceptable Partial Failure
-//! - Orphan content if inode write fails (VFS handles cleanup)
+//! - Orphan content if write fails (cleanup handled)
 //!
 //! ## Forbidden States
 //! - Returning shards before key is persisted
@@ -25,7 +30,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::super::utils::bytes_to_hex;
-use super::super::pending::{PendingStorageOp, RequestContext};
+use super::super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext};
 use super::super::response;
 use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::{
@@ -59,15 +64,16 @@ pub fn continue_generate_after_directory_check(
     let ctx = RequestContext::new(client_pid, cap_slots);
     
     if exists {
-        // Directory exists, proceed to check if key already exists
+        // Directory exists, proceed to check if key already exists (via Keystore)
         syscall::debug(&format!(
             "IdentityService: Identity directory exists for user {:032x}",
             user_id
         ));
         let key_path = LocalKeyStore::storage_path(user_id);
-        return service.start_vfs_exists(
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        return service.start_keystore_exists(
             &key_path,
-            PendingStorageOp::CheckKeyExists { ctx, user_id },
+            PendingKeystoreOp::CheckKeyExists { ctx, user_id },
         );
     }
 
@@ -100,16 +106,17 @@ pub fn continue_create_directories(
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     // directories is now empty after mkdir_all succeeds
-    // Check if key already exists
+    // Check if key already exists (via Keystore)
     let key_path = LocalKeyStore::storage_path(user_id);
     syscall::debug(&format!(
         "IdentityService: Directories created, checking if key exists at {}",
         key_path
     ));
     let ctx = RequestContext::new(client_pid, cap_slots);
-    service.start_vfs_exists(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_exists(
         &key_path,
-        PendingStorageOp::CheckKeyExists { ctx, user_id },
+        PendingKeystoreOp::CheckKeyExists { ctx, user_id },
     )
 }
 
@@ -280,10 +287,11 @@ pub fn continue_generate_after_exists_check(
 
     let key_path = LocalKeyStore::storage_path(user_id);
     match serde_json::to_vec(&key_store) {
-        Ok(json_bytes) => service.start_vfs_write(
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        Ok(json_bytes) => service.start_keystore_write(
             &key_path,
             &json_bytes,
-            PendingStorageOp::WriteKeyStore {
+            PendingKeystoreOp::WriteKeyStore {
                 ctx,
                 user_id,
                 result,
@@ -362,9 +370,10 @@ pub fn handle_recover_neural_key(
         key_path
     ));
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_read(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
         &key_path,
-        PendingStorageOp::ReadIdentityForRecovery {
+        PendingKeystoreOp::ReadIdentityForRecovery {
             ctx,
             user_id: request.user_id,
             zid_shards,
@@ -473,10 +482,11 @@ pub fn continue_recover_after_identity_read(
 
     let key_path = LocalKeyStore::storage_path(user_id);
     match serde_json::to_vec(&key_store) {
-        Ok(json_bytes) => service.start_vfs_write(
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        Ok(json_bytes) => service.start_keystore_write(
             &key_path,
             &json_bytes,
-            PendingStorageOp::WriteRecoveredKeyStore {
+            PendingKeystoreOp::WriteRecoveredKeyStore {
                 ctx,
                 user_id,
                 result,
@@ -520,9 +530,10 @@ pub fn handle_get_identity_key(
 
     let key_path = LocalKeyStore::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_read(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
         &key_path,
-        PendingStorageOp::GetIdentityKey { ctx },
+        PendingKeystoreOp::GetIdentityKey { ctx },
     )
 }
 
@@ -564,9 +575,10 @@ pub fn handle_create_machine_key(
         key_path
     ));
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_read(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
         &key_path,
-        PendingStorageOp::ReadIdentityForMachine { ctx, request },
+        PendingKeystoreOp::ReadIdentityForMachine { ctx, request },
     )
 }
 
@@ -728,10 +740,11 @@ pub fn continue_create_machine_after_identity_read(
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, machine_id);
     match serde_json::to_vec(&record) {
-        Ok(json_bytes) => service.start_vfs_write(
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        Ok(json_bytes) => service.start_keystore_write(
             &machine_path,
             &json_bytes,
-            PendingStorageOp::WriteMachineKey {
+            PendingKeystoreOp::WriteMachineKey {
                 ctx,
                 user_id: request.user_id,
                 record,
@@ -773,11 +786,13 @@ pub fn handle_list_machine_keys(
         );
     }
 
-    let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    // Use keystore list with prefix to find all machine keys
+    let machine_prefix = format!("/keys/{}/identity/machine/", request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_readdir(
-        &machine_dir,
-        PendingStorageOp::ListMachineKeys { ctx, user_id: request.user_id },
+    service.start_keystore_list(
+        &machine_prefix,
+        PendingKeystoreOp::ListMachineKeys { ctx, user_id: request.user_id },
     )
 }
 
@@ -810,9 +825,10 @@ pub fn handle_revoke_machine_key(
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_delete(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_delete(
         &machine_path,
-        PendingStorageOp::DeleteMachineKey {
+        PendingKeystoreOp::DeleteMachineKey {
             ctx,
             user_id: request.user_id,
             machine_id: request.machine_id,
@@ -849,9 +865,10 @@ pub fn handle_rotate_machine_key(
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_read(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
         &machine_path,
-        PendingStorageOp::ReadMachineForRotate {
+        PendingKeystoreOp::ReadMachineForRotate {
             ctx,
             user_id: request.user_id,
             machine_id: request.machine_id,
@@ -972,10 +989,11 @@ pub fn continue_rotate_after_read(
 
     let machine_path = MachineKeyRecord::storage_path(user_id, machine_id);
     match serde_json::to_vec(&record) {
-        Ok(json_bytes) => service.start_vfs_write(
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        Ok(json_bytes) => service.start_keystore_write(
             &machine_path,
             &json_bytes,
-            PendingStorageOp::WriteRotatedMachineKey {
+            PendingKeystoreOp::WriteRotatedMachineKey {
                 ctx,
                 user_id,
                 record,
@@ -1019,8 +1037,9 @@ pub fn handle_get_machine_key(
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_read(
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
         &machine_path,
-        PendingStorageOp::ReadSingleMachineKey { ctx },
+        PendingKeystoreOp::ReadSingleMachineKey { ctx },
     )
 }

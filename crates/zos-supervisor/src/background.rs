@@ -93,13 +93,14 @@ impl DesktopBackground {
         }
     }
 
-    /// Set the background type by ID (e.g., "grain", "mist")
+    /// Set the background type by ID (e.g., "grain", "mist", "dots")
     /// Returns true if successful, false if ID is invalid
     #[wasm_bindgen]
     pub fn set_background(&mut self, id: &str) -> bool {
         let bg_type = match id.to_lowercase().as_str() {
             "grain" => background::BackgroundType::Grain,
             "mist" => background::BackgroundType::Mist,
+            "dots" => background::BackgroundType::Dots,
             _ => return false,
         };
 

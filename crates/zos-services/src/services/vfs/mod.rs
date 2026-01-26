@@ -35,7 +35,7 @@
 //!          │ ZosStorage.startRead()
 //!          ▼
 //! ┌─────────────────┐
-//! │   IndexedDB     │  ◄── Browser storage
+//! │   IndexedDB     │  ◄── Browser storage (zos-storage DB)
 //! └────────┬────────┘
 //!          │
 //!          │ Promise resolves
@@ -63,6 +63,12 @@
 //! - `MSG_VFS_UNLINK (0x8014)`: Delete file
 //! - `MSG_VFS_STAT (0x8020)`: Get file/directory info
 //! - `MSG_VFS_EXISTS (0x8022)`: Check if path exists
+//!
+//! # Note on Key Storage
+//!
+//! Cryptographic key storage (paths under `/keys/`) is handled by the
+//! KeystoreService (PID 7), not VFS. This provides security isolation
+//! by storing keys in a separate zos-keystore IndexedDB database.
 //!
 //! # Permission Model
 //!
@@ -444,21 +450,23 @@ pub fn validate_path(path: &str) -> Result<(), &'static str> {
 /// # Permission Model
 ///
 /// - **System processes** (PID 1-9): Full access (system class)
+///   - User ID still extracted from path for ownership assignment
 /// - **User applications** (PID >= 10): Check owner/world permissions
 ///   - User ID extracted from path: `/users/{user_id}/...` or `/home/{user_id}/...`
 ///   - If path doesn't contain user ID, treated as "other" (world permissions)
 pub fn derive_permission_context(from_pid: u32, path: &str) -> PermissionContext {
-    // System processes (init, vfs, identity, time services) have full access
+    // Extract user ID from path if present (needed for ownership assignment)
+    // Paths like /users/12345/... or /home/12345/... contain the user ID
+    let user_id = extract_user_id_from_path(path);
+
+    // System processes (init, vfs, identity, time services) have system class
+    // but still use path-extracted user_id for setting file ownership
     if from_pid < 10 {
         return PermissionContext {
-            user_id: None,
+            user_id,
             process_class: ProcessClass::System,
         };
     }
-
-    // Extract user ID from path if present
-    // Paths like /users/12345/... or /home/12345/... contain the user ID
-    let user_id = extract_user_id_from_path(path);
 
     PermissionContext {
         user_id,

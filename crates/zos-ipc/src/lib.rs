@@ -17,6 +17,7 @@
 //! | 0x40-0x4F | IPC (send, receive, call, reply) |
 //! | 0x50-0x5F | System (list processes) |
 //! | 0x70-0x7F | Platform Storage (async ops) |
+//! | 0x80-0x8F | Keystore (async key storage) |
 //! | 0x90-0x9F | Network (async HTTP) |
 //!
 //! # IPC Message Range Allocation
@@ -38,6 +39,7 @@
 //! | 0x8000-0x80FF | VFS service                          |
 //! | 0x8100-0x810F | Time service                         |
 //! | 0x9000-0x901F | Network service                      |
+//! | 0xA000-0xA0FF | Keystore service                     |
 //!
 //! # Usage
 //!
@@ -94,6 +96,8 @@ pub enum ObjectType {
     Filesystem = 9,
     /// User identity service - for authentication
     Identity = 10,
+    /// Cryptographic keystore - for secure key storage
+    Keystore = 11,
 }
 
 impl ObjectType {
@@ -112,6 +116,7 @@ impl ObjectType {
             8 => Some(ObjectType::Network),
             9 => Some(ObjectType::Filesystem),
             10 => Some(ObjectType::Identity),
+            11 => Some(ObjectType::Keystore),
             _ => None,
         }
     }
@@ -129,6 +134,7 @@ impl ObjectType {
             ObjectType::Network => "Network",
             ObjectType::Filesystem => "Filesystem",
             ObjectType::Identity => "Identity",
+            ObjectType::Keystore => "Keystore",
         }
     }
 }
@@ -209,6 +215,20 @@ pub mod syscall {
     /// Check if key exists (async - returns request_id)
     pub const SYS_STORAGE_EXISTS: u32 = 0x74;
 
+    // === Keystore (0x80 - 0x8F) ===
+    // HAL-level key storage operations. VfsService uses these for /keys/ paths.
+    // Applications should use VFS IPC with /keys/ paths. All keystore syscalls are ASYNC.
+    /// Read key from keystore (async - returns request_id)
+    pub const SYS_KEYSTORE_READ: u32 = 0x80;
+    /// Write key to keystore (async - returns request_id)
+    pub const SYS_KEYSTORE_WRITE: u32 = 0x81;
+    /// Delete key from keystore (async - returns request_id)
+    pub const SYS_KEYSTORE_DELETE: u32 = 0x82;
+    /// List keys with prefix (async - returns request_id)
+    pub const SYS_KEYSTORE_LIST: u32 = 0x83;
+    /// Check if key exists (async - returns request_id)
+    pub const SYS_KEYSTORE_EXISTS: u32 = 0x84;
+
     // === Network (0x90 - 0x9F) ===
     // HAL-level HTTP fetch operations. Applications use Network Service via IPC.
     // Network syscalls are ASYNC and return a request_id immediately.
@@ -274,6 +294,33 @@ pub mod storage {
     pub const MSG_STORAGE_RESULT: u32 = 0x80;
 
     /// Storage result types
+    pub mod result {
+        /// Read succeeded, data follows
+        pub const READ_OK: u8 = 0;
+        /// Write/delete succeeded
+        pub const WRITE_OK: u8 = 1;
+        /// Key not found
+        pub const NOT_FOUND: u8 = 2;
+        /// Operation failed
+        pub const ERROR: u8 = 3;
+        /// List succeeded, key list follows (JSON array)
+        pub const LIST_OK: u8 = 4;
+        /// Exists check result: 1 = exists, 0 = not exists
+        pub const EXISTS_OK: u8 = 5;
+    }
+}
+
+/// Keystore IPC messages (async key storage results).
+///
+/// Note: Keystore uses the same message tag (0x80) as storage but results are
+/// distinguished by the requesting PID's pending_keystore_requests vs pending_storage_requests.
+pub mod keystore {
+    /// Keystore operation result delivered via IPC.
+    /// Payload format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+    /// Uses same format as MSG_STORAGE_RESULT for consistency.
+    pub const MSG_KEYSTORE_RESULT: u32 = 0x81;
+
+    /// Keystore result types (same as storage for consistency)
     pub mod result {
         /// Read succeeded, data follows
         pub const READ_OK: u8 = 0;
@@ -812,6 +859,55 @@ pub mod net {
 }
 
 // =============================================================================
+// Keystore Service (0xA000 - 0xA0FF)
+// =============================================================================
+
+/// Keystore service IPC messages (0xA000-0xA0FF).
+///
+/// The Keystore Service provides secure storage for cryptographic keys,
+/// isolated from general filesystem storage. It uses the zos-keystore
+/// IndexedDB database via keystore syscalls.
+///
+/// This service is used by Identity Service for key material storage,
+/// keeping sensitive cryptographic data separate from user files.
+pub mod keystore_svc {
+    /// Read key request.
+    /// Payload: JSON-serialized KeystoreReadRequest { key: String }
+    pub const MSG_KEYSTORE_READ: u32 = 0xA000;
+    /// Read key response.
+    /// Payload: JSON-serialized KeystoreReadResponse { result: Result<Vec<u8>, KeystoreError> }
+    pub const MSG_KEYSTORE_READ_RESPONSE: u32 = 0xA001;
+
+    /// Write key request.
+    /// Payload: JSON-serialized KeystoreWriteRequest { key: String, value: Vec<u8> }
+    pub const MSG_KEYSTORE_WRITE: u32 = 0xA002;
+    /// Write key response.
+    /// Payload: JSON-serialized KeystoreWriteResponse { result: Result<(), KeystoreError> }
+    pub const MSG_KEYSTORE_WRITE_RESPONSE: u32 = 0xA003;
+
+    /// Delete key request.
+    /// Payload: JSON-serialized KeystoreDeleteRequest { key: String }
+    pub const MSG_KEYSTORE_DELETE: u32 = 0xA004;
+    /// Delete key response.
+    /// Payload: JSON-serialized KeystoreDeleteResponse { result: Result<(), KeystoreError> }
+    pub const MSG_KEYSTORE_DELETE_RESPONSE: u32 = 0xA005;
+
+    /// Check if key exists request.
+    /// Payload: JSON-serialized KeystoreExistsRequest { key: String }
+    pub const MSG_KEYSTORE_EXISTS: u32 = 0xA006;
+    /// Check if key exists response.
+    /// Payload: JSON-serialized KeystoreExistsResponse { result: Result<bool, KeystoreError> }
+    pub const MSG_KEYSTORE_EXISTS_RESPONSE: u32 = 0xA007;
+
+    /// List keys with prefix request.
+    /// Payload: JSON-serialized KeystoreListRequest { prefix: String }
+    pub const MSG_KEYSTORE_LIST: u32 = 0xA008;
+    /// List keys response.
+    /// Payload: JSON-serialized KeystoreListResponse { result: Result<Vec<String>, KeystoreError> }
+    pub const MSG_KEYSTORE_LIST_RESPONSE: u32 = 0xA009;
+}
+
+// =============================================================================
 // Debug Message Protocol (String Prefixes)
 // =============================================================================
 
@@ -844,6 +940,8 @@ pub mod debug {
     pub const SERVICE_RESPONSE: &str = "SERVICE:RESPONSE:";
     /// VFS service response: "VFS:RESPONSE:{hex_data}"
     pub const VFS_RESPONSE: &str = "VFS:RESPONSE:";
+    /// Keystore service response: "KEYSTORE:RESPONSE:{to_pid}:{tag_hex}:{hex_data}"
+    pub const KEYSTORE_RESPONSE: &str = "KEYSTORE:RESPONSE:";
 
     // === Spawn Protocol ===
     /// Spawn response: "SPAWN:RESPONSE:{hex_data}"
@@ -909,6 +1007,10 @@ mod tests {
         // Time service in 0x8100-0x810F
         const { assert!(time::MSG_GET_TIME_SETTINGS >= 0x8100) };
         const { assert!(time::MSG_SET_TIME_SETTINGS_RESPONSE <= 0x810F) };
+
+        // Keystore service in 0xA000-0xA0FF
+        const { assert!(keystore_svc::MSG_KEYSTORE_READ >= 0xA000) };
+        const { assert!(keystore_svc::MSG_KEYSTORE_LIST_RESPONSE <= 0xA0FF) };
     }
 
     #[test]
@@ -925,17 +1027,18 @@ mod tests {
         assert_eq!(ObjectType::Network as u8, 8);
         assert_eq!(ObjectType::Filesystem as u8, 9);
         assert_eq!(ObjectType::Identity as u8, 10);
+        assert_eq!(ObjectType::Keystore as u8, 11);
     }
 
     #[test]
     fn test_object_type_from_u8_roundtrip() {
-        for val in 1..=10u8 {
+        for val in 1..=11u8 {
             let obj_type = ObjectType::from_u8(val).expect("valid value");
             assert_eq!(obj_type as u8, val);
         }
         // Invalid values should return None
         assert!(ObjectType::from_u8(0).is_none());
-        assert!(ObjectType::from_u8(11).is_none());
+        assert!(ObjectType::from_u8(12).is_none());
         assert!(ObjectType::from_u8(255).is_none());
     }
 }

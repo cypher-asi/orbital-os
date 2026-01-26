@@ -18,7 +18,6 @@ members = [
     "crates/zos-supervisor",
     "crates/zos-unsafe-primitives",
     "crates/zos-vfs",
-    "tools/dev-server",
 ]
 
 [workspace.package]
@@ -72,15 +71,6 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 zid-crypto = { path = "../zero-id/crates/zid-crypto" }
 getrandom = { version = "0.2", features = ["js"] }
 uuid = { version = "1.6", features = ["v4", "serde", "js"] }
-
-# Dev server dependencies
-tokio = { version = "1", features = ["full"] }
-hyper = { version = "1", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
-http-body-util = "0.1"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "cors"] }
-axum = "0.8"
 
 [profile.release]
 opt-level = "z"

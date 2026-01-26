@@ -5,10 +5,12 @@
 //! - Terminal capabilities
 //! - VFS service capabilities
 //! - Identity service capabilities
+//! - Keystore service capabilities
 //!
 //! This module is organized into submodules by capability domain.
 
 mod identity;
+mod keystore;
 mod supervisor;
 mod terminal;
 mod vfs;
@@ -85,6 +87,25 @@ impl Supervisor {
             // If Identity service is running, grant this process a capability to Identity endpoint
             // This enables proper capability-mediated IPC for identity operations
             self.grant_identity_capability_to_process(process_pid, name);
+
+            // If this is identity_service and Keystore service is running,
+            // grant keystore capability to Identity
+            // This enables Identity to use keystore IPC for /keys/ paths (Invariant 32)
+            if name == "identity_service" {
+                log(&format!(
+                    "[supervisor] Identity service spawned (PID {}), looking for keystore service...",
+                    process_pid.0
+                ));
+                if let Some(keystore_pid) = self.find_keystore_service_pid() {
+                    log(&format!(
+                        "[supervisor] Found keystore service at PID {}, granting capability to Identity",
+                        keystore_pid.0
+                    ));
+                    self.grant_keystore_capability_to_identity(keystore_pid);
+                } else {
+                    log("[supervisor] WARNING: Keystore service not found when Identity spawned!");
+                }
+            }
         }
 
         // When terminal is spawned, grant Init (PID 1) capability to terminal's input endpoint
@@ -117,6 +138,17 @@ impl Supervisor {
         // When time_service is spawned, grant Init (PID 1) capability to deliver IPC messages
         if name == "time_service" {
             self.grant_init_capability_to_service("time_service", process_pid);
+        }
+
+        // When keystore_service is spawned, grant its endpoint to Identity service
+        // and grant Init (PID 1) capability to deliver IPC messages
+        if name == "keystore_service" {
+            log(&format!(
+                "[supervisor] Keystore service spawned (PID {}), setting up capabilities",
+                process_pid.0
+            ));
+            self.grant_keystore_capability_to_identity(process_pid);
+            self.grant_init_capability_to_service("keystore_service", process_pid);
         }
     }
 

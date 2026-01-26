@@ -43,6 +43,9 @@ pub(super) mod storage_const {
 
     /// MSG_STORAGE_RESULT tag from zos-ipc (the single source of truth)
     pub const MSG_STORAGE_RESULT: u32 = zos_ipc::storage::MSG_STORAGE_RESULT;
+
+    /// MSG_KEYSTORE_RESULT tag from zos-ipc (for keystore-specific results)
+    pub const MSG_KEYSTORE_RESULT: u32 = zos_ipc::keystore::MSG_KEYSTORE_RESULT;
 }
 
 impl super::Supervisor {
@@ -239,35 +242,49 @@ impl super::Supervisor {
         );
     }
 
+    /// Deliver a keystore result to a process via IPC through Init.
+    ///
+    /// Similar to deliver_storage_result but uses MSG_KEYSTORE_RESULT (0x81)
+    /// instead of MSG_STORAGE_RESULT (0x80) so KeystoreService can distinguish
+    /// keystore results from VFS storage results.
+    pub(super) fn deliver_keystore_result(&mut self, pid: u64, payload: &[u8]) {
+        self.route_ipc_via_init(
+            pid,
+            SERVICE_INPUT_SLOT,
+            storage_const::MSG_KEYSTORE_RESULT,
+            payload,
+        );
+    }
+
     // ==========================================================================
-    // Key Storage Callbacks (from ZosStorageKeys JavaScript)
+    // Keystore Callbacks (from ZosKeystore JavaScript)
     // ==========================================================================
 
-    /// Internal handler for key storage read complete.
-    pub(super) fn notify_key_storage_read_complete_internal(
+    /// Internal handler for keystore read complete.
+    pub(super) fn notify_keystore_read_complete_internal(
         &mut self,
         request_id: u32,
         data: &[u8],
     ) {
         log(&format!(
-            "[supervisor] notify_key_storage_read_complete: request_id={}, len={}",
+            "[supervisor] notify_keystore_read_complete: request_id={}, len={}",
             request_id,
             data.len()
         ));
 
         // Look up which PID requested this
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] Unknown key storage request_id: {}",
+                    "[supervisor] Unknown keystore request_id: {}",
                     request_id
                 ));
                 return;
             }
         };
 
-        // Build MSG_STORAGE_RESULT payload (same format as regular storage)
+        // Build MSG_KEYSTORE_RESULT payload (same format as regular storage)
         // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
         let mut payload = Vec::with_capacity(9 + data.len());
         payload.extend_from_slice(&request_id.to_le_bytes());
@@ -275,81 +292,81 @@ impl super::Supervisor {
         payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
         payload.extend_from_slice(data);
 
-        // Deliver to requesting process via Init
-        self.deliver_storage_result(pid, &payload);
+        // Deliver to requesting process via Init (with MSG_KEYSTORE_RESULT tag)
+        self.deliver_keystore_result(pid, &payload);
     }
 
-    /// Internal handler for key storage not found.
-    pub(super) fn notify_key_storage_not_found_internal(&mut self, request_id: u32) {
+    /// Internal handler for keystore not found.
+    pub(super) fn notify_keystore_not_found_internal(&mut self, request_id: u32) {
         log(&format!(
-            "[supervisor] notify_key_storage_not_found: request_id={}",
+            "[supervisor] notify_keystore_not_found: request_id={}",
             request_id
         ));
 
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] ERROR: Unknown key storage request_id {} in not_found handler (orphaned response)",
+                    "[supervisor] ERROR: Unknown keystore request_id {} in not_found handler (orphaned response)",
                     request_id
                 ));
                 return;
             }
         };
 
-        // Build MSG_STORAGE_RESULT payload for NOT_FOUND
+        // Build MSG_KEYSTORE_RESULT payload for NOT_FOUND
         let mut payload = Vec::with_capacity(9);
         payload.extend_from_slice(&request_id.to_le_bytes());
         payload.push(storage_const::STORAGE_NOT_FOUND);
         payload.extend_from_slice(&0u32.to_le_bytes());
 
-        self.deliver_storage_result(pid, &payload);
+        self.deliver_keystore_result(pid, &payload);
     }
 
-    /// Internal handler for key storage write complete.
-    pub(super) fn notify_key_storage_write_complete_internal(&mut self, request_id: u32) {
+    /// Internal handler for keystore write complete.
+    pub(super) fn notify_keystore_write_complete_internal(&mut self, request_id: u32) {
         log(&format!(
-            "[supervisor] notify_key_storage_write_complete: request_id={}",
+            "[supervisor] notify_keystore_write_complete: request_id={}",
             request_id
         ));
 
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] ERROR: Unknown key storage request_id {} in write_complete handler (orphaned response)",
+                    "[supervisor] ERROR: Unknown keystore request_id {} in write_complete handler (orphaned response)",
                     request_id
                 ));
                 return;
             }
         };
 
-        // Build MSG_STORAGE_RESULT payload for WRITE_OK
+        // Build MSG_KEYSTORE_RESULT payload for WRITE_OK
         let mut payload = Vec::with_capacity(9);
         payload.extend_from_slice(&request_id.to_le_bytes());
         payload.push(storage_const::STORAGE_WRITE_OK);
         payload.extend_from_slice(&0u32.to_le_bytes());
 
-        self.deliver_storage_result(pid, &payload);
+        self.deliver_keystore_result(pid, &payload);
     }
 
-    /// Internal handler for key storage list complete.
-    pub(super) fn notify_key_storage_list_complete_internal(
+    /// Internal handler for keystore list complete.
+    pub(super) fn notify_keystore_list_complete_internal(
         &mut self,
         request_id: u32,
         keys_json: &str,
     ) {
         log(&format!(
-            "[supervisor] notify_key_storage_list_complete: request_id={}, len={}",
+            "[supervisor] notify_keystore_list_complete: request_id={}, len={}",
             request_id,
             keys_json.len()
         ));
 
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] ERROR: Unknown key storage request_id {} in list_complete handler (orphaned response)",
+                    "[supervisor] ERROR: Unknown keystore request_id {} in list_complete handler (orphaned response)",
                     request_id
                 ));
                 return;
@@ -363,25 +380,25 @@ impl super::Supervisor {
         payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
         payload.extend_from_slice(data);
 
-        self.deliver_storage_result(pid, &payload);
+        self.deliver_keystore_result(pid, &payload);
     }
 
-    /// Internal handler for key storage exists complete.
-    pub(super) fn notify_key_storage_exists_complete_internal(
+    /// Internal handler for keystore exists complete.
+    pub(super) fn notify_keystore_exists_complete_internal(
         &mut self,
         request_id: u32,
         exists: bool,
     ) {
         log(&format!(
-            "[supervisor] notify_key_storage_exists_complete: request_id={}, exists={}",
+            "[supervisor] notify_keystore_exists_complete: request_id={}, exists={}",
             request_id, exists
         ));
 
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] ERROR: Unknown key storage request_id {} in exists_complete handler (orphaned response)",
+                    "[supervisor] ERROR: Unknown keystore request_id {} in exists_complete handler (orphaned response)",
                     request_id
                 ));
                 return;
@@ -394,21 +411,21 @@ impl super::Supervisor {
         payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
         payload.push(if exists { 1 } else { 0 });
 
-        self.deliver_storage_result(pid, &payload);
+        self.deliver_keystore_result(pid, &payload);
     }
 
-    /// Internal handler for key storage error.
-    pub(super) fn notify_key_storage_error_internal(&mut self, request_id: u32, error: &str) {
+    /// Internal handler for keystore error.
+    pub(super) fn notify_keystore_error_internal(&mut self, request_id: u32, error: &str) {
         log(&format!(
-            "[supervisor] notify_key_storage_error: request_id={}, error={}",
+            "[supervisor] notify_keystore_error: request_id={}, error={}",
             request_id, error
         ));
 
-        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_keystore_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
-                    "[supervisor] ERROR: Unknown key storage request_id {} in error handler (orphaned response, error was: {})",
+                    "[supervisor] ERROR: Unknown keystore request_id {} in error handler (orphaned response, error was: {})",
                     request_id, error
                 ));
                 return;
@@ -422,7 +439,7 @@ impl super::Supervisor {
         payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
         payload.extend_from_slice(error_bytes);
 
-        self.deliver_storage_result(pid, &payload);
+        self.deliver_keystore_result(pid, &payload);
     }
 }
 

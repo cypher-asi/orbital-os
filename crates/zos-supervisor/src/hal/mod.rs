@@ -32,9 +32,9 @@ const MAX_PENDING_STORAGE_REQUESTS: usize = 1000;
 /// Network requests are heavier, so limit is lower than storage.
 const MAX_PENDING_NETWORK_REQUESTS: usize = 100;
 
-/// Maximum number of pending key storage requests.
+/// Maximum number of pending keystore requests.
 /// Key operations are similar to storage, use the same limit.
-const MAX_PENDING_KEY_STORAGE_REQUESTS: usize = 1000;
+const MAX_PENDING_KEYSTORE_REQUESTS: usize = 1000;
 
 /// WASM HAL implementation
 ///
@@ -55,10 +55,10 @@ pub struct WasmHal {
     next_network_request_id: AtomicU32,
     /// Pending network requests: request_id -> requesting PID
     pending_network_requests: Arc<Mutex<HashMap<u32, u64>>>,
-    /// Next key storage request ID (monotonically increasing)
-    next_key_storage_request_id: AtomicU32,
-    /// Pending key storage requests: request_id -> requesting PID
-    pending_key_storage_requests: Arc<Mutex<HashMap<u32, u64>>>,
+    /// Next keystore request ID (monotonically increasing)
+    next_keystore_request_id: AtomicU32,
+    /// Pending keystore requests: request_id -> requesting PID
+    pending_keystore_requests: Arc<Mutex<HashMap<u32, u64>>>,
 }
 
 impl WasmHal {
@@ -72,8 +72,8 @@ impl WasmHal {
             pending_storage_requests: Arc::new(Mutex::new(HashMap::new())),
             next_network_request_id: AtomicU32::new(1),
             pending_network_requests: Arc::new(Mutex::new(HashMap::new())),
-            next_key_storage_request_id: AtomicU32::new(1),
-            pending_key_storage_requests: Arc::new(Mutex::new(HashMap::new())),
+            next_keystore_request_id: AtomicU32::new(1),
+            pending_keystore_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -125,20 +125,20 @@ impl WasmHal {
         }
     }
 
-    /// Generate a new unique key storage request ID
-    fn next_key_storage_request_id(&self) -> u32 {
-        self.next_key_storage_request_id.fetch_add(1, Ordering::SeqCst)
+    /// Generate a new unique keystore request ID
+    fn next_keystore_request_id(&self) -> u32 {
+        self.next_keystore_request_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Record a pending key storage request with bounded limit enforcement.
+    /// Record a pending keystore request with bounded limit enforcement.
     ///
     /// Returns true if the request was recorded, false if the limit was reached.
-    fn record_pending_key_storage_request(&self, request_id: u32, pid: u64) -> bool {
-        if let Ok(mut pending) = self.pending_key_storage_requests.lock() {
-            if pending.len() >= MAX_PENDING_KEY_STORAGE_REQUESTS {
+    fn record_pending_keystore_request(&self, request_id: u32, pid: u64) -> bool {
+        if let Ok(mut pending) = self.pending_keystore_requests.lock() {
+            if pending.len() >= MAX_PENDING_KEYSTORE_REQUESTS {
                 log(&format!(
-                    "[wasm-hal] ERROR: Pending key storage request limit reached ({}) - rejecting request_id={} from PID {}",
-                    MAX_PENDING_KEY_STORAGE_REQUESTS, request_id, pid
+                    "[wasm-hal] ERROR: Pending keystore request limit reached ({}) - rejecting request_id={} from PID {}",
+                    MAX_PENDING_KEYSTORE_REQUESTS, request_id, pid
                 ));
                 return false;
             }
@@ -459,39 +459,39 @@ impl HAL for WasmHal {
         self.do_take_storage_request_pid(request_id)
     }
 
-    // === Async Key Storage (KeyService Only) ===
+    // === Async Keystore (KeyService Only) ===
 
-    fn key_storage_read_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
-        self.do_key_storage_read_async(pid, key)
+    fn keystore_read_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        self.do_keystore_read_async(pid, key)
     }
 
-    fn key_storage_write_async(
+    fn keystore_write_async(
         &self,
         pid: u64,
         key: &str,
         value: &[u8],
     ) -> Result<StorageRequestId, HalError> {
-        self.do_key_storage_write_async(pid, key, value)
+        self.do_keystore_write_async(pid, key, value)
     }
 
-    fn key_storage_delete_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
-        self.do_key_storage_delete_async(pid, key)
+    fn keystore_delete_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        self.do_keystore_delete_async(pid, key)
     }
 
-    fn key_storage_list_async(&self, pid: u64, prefix: &str) -> Result<StorageRequestId, HalError> {
-        self.do_key_storage_list_async(pid, prefix)
+    fn keystore_list_async(&self, pid: u64, prefix: &str) -> Result<StorageRequestId, HalError> {
+        self.do_keystore_list_async(pid, prefix)
     }
 
-    fn key_storage_exists_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
-        self.do_key_storage_exists_async(pid, key)
+    fn keystore_exists_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
+        self.do_keystore_exists_async(pid, key)
     }
 
-    fn get_key_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
-        self.do_get_key_storage_request_pid(request_id)
+    fn get_keystore_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.do_get_keystore_request_pid(request_id)
     }
 
-    fn take_key_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
-        self.do_take_key_storage_request_pid(request_id)
+    fn take_keystore_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.do_take_keystore_request_pid(request_id)
     }
 
     // === Bootstrap Storage (Supervisor Only) ===

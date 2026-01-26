@@ -624,7 +624,7 @@ After creating all files:
 make build-processes
 
 # Start dev server
-cargo run -p dev-server
+cd web && npm run dev
 ```
 
 ---

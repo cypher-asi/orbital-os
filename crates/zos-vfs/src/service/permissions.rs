@@ -60,8 +60,16 @@ pub fn check_read(inode: &Inode, ctx: &PermissionContext) -> bool {
 
 /// Check if a context has write permission on an inode.
 pub fn check_write(inode: &Inode, ctx: &PermissionContext) -> bool {
-    // System processes check system_write
+    // System processes (like IdentityService) can write to user directories
+    // This allows system services to manage user data in paths like ~/.zos/identity/
     if ctx.process_class == ProcessClass::System || ctx.process_class == ProcessClass::Runtime {
+        // System processes can write to user home directories (/home/*)
+        // This handles both user-owned resources (owner_id set) and legacy data
+        // where owner_id may be None due to previous bugs
+        if inode.path.starts_with("/home/") || inode.owner_id.is_some() {
+            return true;
+        }
+        // For system-owned resources (like /system/), check system_write flag
         return inode.permissions.system_write;
     }
 
@@ -149,5 +157,63 @@ mod tests {
         // World can write (world_rw permissions)
         let other_ctx = PermissionContext::user(2);
         assert!(check_write(&inode, &other_ctx));
+    }
+
+    #[test]
+    fn test_system_can_write_user_owned() {
+        // System processes can write to user-owned directories
+        // (This allows IdentityService to manage ~/.zos/identity/ files)
+        let inode = Inode::new_directory(
+            String::from("/home/1/.zos/identity"),
+            String::from("/home/1/.zos"),
+            String::from("identity"),
+            Some(1), // User-owned
+            1000,
+        );
+
+        // Default permissions have system_write = false
+        assert!(!inode.permissions.system_write);
+
+        // But system processes can still write to user-owned directories
+        let system_ctx = PermissionContext::system();
+        assert!(check_write(&inode, &system_ctx));
+    }
+
+    #[test]
+    fn test_system_can_write_home_path_without_owner() {
+        // System processes can write to /home/* even if owner_id is None
+        // (handles legacy data where owner_id wasn't set properly)
+        let inode = Inode::new_directory(
+            String::from("/home/1/.zos/identity"),
+            String::from("/home/1/.zos"),
+            String::from("identity"),
+            None, // No owner set (legacy data)
+            1000,
+        );
+
+        // Even without owner_id, system can write to /home/* paths
+        let system_ctx = PermissionContext::system();
+        assert!(check_write(&inode, &system_ctx));
+    }
+
+    #[test]
+    fn test_system_respects_system_write_for_system_dirs() {
+        // For system directories (not under /home/), respect system_write flag
+        let mut inode = Inode::new_directory(
+            String::from("/system/config"),
+            String::from("/system"),
+            String::from("config"),
+            None, // System-owned
+            1000,
+        );
+
+        // With system_write = false, system cannot write
+        inode.permissions.system_write = false;
+        let system_ctx = PermissionContext::system();
+        assert!(!check_write(&inode, &system_ctx));
+
+        // With system_write = true, system can write
+        inode.permissions.system_write = true;
+        assert!(check_write(&inode, &system_ctx));
     }
 }

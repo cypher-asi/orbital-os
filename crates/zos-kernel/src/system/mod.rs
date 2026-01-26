@@ -525,6 +525,7 @@ fn execute_syscall_kernel_fn<H: HAL>(
         0x40 | 0x41 => execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp),
         0x50 => (0, Vec::new()), // SYS_PS - success, data formatted in metrics.rs
         0x70..=0x74 => execute_storage_syscall(core, syscall_num, sender, data),
+        0x80..=0x84 => execute_keystore_syscall(core, syscall_num, sender, data),
         0x90 => execute_network_syscall(core, sender, data),
         _ => (-1, Vec::new()),
     }
@@ -756,6 +757,109 @@ fn execute_storage_exists<H: HAL>(
         Err(_) => return (-1, Vec::new()),
     };
     match core.hal().storage_exists_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+// ============================================================================
+// Keystore Syscalls (0x80-0x84)
+// ============================================================================
+
+fn execute_keystore_syscall<H: HAL>(
+    core: &KernelCore<H>,
+    syscall_num: u32,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    match syscall_num {
+        0x80 => execute_keystore_read(core, sender, data),
+        0x81 => execute_keystore_write(core, sender, data),
+        0x82 => execute_keystore_delete(core, sender, data),
+        0x83 => execute_keystore_list(core, sender, data),
+        0x84 => execute_keystore_exists(core, sender, data),
+        _ => (-1, Vec::new()),
+    }
+}
+
+fn execute_keystore_read<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().keystore_read_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+fn execute_keystore_write<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    if data.len() < 4 {
+        return (-1, Vec::new());
+    }
+    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if data.len() < 4 + key_len {
+        return (-1, Vec::new());
+    }
+    let key = match core::str::from_utf8(&data[4..4 + key_len]) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    let value = &data[4 + key_len..];
+    match core.hal().keystore_write_async(sender.0, key, value) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+fn execute_keystore_delete<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().keystore_delete_async(sender.0, key) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+fn execute_keystore_list<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let prefix = match core::str::from_utf8(data) {
+        Ok(p) => p,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().keystore_list_async(sender.0, prefix) {
+        Ok(request_id) => (request_id as i64, Vec::new()),
+        Err(_) => (-1, Vec::new()),
+    }
+}
+
+fn execute_keystore_exists<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>) {
+    let key = match core::str::from_utf8(data) {
+        Ok(k) => k,
+        Err(_) => return (-1, Vec::new()),
+    };
+    match core.hal().keystore_exists_async(sender.0, key) {
         Ok(request_id) => (request_id as i64, Vec::new()),
         Err(_) => (-1, Vec::new()),
     }

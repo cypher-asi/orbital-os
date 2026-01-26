@@ -1,7 +1,7 @@
 # Zero OS Build System
 # Works on Windows (with make), macOS, and Linux
 
-.PHONY: all build build-processes dev server clean check test help
+.PHONY: all build build-processes clean check test help
 
 # Default target
 all: build
@@ -40,15 +40,8 @@ build-processes:
 	cp target/wasm32-unknown-unknown/release/identity_service.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/vfs_service.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/time_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/keystore_service.wasm web/processes/
 	@echo "Process binaries ready!"
-
-# Build and run the dev server
-dev: build server
-
-# Run the dev server (without rebuilding)
-server:
-	@echo "Starting development server..."
-	cargo run -p dev-server
 
 # Clean build artifacts
 clean:
@@ -75,9 +68,9 @@ help:
 	@echo "Targets:"
 	@echo "  build           - Build everything (supervisor + test processes)"
 	@echo "  build-processes - Build only test process WASM binaries"
-	@echo "  dev             - Build and start the dev server"
-	@echo "  server          - Start the dev server (without rebuilding)"
 	@echo "  clean           - Clean build artifacts"
 	@echo "  check           - Run cargo check"
 	@echo "  test            - Run tests"
 	@echo "  help            - Show this help message"
+	@echo ""
+	@echo "To start the dev server, run: cd web && npm run dev"

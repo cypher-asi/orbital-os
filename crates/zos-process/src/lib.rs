@@ -165,6 +165,12 @@ pub use syscalls::storage::{
     storage_write_async,
 };
 
+// Re-export keystore syscalls
+pub use syscalls::keystore::{
+    keystore_delete_async, keystore_exists_async, keystore_list_async, keystore_read_async,
+    keystore_write_async,
+};
+
 // Re-export network syscalls
 pub use syscalls::network::network_fetch_async;
 
@@ -177,7 +183,7 @@ pub use syscalls::network::network_fetch_async;
 pub use zos_ipc::{
     console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
     identity_prefs, identity_query, identity_remote, identity_session, identity_user, identity_zid,
-    init, kernel, net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir,
+    init, kernel, keystore, net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir,
     vfs_file, vfs_meta, vfs_quota,
 };
 
@@ -235,6 +241,19 @@ pub use zos_ipc::storage::MSG_STORAGE_RESULT;
 /// Storage result types
 pub mod storage_result {
     pub use zos_ipc::storage::result::*;
+}
+
+// =============================================================================
+// Keystore Result IPC (delivered from supervisor via HAL async keystore)
+// =============================================================================
+
+/// Keystore operation result delivered via IPC
+/// Payload format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+pub use zos_ipc::keystore::MSG_KEYSTORE_RESULT;
+
+/// Keystore result types (same format as storage for consistency)
+pub mod keystore_result {
+    pub use zos_ipc::keystore::result::*;
 }
 
 // =============================================================================

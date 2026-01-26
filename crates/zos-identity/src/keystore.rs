@@ -76,9 +76,12 @@ pub struct LocalKeyStore {
 }
 
 impl LocalKeyStore {
-    /// Path where public keys are stored.
+    /// Path where public keys are stored (routed to keystore by VFS).
+    ///
+    /// Paths starting with `/keys/` are routed to the dedicated zos-keystore
+    /// IndexedDB for security isolation of cryptographic key material.
     pub fn storage_path(user_id: UserId) -> String {
-        alloc::format!("/home/{}/.zos/identity/public_keys.json", user_id)
+        alloc::format!("/keys/{}/identity/public_keys.json", user_id)
     }
 
     /// Create a new key store with the given keys.
@@ -418,10 +421,13 @@ fn default_epoch() -> u64 {
 }
 
 impl MachineKeyRecord {
-    /// Path where machine key is stored.
+    /// Path where machine key is stored (routed to keystore by VFS).
+    ///
+    /// Paths starting with `/keys/` are routed to the dedicated zos-keystore
+    /// IndexedDB for security isolation of cryptographic key material.
     pub fn storage_path(user_id: UserId, machine_id: u128) -> String {
         alloc::format!(
-            "/home/{}/.zos/identity/machine/{:032x}.json",
+            "/keys/{}/identity/machine/{:032x}.json",
             user_id,
             machine_id
         )
@@ -516,7 +522,8 @@ mod tests {
     fn test_key_store_paths() {
         let user_id = 0x12345678_9abcdef0_12345678_9abcdef0u128;
         let path = LocalKeyStore::storage_path(user_id);
-        assert!(path.ends_with("/public_keys.json"));
+        assert!(path.starts_with("/keys/"));
+        assert!(path.ends_with("/identity/public_keys.json"));
     }
 
     #[test]

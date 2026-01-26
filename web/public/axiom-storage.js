@@ -8,7 +8,7 @@
  *
  * Zero OS uses 3 separate IndexedDBs:
  * - **zos-filesystem**: VFS inodes and content (see zos-storage.js)
- * - **zos-keys**: Cryptographic key storage (see zos-key-storage.js)
+ * - **zos-keystore**: Cryptographic key storage (see zos-keystore.js)
  * - **zos-axiom** (this file): Commit log
  *
  * @see docs/spec/v0.1.2/02-axiom/axiom-spec.md

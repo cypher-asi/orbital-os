@@ -6,7 +6,7 @@ use crate::Init;
 use zos_process as syscall;
 
 impl Init {
-    /// Boot sequence - spawn PermissionService, VfsService, IdentityService, and initial apps
+    /// Boot sequence - spawn PermissionService, VfsService, KeystoreService, IdentityService, and initial apps
     pub fn boot_sequence(&mut self) {
         self.log("Starting boot sequence...");
 
@@ -19,12 +19,18 @@ impl Init {
         self.log("Spawning VfsService (PID 3)...");
         syscall::debug("INIT:SPAWN:vfs_service");
 
-        // 3. Spawn IdentityService (PID 4) - user identity and key management
-        self.log("Spawning IdentityService (PID 4)...");
+        // 3. Spawn KeystoreService (PID 4) - secure key storage
+        // NOTE: Keystore must be spawned before IdentityService since identity uses keystore
+        // for all /keys/ path operations (Invariant 32)
+        self.log("Spawning KeystoreService (PID 4)...");
+        syscall::debug("INIT:SPAWN:keystore_service");
+
+        // 4. Spawn IdentityService (PID 5) - user identity and key management
+        self.log("Spawning IdentityService (PID 5)...");
         syscall::debug("INIT:SPAWN:identity_service");
 
-        // 4. Spawn TimeService (PID 5) - time settings management
-        self.log("Spawning TimeService (PID 5)...");
+        // 5. Spawn TimeService (PID 6) - time settings management
+        self.log("Spawning TimeService (PID 6)...");
         syscall::debug("INIT:SPAWN:time_service");
 
         // NOTE: Terminal is no longer auto-spawned here.
@@ -36,6 +42,7 @@ impl Init {
         self.log("Boot sequence complete");
         self.log("  PermissionService: handles capability requests");
         self.log("  VfsService: handles filesystem operations");
+        self.log("  KeystoreService: handles secure key storage");
         self.log("  IdentityService: handles identity and key management");
         self.log("  TimeService: handles time settings");
         self.log("  Terminal: spawned per-window by Desktop");

@@ -159,14 +159,14 @@ pub(crate) fn start_storage_exists(request_id: u32, key: &str) {
 }
 
 // =============================================================================
-// Key Storage Helper Functions (ZosStorageKeys)
+// Keystore Helper Functions (ZosKeystore)
 // =============================================================================
 
-/// Helper to call ZosStorageKeys.startRead
-pub(crate) fn start_key_storage_read(request_id: u32, key: &str) {
+/// Helper to call ZosKeystore.startRead
+pub(crate) fn start_keystore_read(request_id: u32, key: &str) {
     if let Some(window) = web_sys::window() {
-        let zos_storage_keys = js_sys::Reflect::get(&window, &"ZosStorageKeys".into()).ok();
-        if let Some(storage) = zos_storage_keys {
+        let zos_keystore = js_sys::Reflect::get(&window, &"ZosKeystore".into()).ok();
+        if let Some(storage) = zos_keystore {
             if !storage.is_undefined() {
                 let _ = js_sys::Reflect::apply(
                     &js_sys::Reflect::get(&storage, &"startRead".into())
@@ -181,23 +181,23 @@ pub(crate) fn start_key_storage_read(request_id: u32, key: &str) {
         }
     }
     log(&format!(
-        "[wasm-hal] ZosStorageKeys.startRead not available for request_id={}",
+        "[wasm-hal] ZosKeystore.startRead not available for request_id={}",
         request_id
     ));
 }
 
-/// Helper to call ZosStorageKeys.startWrite
-pub(crate) fn start_key_storage_write(request_id: u32, key: &str, value: &[u8]) {
+/// Helper to call ZosKeystore.startWrite
+pub(crate) fn start_keystore_write(request_id: u32, key: &str, value: &[u8]) {
     log(&format!(
-        "[wasm-hal] start_key_storage_write: request_id={}, key={}, value_len={}",
+        "[wasm-hal] start_keystore_write: request_id={}, key={}, value_len={}",
         request_id,
         key,
         value.len()
     ));
 
     if let Some(window) = web_sys::window() {
-        let zos_storage_keys = js_sys::Reflect::get(&window, &"ZosStorageKeys".into()).ok();
-        if let Some(storage) = zos_storage_keys {
+        let zos_keystore = js_sys::Reflect::get(&window, &"ZosKeystore".into()).ok();
+        if let Some(storage) = zos_keystore {
             if !storage.is_undefined() {
                 let value_array = js_sys::Uint8Array::from(value);
                 let _ = js_sys::Reflect::apply(
@@ -213,16 +213,16 @@ pub(crate) fn start_key_storage_write(request_id: u32, key: &str, value: &[u8]) 
         }
     }
     log(&format!(
-        "[wasm-hal] ZosStorageKeys.startWrite not available for request_id={}",
+        "[wasm-hal] ZosKeystore.startWrite not available for request_id={}",
         request_id
     ));
 }
 
-/// Helper to call ZosStorageKeys.startDelete
-pub(crate) fn start_key_storage_delete(request_id: u32, key: &str) {
+/// Helper to call ZosKeystore.startDelete
+pub(crate) fn start_keystore_delete(request_id: u32, key: &str) {
     if let Some(window) = web_sys::window() {
-        let zos_storage_keys = js_sys::Reflect::get(&window, &"ZosStorageKeys".into()).ok();
-        if let Some(storage) = zos_storage_keys {
+        let zos_keystore = js_sys::Reflect::get(&window, &"ZosKeystore".into()).ok();
+        if let Some(storage) = zos_keystore {
             if !storage.is_undefined() {
                 let _ = js_sys::Reflect::apply(
                     &js_sys::Reflect::get(&storage, &"startDelete".into())
@@ -237,16 +237,16 @@ pub(crate) fn start_key_storage_delete(request_id: u32, key: &str) {
         }
     }
     log(&format!(
-        "[wasm-hal] ZosStorageKeys.startDelete not available for request_id={}",
+        "[wasm-hal] ZosKeystore.startDelete not available for request_id={}",
         request_id
     ));
 }
 
-/// Helper to call ZosStorageKeys.startList
-pub(crate) fn start_key_storage_list(request_id: u32, prefix: &str) {
+/// Helper to call ZosKeystore.startList
+pub(crate) fn start_keystore_list(request_id: u32, prefix: &str) {
     if let Some(window) = web_sys::window() {
-        let zos_storage_keys = js_sys::Reflect::get(&window, &"ZosStorageKeys".into()).ok();
-        if let Some(storage) = zos_storage_keys {
+        let zos_keystore = js_sys::Reflect::get(&window, &"ZosKeystore".into()).ok();
+        if let Some(storage) = zos_keystore {
             if !storage.is_undefined() {
                 let _ = js_sys::Reflect::apply(
                     &js_sys::Reflect::get(&storage, &"startList".into())
@@ -261,16 +261,16 @@ pub(crate) fn start_key_storage_list(request_id: u32, prefix: &str) {
         }
     }
     log(&format!(
-        "[wasm-hal] ZosStorageKeys.startList not available for request_id={}",
+        "[wasm-hal] ZosKeystore.startList not available for request_id={}",
         request_id
     ));
 }
 
-/// Helper to call ZosStorageKeys.startExists
-pub(crate) fn start_key_storage_exists(request_id: u32, key: &str) {
+/// Helper to call ZosKeystore.startExists
+pub(crate) fn start_keystore_exists(request_id: u32, key: &str) {
     if let Some(window) = web_sys::window() {
-        let zos_storage_keys = js_sys::Reflect::get(&window, &"ZosStorageKeys".into()).ok();
-        if let Some(storage) = zos_storage_keys {
+        let zos_keystore = js_sys::Reflect::get(&window, &"ZosKeystore".into()).ok();
+        if let Some(storage) = zos_keystore {
             if !storage.is_undefined() {
                 let _ = js_sys::Reflect::apply(
                     &js_sys::Reflect::get(&storage, &"startExists".into())
@@ -285,7 +285,7 @@ pub(crate) fn start_key_storage_exists(request_id: u32, key: &str) {
         }
     }
     log(&format!(
-        "[wasm-hal] ZosStorageKeys.startExists not available for request_id={}",
+        "[wasm-hal] ZosKeystore.startExists not available for request_id={}",
         request_id
     ));
 }
@@ -553,44 +553,44 @@ impl WasmHal {
         Err(HalError::NotSupported)
     }
 
-    // === Async Key Storage (KeyService Only) ===
+    // === Async Keystore (KeyService Only) ===
 
-    /// Start an async key storage read operation
-    pub fn do_key_storage_read_async(
+    /// Start an async keystore read operation
+    pub fn do_keystore_read_async(
         &self,
         pid: u64,
         key: &str,
     ) -> Result<StorageRequestId, HalError> {
-        let request_id = self.next_key_storage_request_id();
-        if !self.record_pending_key_storage_request(request_id, pid) {
+        let request_id = self.next_keystore_request_id();
+        if !self.record_pending_keystore_request(request_id, pid) {
             return Err(HalError::ResourceExhausted);
         }
 
         log(&format!(
-            "[wasm-hal] key_storage_read_async: request_id={}, pid={}, key={}",
+            "[wasm-hal] keystore_read_async: request_id={}, pid={}, key={}",
             request_id, pid, key
         ));
 
         // Call JavaScript to start IndexedDB operation
-        start_key_storage_read(request_id, key);
+        start_keystore_read(request_id, key);
 
         Ok(request_id)
     }
 
-    /// Start an async key storage write operation
-    pub fn do_key_storage_write_async(
+    /// Start an async keystore write operation
+    pub fn do_keystore_write_async(
         &self,
         pid: u64,
         key: &str,
         value: &[u8],
     ) -> Result<StorageRequestId, HalError> {
-        let request_id = self.next_key_storage_request_id();
-        if !self.record_pending_key_storage_request(request_id, pid) {
+        let request_id = self.next_keystore_request_id();
+        if !self.record_pending_keystore_request(request_id, pid) {
             return Err(HalError::ResourceExhausted);
         }
 
         log(&format!(
-            "[wasm-hal] key_storage_write_async: request_id={}, pid={}, key={}, len={}",
+            "[wasm-hal] keystore_write_async: request_id={}, pid={}, key={}, len={}",
             request_id,
             pid,
             key,
@@ -598,88 +598,88 @@ impl WasmHal {
         ));
 
         // Call JavaScript to start IndexedDB operation
-        start_key_storage_write(request_id, key, value);
+        start_keystore_write(request_id, key, value);
 
         Ok(request_id)
     }
 
-    /// Start an async key storage delete operation
-    pub fn do_key_storage_delete_async(
+    /// Start an async keystore delete operation
+    pub fn do_keystore_delete_async(
         &self,
         pid: u64,
         key: &str,
     ) -> Result<StorageRequestId, HalError> {
-        let request_id = self.next_key_storage_request_id();
-        if !self.record_pending_key_storage_request(request_id, pid) {
+        let request_id = self.next_keystore_request_id();
+        if !self.record_pending_keystore_request(request_id, pid) {
             return Err(HalError::ResourceExhausted);
         }
 
         log(&format!(
-            "[wasm-hal] key_storage_delete_async: request_id={}, pid={}, key={}",
+            "[wasm-hal] keystore_delete_async: request_id={}, pid={}, key={}",
             request_id, pid, key
         ));
 
         // Call JavaScript to start IndexedDB operation
-        start_key_storage_delete(request_id, key);
+        start_keystore_delete(request_id, key);
 
         Ok(request_id)
     }
 
-    /// Start an async key storage list operation
-    pub fn do_key_storage_list_async(
+    /// Start an async keystore list operation
+    pub fn do_keystore_list_async(
         &self,
         pid: u64,
         prefix: &str,
     ) -> Result<StorageRequestId, HalError> {
-        let request_id = self.next_key_storage_request_id();
-        if !self.record_pending_key_storage_request(request_id, pid) {
+        let request_id = self.next_keystore_request_id();
+        if !self.record_pending_keystore_request(request_id, pid) {
             return Err(HalError::ResourceExhausted);
         }
 
         log(&format!(
-            "[wasm-hal] key_storage_list_async: request_id={}, pid={}, prefix={}",
+            "[wasm-hal] keystore_list_async: request_id={}, pid={}, prefix={}",
             request_id, pid, prefix
         ));
 
         // Call JavaScript to start IndexedDB operation
-        start_key_storage_list(request_id, prefix);
+        start_keystore_list(request_id, prefix);
 
         Ok(request_id)
     }
 
-    /// Start an async key storage exists check
-    pub fn do_key_storage_exists_async(
+    /// Start an async keystore exists check
+    pub fn do_keystore_exists_async(
         &self,
         pid: u64,
         key: &str,
     ) -> Result<StorageRequestId, HalError> {
-        let request_id = self.next_key_storage_request_id();
-        if !self.record_pending_key_storage_request(request_id, pid) {
+        let request_id = self.next_keystore_request_id();
+        if !self.record_pending_keystore_request(request_id, pid) {
             return Err(HalError::ResourceExhausted);
         }
 
         log(&format!(
-            "[wasm-hal] key_storage_exists_async: request_id={}, pid={}, key={}",
+            "[wasm-hal] keystore_exists_async: request_id={}, pid={}, key={}",
             request_id, pid, key
         ));
 
         // Call JavaScript to start IndexedDB operation
-        start_key_storage_exists(request_id, key);
+        start_keystore_exists(request_id, key);
 
         Ok(request_id)
     }
 
-    /// Get the PID associated with a key storage request
-    pub fn do_get_key_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
-        self.pending_key_storage_requests
+    /// Get the PID associated with a keystore request
+    pub fn do_get_keystore_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.pending_keystore_requests
             .lock()
             .ok()
             .and_then(|pending| pending.get(&request_id).copied())
     }
 
-    /// Take (remove) the PID associated with a key storage request
-    pub fn do_take_key_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
-        self.pending_key_storage_requests
+    /// Take (remove) the PID associated with a keystore request
+    pub fn do_take_keystore_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
+        self.pending_keystore_requests
             .lock()
             .ok()
             .and_then(|mut pending| pending.remove(&request_id))

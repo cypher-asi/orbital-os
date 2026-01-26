@@ -326,6 +326,7 @@ impl BackgroundRenderer {
             self.workspace_backgrounds[i] = match bg {
                 BackgroundType::Grain => 0.0,
                 BackgroundType::Mist => 1.0,
+                BackgroundType::Dots => 2.0,
             };
         }
     }
@@ -369,7 +370,7 @@ impl BackgroundRenderer {
         if use_mist {
             self.render_mist_two_pass(&mut encoder, &view);
         } else {
-            self.render_grain_single_pass(&mut encoder, &view);
+            self.render_single_pass_background(&mut encoder, &view);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -436,13 +437,13 @@ impl BackgroundRenderer {
         );
     }
 
-    /// Render using grain single-pass approach
-    fn render_grain_single_pass(
+    /// Render using single-pass approach (for Grain, Dots, or any non-Mist background)
+    fn render_single_pass_background(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
     ) {
-        if let Some(pipeline) = self.pipelines.get(&BackgroundType::Grain) {
+        if let Some(pipeline) = self.pipelines.get(&self.current_background) {
             render_single_pass(encoder, pipeline, &self.bind_group, output_view);
         }
     }

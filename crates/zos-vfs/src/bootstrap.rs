@@ -186,6 +186,13 @@ pub fn create_user_home<V: VfsService>(vfs: &V, user_id: u128, _now: u64) -> Res
     vfs.mkdir(&alloc::format!("{}/.zos/tokens", home))?;
     vfs.mkdir(&alloc::format!("{}/.zos/config", home))?;
 
+    // Set permissions on system-managed directories that need system write access
+    // These directories are managed by system services but owned by the user
+    vfs.chmod(&alloc::format!("{}/.zos/identity", home), FilePermissions::identity_dir())?;
+    vfs.chmod(&alloc::format!("{}/.zos/sessions", home), FilePermissions::identity_dir())?;
+    vfs.chmod(&alloc::format!("{}/.zos/credentials", home), FilePermissions::identity_dir())?;
+    vfs.chmod(&alloc::format!("{}/.zos/tokens", home), FilePermissions::identity_dir())?;
+
     // Standard user directories
     vfs.mkdir(&alloc::format!("{}/Documents", home))?;
     vfs.mkdir(&alloc::format!("{}/Downloads", home))?;

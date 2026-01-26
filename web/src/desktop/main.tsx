@@ -70,9 +70,9 @@ function performUnloadCleanup() {
       // Ignore - page is unloading
     }
   }
-  if (window.ZosStorageKeys) {
+  if (window.ZosKeystore) {
     try {
-      window.ZosStorageKeys.initSupervisor(null as unknown as Supervisor);
+      window.ZosKeystore.initSupervisor(null as unknown as Supervisor);
     } catch (e) {
       // Ignore - page is unloading
     }
@@ -107,8 +107,8 @@ function performFullCleanup() {
   if (window.ZosStorage) {
     window.ZosStorage.initSupervisor(null as unknown as Supervisor);
   }
-  if (window.ZosStorageKeys) {
-    window.ZosStorageKeys.initSupervisor(null as unknown as Supervisor);
+  if (window.ZosKeystore) {
+    window.ZosKeystore.initSupervisor(null as unknown as Supervisor);
   }
   if (window.ZosNetwork) {
     window.ZosNetwork.initSupervisor(null as unknown as Supervisor);
@@ -256,13 +256,29 @@ function App() {
           console.warn('[main] ZosStorage not available - storage syscalls will fail');
         }
 
-        // Initialize ZosStorageKeys with the supervisor reference for key storage callbacks
-        // This enables KeyService to use key_storage_* syscalls (lazy init on first use)
-        if (window.ZosStorageKeys) {
-          window.ZosStorageKeys.initSupervisor(supervisor);
-          console.log('[main] ZosStorageKeys supervisor reference set');
+        // Initialize ZosStorage database (create zos-filesystem IndexedDB and root structure)
+        try {
+          await supervisor.init_vfs_storage();
+          console.log('[main] ZosStorage IndexedDB initialized');
+        } catch (e) {
+          console.warn('[main] VFS storage init failed (non-fatal):', e);
+        }
+
+        // Initialize ZosKeystore with the supervisor reference for key storage callbacks
+        // This enables KeyService to use keystore_* syscalls
+        if (window.ZosKeystore) {
+          window.ZosKeystore.initSupervisor(supervisor);
+          console.log('[main] ZosKeystore supervisor reference set');
         } else {
-          console.warn('[main] ZosStorageKeys not available - key storage syscalls will fail');
+          console.warn('[main] ZosKeystore not available - keystore syscalls will fail');
+        }
+
+        // Initialize ZosKeystore database (create zos-keystore IndexedDB if not exists)
+        try {
+          await supervisor.init_keystore();
+          console.log('[main] ZosKeystore IndexedDB initialized');
+        } catch (e) {
+          console.warn('[main] Keystore init failed (non-fatal):', e);
         }
 
         // Initialize ZosNetwork with the supervisor reference for async network callbacks

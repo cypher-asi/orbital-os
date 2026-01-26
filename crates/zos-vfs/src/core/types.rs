@@ -234,6 +234,22 @@ impl FilePermissions {
             world_write: false,
         }
     }
+
+    /// Identity directory permissions (owner rwx, system rw)
+    ///
+    /// Used for directories like `~/.zos/identity` where both the owner
+    /// and system services (like IdentityService) need write access.
+    pub fn identity_dir() -> Self {
+        Self {
+            owner_read: true,
+            owner_write: true,
+            owner_execute: true,
+            system_read: true,
+            system_write: true,
+            world_read: false,
+            world_write: false,
+        }
+    }
 }
 
 /// Directory entry returned by readdir.

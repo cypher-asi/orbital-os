@@ -151,19 +151,13 @@ function Build-Processes {
         Copy-Item "$releaseDir\identity_service.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\vfs_service.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\time_service.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\keystore_service.wasm" "$ProjectRoot\web\processes\" -Force
         
         Write-Host "Process binaries built successfully!" -ForegroundColor Green
     }
     finally {
         Pop-Location
     }
-}
-
-function Start-DevServer {
-    Write-Step "Starting development server"
-    Push-Location $ProjectRoot
-    cargo run -p dev-server
-    Pop-Location
 }
 
 function Clean-Build {
@@ -182,7 +176,7 @@ switch ($Target.ToLower()) {
     "all" {
         Build-Processes
         Build-WebModules
-        Write-Host "`nBuild complete! Run '.\build.ps1 dev' or 'cargo run -p dev-server' to start." -ForegroundColor Green
+        Write-Host "`nBuild complete! Run 'cd web && npm run dev' to start the development server." -ForegroundColor Green
     }
     "web" {
         Build-Processes
@@ -190,11 +184,6 @@ switch ($Target.ToLower()) {
     }
     "processes" {
         Build-Processes
-    }
-    "dev" {
-        Build-Processes
-        Build-WebModules
-        Start-DevServer
     }
     "clean" {
         Clean-Build
@@ -208,7 +197,6 @@ switch ($Target.ToLower()) {
         Write-Host "  all        - Build everything (default)"
         Write-Host "  web        - Build only supervisor/desktop WASM modules"
         Write-Host "  processes  - Build only process WASM binaries"
-        Write-Host "  dev        - Build all and start dev server"
         Write-Host "  clean      - Clean all build artifacts"
     }
 }

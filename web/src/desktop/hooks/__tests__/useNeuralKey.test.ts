@@ -20,9 +20,9 @@ vi.mock('../../../stores', () => ({
 let mockGenerateNeuralKey = vi.fn();
 let mockRecoverNeuralKey = vi.fn();
 const mockGetIdentityKey = vi.fn();
-let mockVfsIsAvailable = vi.fn(() => true);
-let mockVfsReadJsonSync = vi.fn(() => null);
-const mockVfsGetCacheStats = vi.fn(() => ({ hits: 0, misses: 0 }));
+let mockKeystoreIsAvailable = vi.fn(() => true);
+let mockKeystoreReadJsonSync = vi.fn(() => null);
+const mockKeystoreGetCacheStats = vi.fn(() => ({ keys: 0 }));
 
 vi.mock('../../../client-services', () => ({
   IdentityServiceClient: vi.fn().mockImplementation(() => ({
@@ -30,12 +30,13 @@ vi.mock('../../../client-services', () => ({
     recoverNeuralKey: (...args: unknown[]) => mockRecoverNeuralKey(...args),
     getIdentityKey: (...args: unknown[]) => mockGetIdentityKey(...args),
   })),
-  VfsStorageClient: {
-    isAvailable: () => mockVfsIsAvailable(),
-    readJsonSync: (...args: unknown[]) => mockVfsReadJsonSync(...args),
-    getCacheStats: () => mockVfsGetCacheStats(),
+  KeystoreClient: {
+    isAvailable: () => mockKeystoreIsAvailable(),
+    readJsonSync: (...args: unknown[]) => mockKeystoreReadJsonSync(...args),
+    getCacheStats: () => mockKeystoreGetCacheStats(),
   },
-  getIdentityKeyStorePath: vi.fn(() => '/home/12345/.zos/identity/keystore.json'),
+  getIdentityKeystorePath: vi.fn(() => '/keys/12345/identity/public_keys.json'),
+  bytesToHex: vi.fn((bytes: number[]) => bytes.map(b => b.toString(16).padStart(2, '0')).join('')),
 }));
 
 // Mock identity service client shorthand
@@ -51,16 +52,16 @@ const mockIdentityServiceClient = {
   },
 };
 
-// Mock VFS storage shorthand
-const mockVfsStorage = {
+// Mock Keystore storage shorthand
+const mockKeystoreStorage = {
   get isAvailable() {
-    return mockVfsIsAvailable;
+    return mockKeystoreIsAvailable;
   },
   get readJsonSync() {
-    return mockVfsReadJsonSync;
+    return mockKeystoreReadJsonSync;
   },
   get getCacheStats() {
-    return mockVfsGetCacheStats;
+    return mockKeystoreGetCacheStats;
   },
 };
 
@@ -89,8 +90,8 @@ describe('useNeuralKey', () => {
     vi.useFakeTimers();
     mockSupervisor = createMockSupervisor();
     mockSelectCurrentUser = vi.fn(() => mockCurrentUser);
-    mockVfsIsAvailable = vi.fn(() => true);
-    mockVfsReadJsonSync = vi.fn(() => null);
+    mockKeystoreIsAvailable = vi.fn(() => true);
+    mockKeystoreReadJsonSync = vi.fn(() => null);
     mockGenerateNeuralKey = vi.fn();
     mockRecoverNeuralKey = vi.fn();
   });
@@ -326,7 +327,7 @@ describe('useNeuralKey', () => {
   });
 
   describe('refresh', () => {
-    it('reads from VFS cache when available', async () => {
+    it('reads from Keystore cache when available', async () => {
       const keyStore = {
         user_id: 12345,
         identity_signing_public_key: new Array(32).fill(0),
@@ -335,7 +336,7 @@ describe('useNeuralKey', () => {
         epoch: 1,
         created_at: Date.now(),
       };
-      mockVfsReadJsonSync.mockReturnValue(keyStore);
+      mockKeystoreReadJsonSync.mockReturnValue(keyStore);
 
       const { result } = renderHook(() => useNeuralKey(), {
         wrapper: createWrapper(mockSupervisor),
@@ -350,8 +351,8 @@ describe('useNeuralKey', () => {
       expect(result.current.state.publicIdentifiers).toBeDefined();
     });
 
-    it('handles VFS not available', async () => {
-      mockVfsIsAvailable.mockReturnValue(false);
+    it('handles Keystore not available', async () => {
+      mockKeystoreIsAvailable.mockReturnValue(false);
 
       const { result } = renderHook(() => useNeuralKey(), {
         wrapper: createWrapper(mockSupervisor),
@@ -361,7 +362,7 @@ describe('useNeuralKey', () => {
         vi.advanceTimersByTime(600);
       });
 
-      expect(result.current.state.error).toBe('VFS cache not ready');
+      expect(result.current.state.error).toBe('Keystore cache not ready');
     });
 
     it('resets state when no user', async () => {
@@ -383,6 +384,6 @@ describe('useNeuralKey', () => {
   });
 
   // Auto-refresh behavior is tested in the 'refresh' suite via the
-  // 'reads from VFS cache when available' test which validates the
+  // 'reads from Keystore cache when available' test which validates the
   // full refresh flow works correctly.
 });

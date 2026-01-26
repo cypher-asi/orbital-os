@@ -20,6 +20,12 @@ impl Supervisor {
         target_pid: ProcessId,
         target_name: &str,
     ) {
+        // Don't grant identity capability to identity_service itself
+        // (a service doesn't need to send IPC to itself)
+        if target_name == "identity_service" {
+            return;
+        }
+
         // Find Identity service process
         let identity_pid = self.find_identity_service_pid_internal();
         if let Some(identity_pid) = identity_pid {

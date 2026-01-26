@@ -12,7 +12,7 @@ import {
   type MachineKeyRecord as ServiceMachineKeyRecord,
   type KeyScheme as ServiceKeyScheme,
   type NeuralShard,
-  VfsStorageClient,
+  KeystoreClient,
   getMachineKeysDir,
 } from '@/client-services';
 
@@ -86,43 +86,43 @@ export function useMachineKeys(): UseMachineKeysReturn {
   > => {
     const userIdVal = getUserIdOrThrow();
 
-    // Read directly from VfsStorage cache (synchronous, no IPC deadlock)
+    // Read directly from keystore cache (synchronous, no IPC deadlock)
     const machineDir = getMachineKeysDir(userIdVal);
 
-    console.log(`[useMachineKeys] Listing machine keys from VFS cache: ${machineDir}`);
+    console.log(`[useMachineKeys] Listing machine keys from keystore cache: ${machineDir}`);
 
-    if (!VfsStorageClient.isAvailable()) {
-      console.warn('[useMachineKeys] VfsStorage not available yet');
-      throw new Error('VFS cache not ready');
+    if (!KeystoreClient.isAvailable()) {
+      console.warn('[useMachineKeys] Keystore not available yet');
+      throw new Error('Keystore cache not ready');
     }
 
     setLoading(true);
 
     try {
-      // List children of the machine keys directory
-      const children = VfsStorageClient.listChildrenSync(machineDir);
+      // List keys with the machine keys directory prefix
+      const keyPaths = KeystoreClient.listKeysSync(machineDir);
       const machines: import('@/stores').MachineKeyRecord[] = [];
       const corruptFiles: string[] = [];
 
       // Read each machine key file
-      for (const child of children) {
-        if (!child.name.endsWith('.json')) continue;
+      for (const keyPath of keyPaths) {
+        if (!keyPath.endsWith('.json')) continue;
 
-        const content = VfsStorageClient.readJsonSync<ServiceMachineKeyRecord>(child.path);
+        const content = KeystoreClient.readJsonSync<ServiceMachineKeyRecord>(keyPath);
         if (content) {
           try {
             machines.push(convertMachineRecord(content, state.currentMachineId || undefined));
           } catch (convErr) {
             console.warn(
-              `[useMachineKeys] Failed to convert machine key at ${child.path}:`,
+              `[useMachineKeys] Failed to convert machine key at ${keyPath}:`,
               convErr
             );
-            corruptFiles.push(child.path);
+            corruptFiles.push(keyPath);
           }
         } else {
           // JSON parsing failed - file might be corrupt/truncated
-          console.warn(`[useMachineKeys] Skipping corrupt/invalid machine key file: ${child.path}`);
-          corruptFiles.push(child.path);
+          console.warn(`[useMachineKeys] Skipping corrupt/invalid machine key file: ${keyPath}`);
+          corruptFiles.push(keyPath);
         }
       }
 
@@ -157,7 +157,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
       }
 
       console.log(
-        `[useMachineKeys] Found ${uniqueMachines.length} unique machine keys in VFS cache` +
+        `[useMachineKeys] Found ${uniqueMachines.length} unique machine keys in keystore cache` +
           (corruptFiles.length > 0 ? ` (${corruptFiles.length} corrupt/skipped)` : '') +
           (machines.length !== uniqueMachines.length ? ` (${machines.length - uniqueMachines.length} duplicates removed)` : '')
       );
@@ -319,7 +319,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
       return;
     }
 
-    // Reads directly from VfsStorage cache, no IPC client needed for listing
+    // Reads directly from keystore cache, no IPC client needed for listing
     try {
       await listMachineKeys();
     } catch {
@@ -329,7 +329,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
   }, [userId, listMachineKeys, reset, setLoading, setInitializing]);
 
   // Auto-refresh on mount and when user changes
-  // Reads directly from VfsStorage cache, no IPC client needed
+  // Reads directly from keystore cache, no IPC client needed
   useEffect(() => {
     if (currentUser?.id) {
       refresh();

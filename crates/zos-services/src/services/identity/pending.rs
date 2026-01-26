@@ -1,7 +1,12 @@
 //! Pending operation types for async storage and network tracking
 //!
-//! The identity service uses async storage and network syscalls. This module
-//! defines the state tracking for pending operations awaiting results.
+//! The identity service uses async storage, keystore, and network syscalls.
+//! This module defines the state tracking for pending operations awaiting results.
+//!
+//! # Storage Strategy
+//!
+//! - **VFS operations**: Used for directory structure under `/home/{user_id}/.zos/`
+//! - **Keystore operations**: Used for cryptographic key data under `/keys/{user_id}/`
 
 extern crate alloc;
 
@@ -227,6 +232,113 @@ pub enum PendingStorageOp {
         ctx: RequestContext,
         user_id: u128,
         json_bytes: Vec<u8>,
+    },
+}
+
+/// Tracks pending keystore operations awaiting results.
+///
+/// These operations communicate with KeystoreService (PID 7) for secure
+/// cryptographic key storage, keeping keys isolated from the general filesystem.
+#[derive(Clone)]
+pub enum PendingKeystoreOp {
+    // =========================================================================
+    // Identity Key operations (stored in keystore)
+    // =========================================================================
+    /// Check if identity key exists (for generate)
+    CheckKeyExists {
+        ctx: RequestContext,
+        user_id: u128,
+    },
+    /// Write identity key store to keystore
+    WriteKeyStore {
+        ctx: RequestContext,
+        user_id: u128,
+        result: NeuralKeyGenerated,
+        json_bytes: Vec<u8>,
+    },
+    /// Get identity key from keystore
+    GetIdentityKey {
+        ctx: RequestContext,
+    },
+    /// Read existing identity for recovery verification (SECURITY)
+    ReadIdentityForRecovery {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_shards: Vec<zos_identity::crypto::ZidNeuralShard>,
+    },
+    /// Write recovered key store to keystore
+    WriteRecoveredKeyStore {
+        ctx: RequestContext,
+        user_id: u128,
+        result: NeuralKeyGenerated,
+        json_bytes: Vec<u8>,
+    },
+
+    // =========================================================================
+    // Machine Key operations (stored in keystore)
+    // =========================================================================
+    /// Read identity key for create machine key
+    ReadIdentityForMachine {
+        ctx: RequestContext,
+        request: CreateMachineKeyRequest,
+    },
+    /// Write machine key to keystore
+    WriteMachineKey {
+        ctx: RequestContext,
+        user_id: u128,
+        record: MachineKeyRecord,
+        json_bytes: Vec<u8>,
+    },
+    /// List machine keys from keystore
+    ListMachineKeys {
+        ctx: RequestContext,
+        user_id: u128,
+    },
+    /// Read individual machine key record from keystore
+    ReadMachineKey {
+        ctx: RequestContext,
+        user_id: u128,
+        remaining_paths: Vec<String>,
+        records: Vec<MachineKeyRecord>,
+    },
+    /// Delete machine key from keystore
+    DeleteMachineKey {
+        ctx: RequestContext,
+        user_id: u128,
+        machine_id: u128,
+    },
+    /// Read machine key for rotation
+    ReadMachineForRotate {
+        ctx: RequestContext,
+        user_id: u128,
+        machine_id: u128,
+    },
+    /// Write rotated machine key to keystore
+    WriteRotatedMachineKey {
+        ctx: RequestContext,
+        user_id: u128,
+        record: MachineKeyRecord,
+        json_bytes: Vec<u8>,
+    },
+    /// Read single machine key by ID
+    ReadSingleMachineKey {
+        ctx: RequestContext,
+    },
+
+    // =========================================================================
+    // ZID session operations (stored in keystore)
+    // =========================================================================
+    /// Read machine key for ZID login
+    ReadMachineKeyForZidLogin {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
+    /// Read machine key for ZID enrollment
+    ReadMachineKeyForZidEnroll {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
     },
 }
 

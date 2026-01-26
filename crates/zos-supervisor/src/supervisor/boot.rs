@@ -54,7 +54,7 @@ use wasm_bindgen::prelude::*;
 use zos_kernel::ProcessId;
 
 use super::{log, Supervisor};
-use crate::bindings::vfs_storage;
+use crate::bindings::{keystore, vfs_storage};
 
 #[wasm_bindgen]
 impl Supervisor {
@@ -231,6 +231,32 @@ impl Supervisor {
         log("[supervisor] Clearing ZosStorage...");
         vfs_storage::clear().await;
         log("[supervisor] ZosStorage cleared");
+        Ok(JsValue::from_bool(true))
+    }
+
+    /// Initialize ZosKeystore (Key IndexedDB storage).
+    ///
+    /// This must be called during boot to ensure the `zos-keystore` IndexedDB
+    /// database is created. Unlike VFS storage, this database stores
+    /// cryptographic key material separately for security isolation.
+    ///
+    /// ## Bootstrap Storage Access Pattern
+    ///
+    /// This is a bootstrap exception - after Init starts, all key storage
+    /// access should flow through KeyService using syscalls routed via HAL.
+    ///
+    /// Returns a JsValue indicating success (true) or an error message.
+    #[wasm_bindgen]
+    pub async fn init_keystore(&mut self) -> Result<JsValue, JsValue> {
+        log("[supervisor] Initializing ZosKeystore...");
+
+        // Initialize the IndexedDB database (async, populates caches)
+        let result = keystore::keystore_init().await;
+        if result.is_falsy() {
+            return Err(JsValue::from_str("Failed to initialize ZosKeystore"));
+        }
+
+        log("[supervisor] ZosKeystore ready");
         Ok(JsValue::from_bool(true))
     }
 }

@@ -194,8 +194,6 @@ zero-os/
 │   ├── spec/v0.1.2/          # Current specification
 │   ├── invariants/           # Architectural invariants
 │   └── whitepaper/           # Design documents
-└── tools/
-    └── dev-server/           # Static file server
 ```
 
 ---

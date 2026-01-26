@@ -15,6 +15,7 @@ use crate::{
 use crate::types::{CapInfo, Permissions, ProcessInfo, ReceivedMessage};
 use alloc::vec::Vec;
 
+pub mod keystore;
 pub mod network;
 pub mod storage;
 

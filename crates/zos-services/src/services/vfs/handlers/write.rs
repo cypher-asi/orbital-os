@@ -121,8 +121,6 @@ impl VfsService {
             );
         }
 
-        let parent = parent_path(&request.path);
-
         syscall::debug(&format!(
             "VfsService: write {} ({} bytes)",
             request.path,
@@ -132,6 +130,9 @@ impl VfsService {
         // Derive permission context from caller
         let perm_ctx = derive_permission_context(msg.from_pid, &request.path);
         let client_ctx = ClientContext::from_message(msg);
+
+        // Use inode/content pattern for VFS operations
+        let parent = parent_path(&request.path);
 
         // Check parent exists (will also check write permission on parent)
         self.start_storage_read(

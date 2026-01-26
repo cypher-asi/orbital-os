@@ -86,8 +86,8 @@ declare global {
       // Get pending request count
       getPendingCount(): number;
     };
-    /** ZosStorageKeys - key storage HAL for cryptographic keys (lazy init by KeyService) */
-    ZosStorageKeys?: {
+    /** ZosKeystore - key storage HAL for cryptographic keys (lazy init by KeyService) */
+    ZosKeystore?: {
       // Supervisor initialization
       initSupervisor(supervisor: unknown): void;
       // Async key operations (HAL callbacks)
@@ -100,6 +100,8 @@ declare global {
       existsSync(path: string): boolean;
       getKeySync(path: string): Uint8Array | null;
       listKeysSync(prefix: string): string[];
+      // Cache for stats
+      keyCache: Map<string, Uint8Array>;
     };
   }
 }
@@ -286,7 +288,7 @@ export class VfsStorageClient {
 }
 
 // =============================================================================
-// Identity-specific helpers
+// VFS Path Helpers
 // =============================================================================
 
 /**
@@ -314,45 +316,23 @@ export function formatUserId(userId: bigint | string | number): string {
 }
 
 /**
- * Get the canonical path for a user's identity public keys.
+ * Get the canonical VFS path for a user's home directory.
  */
-export function getIdentityKeyStorePath(userId: bigint | string | number): string {
-  return `/home/${formatUserId(userId)}/.zos/identity/public_keys.json`;
+export function getUserHomeDir(userId: bigint | string | number): string {
+  return `/home/${formatUserId(userId)}`;
 }
 
 /**
- * Get the canonical path for a user's machine keys directory.
- */
-export function getMachineKeysDir(userId: bigint | string | number): string {
-  return `/home/${formatUserId(userId)}/.zos/identity/machine`;
-}
-
-/**
- * Get the canonical path for a specific machine key record.
- */
-export function getMachineKeyPath(
-  userId: bigint | string | number,
-  machineId: bigint | string | number
-): string {
-  const machineIdHex =
-    typeof machineId === 'bigint'
-      ? machineId.toString(16).padStart(32, '0')
-      : typeof machineId === 'string' && machineId.startsWith('0x')
-        ? machineId.slice(2).padStart(32, '0')
-        : BigInt(machineId).toString(16).padStart(32, '0');
-
-  return `/home/${formatUserId(userId)}/.zos/identity/machine/${machineIdHex}.json`;
-}
-
-/**
- * Get the canonical path for a user's credentials store.
+ * Get the canonical VFS path for a user's credentials store.
+ * NOTE: Credentials are stored in VFS (not keystore) as they are not cryptographic keys.
  */
 export function getCredentialsPath(userId: bigint | string | number): string {
   return `/home/${formatUserId(userId)}/.zos/credentials/credentials.json`;
 }
 
 /**
- * Get the canonical path for a user's ZID session.
+ * Get the canonical VFS path for a user's ZID session.
+ * NOTE: ZID sessions are stored in VFS (not keystore) as they contain tokens, not keys.
  */
 export function getZidSessionPath(userId: bigint | string | number): string {
   return `/home/${formatUserId(userId)}/.zos/identity/zid_session.json`;

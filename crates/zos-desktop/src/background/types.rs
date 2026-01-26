@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::shaders::{SHADER_GRAIN, SHADER_MIST_SMOKE};
+use super::shaders::{SHADER_DOTS, SHADER_GRAIN, SHADER_MIST_SMOKE};
 
 /// Available background types
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -11,12 +11,14 @@ pub enum BackgroundType {
     Grain,
     /// Animated misty/smoky atmosphere with glass overlay
     Mist,
+    /// Small white pixelated dots in a regular grid pattern
+    Dots,
 }
 
 impl BackgroundType {
     /// Get all available background types
     pub fn all() -> &'static [BackgroundType] {
-        &[BackgroundType::Grain, BackgroundType::Mist]
+        &[BackgroundType::Grain, BackgroundType::Mist, BackgroundType::Dots]
     }
 
     /// Get the display name for this background
@@ -24,6 +26,7 @@ impl BackgroundType {
         match self {
             BackgroundType::Grain => "Film Grain",
             BackgroundType::Mist => "Misty Smoke",
+            BackgroundType::Dots => "Pixel Dots",
         }
     }
 
@@ -32,14 +35,16 @@ impl BackgroundType {
         match self {
             BackgroundType::Grain => SHADER_GRAIN,
             BackgroundType::Mist => SHADER_MIST_SMOKE,
+            BackgroundType::Dots => SHADER_DOTS,
         }
     }
 
-    /// Parse from string ID (e.g., "grain", "mist")
+    /// Parse from string ID (e.g., "grain", "mist", "dots")
     pub fn from_id(id: &str) -> Option<Self> {
         match id.to_lowercase().as_str() {
             "grain" => Some(BackgroundType::Grain),
             "mist" => Some(BackgroundType::Mist),
+            "dots" => Some(BackgroundType::Dots),
             _ => None,
         }
     }
@@ -49,6 +54,7 @@ impl BackgroundType {
         match self {
             BackgroundType::Grain => "grain",
             BackgroundType::Mist => "mist",
+            BackgroundType::Dots => "dots",
         }
     }
 }
@@ -66,21 +72,24 @@ mod tests {
     #[test]
     fn test_background_type_all() {
         let all = BackgroundType::all();
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 3);
         assert!(all.contains(&BackgroundType::Grain));
         assert!(all.contains(&BackgroundType::Mist));
+        assert!(all.contains(&BackgroundType::Dots));
     }
 
     #[test]
     fn test_background_type_name() {
         assert_eq!(BackgroundType::Grain.name(), "Film Grain");
         assert_eq!(BackgroundType::Mist.name(), "Misty Smoke");
+        assert_eq!(BackgroundType::Dots.name(), "Pixel Dots");
     }
 
     #[test]
     fn test_background_type_id() {
         assert_eq!(BackgroundType::Grain.id(), "grain");
         assert_eq!(BackgroundType::Mist.id(), "mist");
+        assert_eq!(BackgroundType::Dots.id(), "dots");
     }
 
     #[test]
@@ -90,6 +99,7 @@ mod tests {
             Some(BackgroundType::Grain)
         );
         assert_eq!(BackgroundType::from_id("mist"), Some(BackgroundType::Mist));
+        assert_eq!(BackgroundType::from_id("dots"), Some(BackgroundType::Dots));
         assert_eq!(BackgroundType::from_id("invalid"), None);
     }
 
@@ -105,6 +115,8 @@ mod tests {
         );
         assert_eq!(BackgroundType::from_id("MIST"), Some(BackgroundType::Mist));
         assert_eq!(BackgroundType::from_id("Mist"), Some(BackgroundType::Mist));
+        assert_eq!(BackgroundType::from_id("DOTS"), Some(BackgroundType::Dots));
+        assert_eq!(BackgroundType::from_id("Dots"), Some(BackgroundType::Dots));
     }
 
     #[test]
@@ -149,7 +161,10 @@ mod tests {
     fn test_background_type_equality() {
         assert_eq!(BackgroundType::Grain, BackgroundType::Grain);
         assert_eq!(BackgroundType::Mist, BackgroundType::Mist);
+        assert_eq!(BackgroundType::Dots, BackgroundType::Dots);
         assert_ne!(BackgroundType::Grain, BackgroundType::Mist);
+        assert_ne!(BackgroundType::Grain, BackgroundType::Dots);
+        assert_ne!(BackgroundType::Mist, BackgroundType::Dots);
     }
 
     #[test]
@@ -182,8 +197,9 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(BackgroundType::Grain);
         set.insert(BackgroundType::Mist);
+        set.insert(BackgroundType::Dots);
         set.insert(BackgroundType::Grain); // Duplicate
 
-        assert_eq!(set.len(), 2);
+        assert_eq!(set.len(), 3);
     }
 }

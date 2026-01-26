@@ -178,8 +178,6 @@ apps/
       processes/           # Compiled WASM binaries
       pkg/                 # wasm-pack output
 
-tools/
-  dev-server/              # Rust HTTP server
 ```
 
 ## Dependencies

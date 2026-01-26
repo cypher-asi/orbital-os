@@ -42,6 +42,8 @@ impl Supervisor {
             self.handle_debug_service_response(rest);
         } else if let Some(rest) = msg.strip_prefix(debug::VFS_RESPONSE) {
             self.handle_debug_vfs_response(rest);
+        } else if let Some(rest) = msg.strip_prefix(debug::KEYSTORE_RESPONSE) {
+            self.handle_debug_keystore_response(rest);
         // Init-driven spawn protocol responses
         } else if let Some(rest) = msg.strip_prefix(debug::SPAWN_RESPONSE) {
             self.handle_init_spawn_response(rest);

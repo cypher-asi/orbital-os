@@ -43,6 +43,9 @@ pub const IDENTITY_INPUT_SLOT: u32 = SERVICE_INPUT_SLOT;
 /// VFS Service input slot
 pub const VFS_INPUT_SLOT: u32 = SERVICE_INPUT_SLOT;
 
+/// Keystore Service input slot
+pub const KEYSTORE_INPUT_SLOT: u32 = SERVICE_INPUT_SLOT;
+
 // =============================================================================
 // Syscall Numbers (frequently used in supervisor)
 // =============================================================================

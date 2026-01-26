@@ -7,7 +7,6 @@
 use wasm_bindgen::prelude::*;
 use zos_kernel::ProcessId;
 
-use crate::constants::VFS_RESPONSE_SLOT;
 use crate::util::{hex_to_bytes, log};
 
 impl super::Supervisor {
@@ -145,9 +144,68 @@ impl super::Supervisor {
         };
 
         // Route response through Init for capability-checked delivery
-        // Use VFS_RESPONSE_SLOT instead of slot 1 to avoid race conditions
-        // where the VFS client's blocking receive could consume other IPC messages.
-        self.route_ipc_via_init(to_pid as u64, VFS_RESPONSE_SLOT, tag, &data);
+        // Use SERVICE_INPUT_SLOT (1) instead of VFS_RESPONSE_SLOT (4) because
+        // services using async VFS operations (like IdentityService) receive
+        // all messages via on_message() which only polls slot 1.
+        // The separate VFS_RESPONSE_SLOT was designed for blocking VFS clients
+        // which is not the pattern used by services.
+        use crate::constants::SERVICE_INPUT_SLOT;
+        self.route_ipc_via_init(to_pid as u64, SERVICE_INPUT_SLOT, tag, &data);
+    }
+
+    /// Handle KEYSTORE:RESPONSE: debug message.
+    ///
+    /// Format: {to_pid}:{tag_hex}:{hex_data}
+    /// Example: "5:0000a007:7b22..."
+    /// Routes Keystore responses back to the requesting process via Init.
+    pub(super) fn handle_debug_keystore_response(&mut self, rest: &str) {
+        let parts: Vec<&str> = rest.splitn(3, ':').collect();
+        if parts.len() != 3 {
+            log(&format!(
+                "[supervisor] Malformed KEYSTORE:RESPONSE: {}",
+                rest
+            ));
+            return;
+        }
+
+        let to_pid = match parts[0].parse::<u32>() {
+            Ok(p) => p,
+            Err(_) => {
+                log(&format!(
+                    "[supervisor] KEYSTORE:RESPONSE invalid PID: {}",
+                    parts[0]
+                ));
+                return;
+            }
+        };
+
+        let tag = match u32::from_str_radix(parts[1], 16) {
+            Ok(t) => t,
+            Err(_) => {
+                log(&format!(
+                    "[supervisor] KEYSTORE:RESPONSE invalid tag: {}",
+                    parts[1]
+                ));
+                return;
+            }
+        };
+
+        let data = match hex_to_bytes(parts[2]) {
+            Ok(d) => d,
+            Err(_) => {
+                log("[supervisor] KEYSTORE:RESPONSE invalid hex data");
+                return;
+            }
+        };
+
+        log(&format!(
+            "[supervisor] Routing KEYSTORE:RESPONSE to PID {} tag 0x{:x}",
+            to_pid, tag
+        ));
+
+        // Route response through Init for capability-checked delivery
+        use crate::constants::SERVICE_INPUT_SLOT;
+        self.route_ipc_via_init(to_pid as u64, SERVICE_INPUT_SLOT, tag, &data);
     }
 
     /// Handle SERVICE:RESPONSE: debug message.
