@@ -13,8 +13,8 @@ import { useSettingsStore } from './settingsStore';
 // Machine Key Types (mirrors zos-identity/src/keystore.rs and ipc.rs)
 // =============================================================================
 
-/** Key scheme for machine keys */
-export type KeyScheme = 'Classical' | 'PqHybrid';
+/** Key scheme for machine keys (matches service snake_case) */
+export type KeyScheme = 'classical' | 'pq_hybrid';
 
 /** Machine key capability strings */
 export type MachineKeyCapability =

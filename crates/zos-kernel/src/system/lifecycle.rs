@@ -5,13 +5,16 @@
 //! - `execute_kill_with_cap()` - Handle kill process with capability check
 //! - `execute_register_process()` - Handle process registration
 //! - `execute_create_endpoint_for()` - Handle endpoint creation for another process
+//! - `execute_load_binary()` - Handle binary loading (Init-only)
+//! - `execute_spawn_process()` - Handle process spawning (Init-only)
 
 use alloc::vec::Vec;
 
 use crate::core::KernelCore;
 use crate::types::ProcessId;
 use zos_axiom::CommitType;
-use zos_hal::HAL;
+use zos_hal::{HalError, HAL};
+use zos_ipc::{pid::INIT, syscall_error};
 
 /// Execute process exit syscall (0x11).
 ///
@@ -96,5 +99,98 @@ pub(in crate::system) fn execute_create_endpoint_for<H: HAL>(
             (packed, commit_types)
         }
         Err(_) => (-1, commit_types),
+    }
+}
+
+/// Execute load binary syscall (0x16).
+///
+/// Loads a binary by name from the HAL. Only init (PID 1) can call this.
+/// Returns binary data in the response Vec, or error code.
+///
+/// # Arguments
+/// - `sender`: Requesting process (must be Init)
+/// - `data`: Binary name as UTF-8 bytes
+///
+/// # Returns
+/// - On success: `(binary.len() as i64, Vec::new(), binary_data)`
+/// - On error: `(error_code as i64, Vec::new(), Vec::new())`
+pub(in crate::system) fn execute_load_binary<H: HAL>(
+    core: &KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+) -> (i64, Vec<CommitType>, Vec<u8>) {
+    // Only Init can load binaries
+    if sender.0 != INIT as u64 {
+        return (syscall_error::PERMISSION_DENIED as i64, Vec::new(), Vec::new());
+    }
+
+    let name = match core::str::from_utf8(data) {
+        Ok(n) => n,
+        Err(_) => return (syscall_error::INVALID_UTF8 as i64, Vec::new(), Vec::new()),
+    };
+
+    match core.hal().load_binary(name) {
+        Ok(binary) => (binary.len() as i64, Vec::new(), binary.to_vec()),
+        Err(HalError::NotFound) => (syscall_error::NOT_FOUND as i64, Vec::new(), Vec::new()),
+        Err(HalError::NotSupported) => (syscall_error::NOT_SUPPORTED as i64, Vec::new(), Vec::new()),
+        Err(_) => (syscall_error::NOT_FOUND as i64, Vec::new(), Vec::new()),
+    }
+}
+
+/// Execute spawn process syscall (0x17).
+///
+/// Spawns a new process from binary data. Only init (PID 1) can call this.
+/// Returns PID on success, or error code on failure.
+///
+/// # Arguments
+/// - `sender`: Requesting process (must be Init)
+/// - `data`: [name_len: u32 (LE), name: [u8], binary: [u8]]
+/// - `timestamp`: For commit log
+///
+/// # Returns
+/// - On success: `(pid as i64, commits)`
+/// - On error: `(error_code as i64, Vec::new())`
+pub(in crate::system) fn execute_spawn_process<H: HAL>(
+    core: &mut KernelCore<H>,
+    sender: ProcessId,
+    data: &[u8],
+    timestamp: u64,
+) -> (i64, Vec<CommitType>) {
+    // Only Init (PID 1) can spawn processes
+    if sender.0 != INIT as u64 {
+        return (syscall_error::PERMISSION_DENIED as i64, Vec::new());
+    }
+
+    // Parse: [name_len: u32 (LE), name: [u8], binary: [u8]]
+    if data.len() < 4 {
+        return (syscall_error::INVALID_ARGUMENT as i64, Vec::new());
+    }
+    let name_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if data.len() < 4 + name_len {
+        return (syscall_error::INVALID_ARGUMENT as i64, Vec::new());
+    }
+    let name = match core::str::from_utf8(&data[4..4 + name_len]) {
+        Ok(n) => n,
+        Err(_) => return (syscall_error::INVALID_UTF8 as i64, Vec::new()),
+    };
+    let binary = &data[4 + name_len..];
+
+    if binary.is_empty() {
+        return (syscall_error::INVALID_ARGUMENT as i64, Vec::new());
+    }
+
+    // Register process in kernel first (this allocates PID and creates CSpace)
+    let (pid, commits) = core.register_process(name, timestamp);
+    let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
+
+    // Spawn via HAL (this starts the WASM runtime)
+    match core.hal().spawn_process(name, binary) {
+        Ok(_handle) => (pid.0 as i64, commit_types),
+        Err(_) => {
+            // Process was registered but spawn failed - kernel state is inconsistent
+            // In a production system, we'd need to clean up the registered process
+            // For now, return error (the process exists in kernel but isn't running)
+            (syscall_error::SPAWN_FAILED as i64, commit_types)
+        }
     }
 }

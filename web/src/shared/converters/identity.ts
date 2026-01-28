@@ -98,6 +98,18 @@ export function convertMachineRecord(
   const machineIdHex = u128ToHex(record.machine_id);
   const authorizedByHex = u128ToHex(record.authorized_by);
 
+  const normalizeKeyScheme = (scheme?: string): KeyScheme => {
+    switch (scheme) {
+      case 'pq_hybrid':
+      case 'PqHybrid':
+        return 'pq_hybrid';
+      case 'classical':
+      case 'Classical':
+      default:
+        return 'classical';
+    }
+  };
+
   return {
     machineId: machineIdHex,
     signingPublicKey: bytesToHex(record.signing_public_key),
@@ -109,7 +121,7 @@ export function convertMachineRecord(
     lastSeenAt: record.last_seen_at,
     isCurrentDevice: machineIdHex === currentMachineId,
     epoch: record.epoch ?? 1, // Use service value, fallback to 1 for backward compatibility
-    keyScheme: (record.key_scheme ?? 'Classical') as KeyScheme,
+    keyScheme: normalizeKeyScheme(record.key_scheme),
     pqSigningPublicKey: record.pq_signing_public_key
       ? bytesToHex(record.pq_signing_public_key)
       : undefined,

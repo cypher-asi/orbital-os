@@ -250,10 +250,12 @@ mod tests {
             PendingStorageOp::CheckIdentityDirectory {
                 ctx: RequestContext::new(10, vec![]),
                 user_id,
+                password: String::from("test_password"),
             },
             PendingStorageOp::CheckKeyExists {
                 ctx: RequestContext::new(10, vec![]),
                 user_id,
+                password: String::from("test_password"),
             },
             PendingStorageOp::ListMachineKeys {
                 ctx: RequestContext::new(10, vec![]),

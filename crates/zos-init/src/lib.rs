@@ -136,18 +136,9 @@ impl Init {
         self.boot_sequence();
 
         self.log("Entering idle loop...");
-        
-        let mut loop_count = 0u32;
 
         // Minimal loop: handle service messages
         loop {
-            loop_count = loop_count.wrapping_add(1);
-            
-            // Log every 1000 iterations to show we're alive
-            if loop_count % 1000 == 0 {
-                self.log(&format!("AGENT_LOG:idle_loop:iteration={}:checking_slot={}", loop_count, self.endpoint_slot));
-            }
-            
             match syscall::receive(self.endpoint_slot) {
                 Ok(msg) => {
                     self.log(&format!("AGENT_LOG:receive_returned_message:tag=0x{:x}:from_pid={}:len={}", msg.tag, msg.from_pid, msg.data.len()));

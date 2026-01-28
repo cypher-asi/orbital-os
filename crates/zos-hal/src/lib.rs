@@ -7,12 +7,21 @@
 //! # Platform Implementations
 //!
 //! - **WASM**: Web Workers for processes, `performance.now()` for time, `crypto.getRandomValues()` for entropy
-//! - **QEMU**: Virtual hardware abstraction (Phase 2)
+//! - **QEMU/x86_64**: Virtual hardware via x86_64 HAL (Phase 2)
 //! - **Bare Metal**: Direct hardware access (Phase 7)
+//!
+//! # Features
+//!
+//! - `x86_64`: Enable x86_64 platform support (for QEMU and bare metal)
 
 #![no_std]
+#![cfg_attr(feature = "x86_64", feature(abi_x86_interrupt))]
 
 extern crate alloc;
+
+// x86_64 platform implementation (enabled by feature)
+#[cfg(feature = "x86_64")]
+pub mod x86_64;
 
 use alloc::vec::Vec;
 
@@ -416,6 +425,31 @@ pub trait HAL: Send + Sync + 'static {
         None
     }
 
+    // === Binary Loading (QEMU Native Runtime) ===
+    // These methods support the pure microkernel spawn model where Init uses syscalls
+    // to load and spawn processes.
+
+    /// Load a binary by name (platform-specific).
+    ///
+    /// This method is used by the kernel to implement the SYS_LOAD_BINARY syscall.
+    /// Init uses this to load service binaries before spawning them.
+    ///
+    /// # Platform Behavior
+    /// - **QEMU**: Returns embedded binary (static reference, zero-copy via `include_bytes!`)
+    /// - **WASM**: Returns `NotSupported` (Supervisor handles async fetch from network)
+    ///
+    /// # Arguments
+    /// * `name` - Binary name (e.g., "permission_service", "vfs_service")
+    ///
+    /// # Returns
+    /// * `Ok(&'static [u8])` - Binary data (zero-copy for embedded binaries)
+    /// * `Err(HalError::NotFound)` - Binary name not recognized
+    /// * `Err(HalError::NotSupported)` - Platform doesn't support sync loading
+    fn load_binary(&self, _name: &str) -> Result<&'static [u8], HalError> {
+        // Default: not supported (WASM mode uses async Supervisor flow)
+        Err(HalError::NotSupported)
+    }
+
     // === Bootstrap Storage (Supervisor Only) ===
     // These methods are used ONLY during supervisor initialization before processes exist.
     // They provide direct storage access for bootstrap operations like creating the root
@@ -501,6 +535,10 @@ pub enum HalError {
     StorageError,
     /// Resource limit reached (e.g., too many pending requests)
     ResourceExhausted,
+    /// Binary or resource not found (for load_binary)
+    NotFound,
+    /// Invalid binary format (not WASM or ELF)
+    InvalidBinary,
 }
 
 /// Request ID for tracking async storage operations

@@ -12,8 +12,8 @@
 // Key Scheme
 // =============================================================================
 
-/** Key scheme for machine keys */
-export type KeyScheme = 'Classical' | 'PqHybrid';
+/** Key scheme for machine keys (matches service snake_case) */
+export type KeyScheme = 'classical' | 'pq_hybrid';
 
 // =============================================================================
 // Machine Key Types
@@ -66,11 +66,11 @@ export interface MachineKeyRecord {
   isCurrentDevice: boolean;
   /** Key epoch (increments on rotation) */
   epoch: number;
-  /** Key scheme used (defaults to 'Classical') */
+  /** Key scheme used (defaults to 'classical') */
   keyScheme: KeyScheme;
-  /** PQ signing public key (hex, only for PqHybrid) */
+  /** PQ signing public key (hex, only for pq_hybrid) */
   pqSigningPublicKey?: string;
-  /** PQ encryption public key (hex, only for PqHybrid) */
+  /** PQ encryption public key (hex, only for pq_hybrid) */
   pqEncryptionPublicKey?: string;
 }
 

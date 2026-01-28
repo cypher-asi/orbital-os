@@ -19,5 +19,7 @@ zos-process = { path = "../zos-process" }
 zid-crypto = { workspace = true }
 getrandom = { workspace = true }
 uuid = { workspace = true }
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
 
 [dev-dependencies]

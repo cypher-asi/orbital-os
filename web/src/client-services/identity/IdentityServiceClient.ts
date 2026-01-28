@@ -107,11 +107,13 @@ export class IdentityServiceClient {
    * Generate a new Neural Key for a user.
    *
    * @param userId - User ID (as bigint or hex string)
-   * @returns NeuralKeyGenerated with shards and public identifiers
+   * @param password - Password for encrypting 2 shards (minimum 12 characters)
+   * @returns NeuralKeyGenerated with 3 external shards and public identifiers
    */
-  async generateNeuralKey(userId: bigint | string): Promise<NeuralKeyGenerated> {
+  async generateNeuralKey(userId: bigint | string, password: string): Promise<NeuralKeyGenerated> {
     const response = await this.request<GenerateNeuralKeyResponse>(MSG.GENERATE_NEURAL_KEY, {
       user_id: formatUserIdForRust(userId),
+      password,
     });
     return this.unwrapResult(response.result);
   }
@@ -154,31 +156,39 @@ export class IdentityServiceClient {
   /**
    * Create a new machine key record for a user.
    *
-   * Machine keys are derived from the user's Neural Key using 3 Shamir shards.
+   * Machine keys are derived from the user's Neural Key using:
+   * - 1 external shard (from paper backup)
+   * - Password (to decrypt 2 stored shards from keystore)
    *
    * @param userId - User ID (as bigint)
    * @param machineName - Human-readable machine name
    * @param capabilities - Machine capabilities
    * @param keyScheme - Key scheme to use (defaults to 'classical')
-   * @param shards - Neural shards for key derivation (at least 3 required)
+   * @param externalShard - One external Neural shard (from paper backup)
+   * @param password - Password to decrypt stored shards
    * @returns The created MachineKeyRecord with derived keys
    */
   async createMachineKey(
     userId: bigint | string,
     machineName: string,
     capabilities: MachineKeyCapabilities,
-    keyScheme?: KeyScheme,
-    shards?: NeuralShard[]
+    keyScheme: KeyScheme | undefined,
+    externalShard: NeuralShard,
+    password: string
   ): Promise<MachineKeyRecord> {
-    if (!shards || shards.length < 3) {
-      throw new IdentityServiceError('At least 3 Neural shards are required to create a machine key');
+    if (!externalShard) {
+      throw new IdentityServiceError('An external Neural shard is required to create a machine key');
+    }
+    if (!password) {
+      throw new IdentityServiceError('Password is required to create a machine key');
     }
     const response = await this.request<CreateMachineKeyResponse>(MSG.CREATE_MACHINE_KEY, {
       user_id: formatUserIdForRust(userId),
       machine_name: machineName,
       capabilities,
       key_scheme: keyScheme ?? 'classical',
-      shards,
+      external_shard: externalShard,
+      password,
     });
     return this.unwrapResult(response.result);
   }

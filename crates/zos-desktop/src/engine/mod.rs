@@ -1,15 +1,43 @@
 //! Desktop engine coordinating all components
 //!
-//! This module is split into focused submodules:
-//! - `transitions`: Crossfade and animation state management
-//! - `input`: Pointer event handling and drag operations
-//! - `windows`: Window lifecycle and operations
-//! - `void_mode`: Void view transitions
-//! - `animation`: Camera animation
-//! - `rendering`: Screen coordinate calculations
+//! The `DesktopEngine` struct has its `impl` blocks split across focused submodules
+//! for maintainability. Each file contains related method groups:
+//!
+//! ## Method Organization
+//!
+//! | File                | Methods                                                    |
+//! |---------------------|-----------------------------------------------------------|
+//! | `mod.rs`            | Core: `new`, `init`, `resize`, `pan`, `zoom_at`, `active_camera`, accessors |
+//! | `windows.rs`        | Window lifecycle: `create_window`, `close_window`, `focus_window`, `move_window`, `resize_window`, `launch_app` |
+//! | `pointer_events.rs` | Input handling: `handle_pointer_down`, `handle_pointer_move`, `handle_pointer_up`, `handle_wheel` |
+//! | `void_mode.rs`      | Void transitions: `enter_void`, `exit_void`               |
+//! | `transitions.rs`    | Animation ticking: `tick_transition`, `layer_opacities`, `is_crossfading`, `is_animating` |
+//! | `animation.rs`      | Camera animation: `pan_to_window`                         |
+//! | `rendering.rs`      | Screen calculations: `get_window_screen_rects`            |
+//!
+//! ## Invariants
+//!
+//! - `view_mode` accurately reflects whether we're viewing a desktop or the void
+//! - During crossfades, `view_mode` represents the *destination* state
+//! - Only one crossfade or camera animation can be active at a time
+//! - The active desktop index is always valid
+//!
+//! ## State Transitions
+//!
+//! ```text
+//! Desktop(n) --enter_void--> [CrossfadeToVoid] --> Void
+//! Void --exit_void(n)--> [CrossfadeToDesktop] --> Desktop(n)
+//! Desktop(n) --switch_desktop(m)--> [CrossfadeSwitchDesktop] --> Desktop(m)
+//! ```
+//!
+//! ## Failure Modes
+//!
+//! - Transitions are blocked during drag operations
+//! - Void/desktop transitions are blocked during active crossfades
+//! - Desktop switches can interrupt other desktop switches (for responsiveness)
 
 mod animation;
-mod input;
+mod pointer_events;
 mod rendering;
 mod transitions;
 mod void_mode;
@@ -19,7 +47,7 @@ use crate::desktop::{DesktopManager, VoidState};
 use crate::input::InputRouter;
 use crate::math::{Camera, Rect, Size};
 use crate::transition::{CameraAnimation, Crossfade};
-use crate::view_mode::ViewMode;
+use crate::desktop::ViewMode;
 use crate::viewport::Viewport;
 use crate::window::{WindowId, WindowManager, WindowState};
 use std::collections::HashMap;
@@ -35,19 +63,24 @@ pub use rendering::WindowScreenRect;
 /// - Desktop manager (separate infinite canvases)
 /// - Input router (drag/resize state machine)
 /// - Crossfade transitions (opacity animations between layers)
+///
+/// ## Design
+///
+/// Fields are `pub(crate)` to maintain invariants through methods.
+/// External code should use the provided accessor and mutator methods.
 pub struct DesktopEngine {
     /// Current view mode (desktop or void)
-    pub view_mode: ViewMode,
+    pub(crate) view_mode: ViewMode,
     /// Void layer state
-    pub void_state: VoidState,
+    pub(crate) void_state: VoidState,
     /// Legacy viewport (for backward compatibility)
-    pub viewport: Viewport,
+    pub(crate) viewport: Viewport,
     /// Window manager
-    pub windows: WindowManager,
+    pub(crate) windows: WindowManager,
     /// Desktop manager
-    pub desktops: DesktopManager,
+    pub(crate) desktops: DesktopManager,
     /// Input router
-    pub input: InputRouter,
+    pub(crate) input: InputRouter,
     /// Current crossfade transition
     pub(crate) crossfade: Option<Crossfade>,
     /// Camera animation
@@ -169,6 +202,52 @@ impl DesktopEngine {
                 .unwrap_or_default(),
             ViewMode::Void => *self.void_state.camera(),
         }
+    }
+
+    // =========================================================================
+    // Accessor methods for internal state
+    // =========================================================================
+
+    /// Get a reference to the viewport
+    #[inline]
+    pub fn viewport(&self) -> &Viewport {
+        &self.viewport
+    }
+
+    /// Get a mutable reference to the viewport
+    #[inline]
+    pub fn viewport_mut(&mut self) -> &mut Viewport {
+        &mut self.viewport
+    }
+
+    /// Get a reference to the window manager
+    #[inline]
+    pub fn windows(&self) -> &WindowManager {
+        &self.windows
+    }
+
+    /// Get a mutable reference to the window manager
+    #[inline]
+    pub fn windows_mut(&mut self) -> &mut WindowManager {
+        &mut self.windows
+    }
+
+    /// Get a reference to the desktop manager
+    #[inline]
+    pub fn desktops(&self) -> &DesktopManager {
+        &self.desktops
+    }
+
+    /// Get a reference to the void state
+    #[inline]
+    pub fn void_state(&self) -> &VoidState {
+        &self.void_state
+    }
+
+    /// Get a reference to the input router
+    #[inline]
+    pub fn input(&self) -> &InputRouter {
+        &self.input
     }
 
     /// Focus top window on a desktop

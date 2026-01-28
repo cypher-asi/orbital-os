@@ -93,7 +93,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
         timeFormat24h: DEFAULT_TIME_SETTINGS.time_format_24h,
         timezone: DEFAULT_TIME_SETTINGS.timezone,
         rpcEndpoint: DEFAULT_RPC_ENDPOINT,
-        defaultKeyScheme: 'Classical',
+        defaultKeyScheme: 'classical',
         isLoadingPreferences: false,
 
         // Navigation state

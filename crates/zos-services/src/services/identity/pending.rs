@@ -52,17 +52,23 @@ pub enum PendingStorageOp {
     CheckIdentityDirectory {
         ctx: RequestContext,
         user_id: u128,
+        /// Password for encrypting shards (passed through the async flow)
+        password: String,
     },
     /// Create identity directory structure
     CreateIdentityDirectory {
         ctx: RequestContext,
         user_id: u128,
         directories: Vec<String>,
+        /// Password for encrypting shards (passed through the async flow)
+        password: String,
     },
     /// Check if identity key exists (for generate)
     CheckKeyExists {
         ctx: RequestContext,
         user_id: u128,
+        /// Password for encrypting shards (passed through the async flow)
+        password: String,
     },
     /// Write identity key store (VFS handles inodes internally)
     WriteKeyStore {
@@ -248,6 +254,8 @@ pub enum PendingKeystoreOp {
     CheckKeyExists {
         ctx: RequestContext,
         user_id: u128,
+        /// Password for encrypting shards (new field for encrypted shard flow)
+        password: String,
     },
     /// Write identity key store to keystore
     WriteKeyStore {
@@ -255,6 +263,19 @@ pub enum PendingKeystoreOp {
         user_id: u128,
         result: NeuralKeyGenerated,
         json_bytes: Vec<u8>,
+        /// Encrypted shard store to write after key store succeeds
+        encrypted_shards_json: Vec<u8>,
+    },
+    /// Write encrypted shards after key store write succeeds
+    WriteEncryptedShards {
+        ctx: RequestContext,
+        user_id: u128,
+        result: NeuralKeyGenerated,
+    },
+    /// Best-effort rollback if encrypted shard write fails
+    DeleteIdentityKeyAfterShardFailure {
+        ctx: RequestContext,
+        user_id: u128,
     },
     /// Get identity key from keystore
     GetIdentityKey {
@@ -281,6 +302,13 @@ pub enum PendingKeystoreOp {
     ReadIdentityForMachine {
         ctx: RequestContext,
         request: CreateMachineKeyRequest,
+    },
+    /// Read encrypted shards for machine key creation
+    ReadEncryptedShardsForMachine {
+        ctx: RequestContext,
+        request: CreateMachineKeyRequest,
+        /// Stored identity public key for verification
+        stored_identity_pubkey: [u8; 32],
     },
     /// Write machine key to keystore
     WriteMachineKey {

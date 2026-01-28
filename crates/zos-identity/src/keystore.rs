@@ -514,6 +514,63 @@ pub enum CredentialType {
     WebAuthn,
 }
 
+// ============================================================================
+// Encrypted Neural Shard Storage
+// ============================================================================
+
+/// Encrypted shard storage for Neural Key.
+///
+/// Stores 2 of 5 shards encrypted with a user-provided password.
+/// The remaining 3 shards are shown to the user for offline backup.
+/// To reconstruct the Neural Key, the user needs 1 external shard + password.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EncryptedShardStore {
+    /// User ID this shard store belongs to
+    #[serde(with = "u128_hex_string")]
+    pub user_id: u128,
+
+    /// Encrypted shards (2 of 5)
+    pub encrypted_shards: Vec<EncryptedShard>,
+
+    /// Indices of external shards shown to user (e.g., [1, 2, 3])
+    pub external_shard_indices: Vec<u8>,
+
+    /// Key derivation function parameters
+    pub kdf: KeyDerivation,
+
+    /// Timestamp when the shards were encrypted
+    pub created_at: u64,
+}
+
+impl EncryptedShardStore {
+    /// Path where encrypted shards are stored (routed to keystore by VFS).
+    ///
+    /// Paths starting with `/keys/` are routed to the dedicated zos-keystore
+    /// IndexedDB for security isolation of cryptographic key material.
+    pub fn storage_path(user_id: UserId) -> String {
+        alloc::format!("/keys/{}/identity/encrypted_shards.json", user_id)
+    }
+}
+
+/// An individual encrypted shard.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EncryptedShard {
+    /// Original shard index (1-5)
+    pub index: u8,
+
+    /// AES-256-GCM ciphertext
+    #[serde(with = "crate::serde_helpers::bytes_hex")]
+    pub ciphertext: Vec<u8>,
+
+    /// GCM nonce (12 bytes)
+    #[serde(with = "crate::serde_helpers::array_hex_12")]
+    pub nonce: [u8; 12],
+
+    /// GCM authentication tag (16 bytes)
+    #[serde(with = "crate::serde_helpers::array_hex_16")]
+    pub tag: [u8; 16],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,12 +4,14 @@ use super::DesktopEngine;
 use crate::desktop::VoidState;
 use crate::math::{Camera, Rect};
 use crate::transition::Crossfade;
-use crate::view_mode::ViewMode;
+use crate::desktop::ViewMode;
+use tracing::debug;
 
 impl DesktopEngine {
     /// Enter the void (zoom out to see all desktops)
     pub fn enter_void(&mut self, now_ms: f64) {
         if !self.can_enter_void() {
+            debug!("enter_void blocked");
             return;
         }
 
@@ -31,6 +33,8 @@ impl DesktopEngine {
         // Start crossfade to void
         self.crossfade = Some(Crossfade::to_void(now_ms, from_desktop));
         self.last_activity_ms = now_ms;
+
+        debug!(from_desktop = from_desktop, "entering void");
     }
 
     /// Check if we can enter void mode
@@ -41,6 +45,7 @@ impl DesktopEngine {
     /// Exit the void into a specific desktop
     pub fn exit_void(&mut self, desktop_index: usize, now_ms: f64) {
         if !self.can_exit_void() {
+            debug!(target_desktop = desktop_index, "exit_void blocked");
             return;
         }
 
@@ -50,6 +55,8 @@ impl DesktopEngine {
         // Start crossfade to desktop
         self.crossfade = Some(Crossfade::to_desktop(now_ms, desktop_index));
         self.last_activity_ms = now_ms;
+
+        debug!(target_desktop = desktop_index, "exiting void");
     }
 
     /// Check if we can exit void mode

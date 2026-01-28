@@ -170,6 +170,16 @@ pub mod syscall {
     pub const SYS_REGISTER_PROCESS: u32 = 0x14;
     /// Create an endpoint for another process (Init-only syscall for spawn protocol)
     pub const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
+    /// Load a binary by name from platform storage (Init-only).
+    /// - QEMU: Returns embedded binary from HAL
+    /// - WASM: Returns NotSupported (use Supervisor async flow)
+    /// Payload: [name: UTF-8 bytes]
+    /// Returns: Binary data in syscall result buffer, or error code
+    pub const SYS_LOAD_BINARY: u32 = 0x16;
+    /// Spawn a process from binary data (Init-only).
+    /// Payload: [name_len: u32 (LE), name: [u8], binary: [u8]]
+    /// Returns: PID on success (>0), negative error code on failure
+    pub const SYS_SPAWN_PROCESS: u32 = 0x17;
 
     // === Capability (0x30 - 0x3F) ===
     /// Grant a capability to another process
@@ -964,6 +974,58 @@ pub mod debug {
 pub mod slots {
     /// Init's endpoint slot (every process gets this at spawn).
     pub const INIT_ENDPOINT_SLOT: u32 = 2;
+}
+
+// =============================================================================
+// Well-Known PIDs
+// =============================================================================
+
+/// Well-known process IDs.
+///
+/// These PIDs are reserved for system processes that are spawned during boot.
+/// The exact semantics of PID 0 vary by platform:
+/// - WASM: Supervisor process (browser bridge)
+/// - QEMU: Kernel itself (no separate entity)
+pub mod pid {
+    /// Supervisor/Kernel pseudo-process (platform-dependent).
+    /// - WASM: Supervisor process (browser bridge)
+    /// - QEMU: Kernel itself (no separate entity)
+    pub const SUPERVISOR: u32 = 0;
+    /// Init process - service registry and IPC router
+    pub const INIT: u32 = 1;
+    /// PermissionService - capability authority
+    pub const PERMISSION_SERVICE: u32 = 2;
+    /// VfsService - virtual filesystem (Note: spawned as PID 3 in current boot order)
+    pub const VFS_SERVICE: u32 = 4;
+    /// IdentityService - user/session management
+    pub const IDENTITY_SERVICE: u32 = 5;
+    /// TimeService - time settings
+    pub const TIME_SERVICE: u32 = 6;
+    /// KeystoreService - secure key storage
+    pub const KEYSTORE_SERVICE: u32 = 7;
+}
+
+// =============================================================================
+// Syscall Error Codes (for SYS_LOAD_BINARY, SYS_SPAWN_PROCESS)
+// =============================================================================
+
+/// Syscall error codes (negative return values).
+///
+/// These error codes are returned by syscalls like SYS_LOAD_BINARY and
+/// SYS_SPAWN_PROCESS when an operation fails.
+pub mod syscall_error {
+    /// Invalid UTF-8 in name parameter
+    pub const INVALID_UTF8: i32 = -1;
+    /// Binary or resource not found
+    pub const NOT_FOUND: i32 = -2;
+    /// Operation not supported on this platform
+    pub const NOT_SUPPORTED: i32 = -3;
+    /// Permission denied (caller is not Init)
+    pub const PERMISSION_DENIED: i32 = -4;
+    /// Invalid argument (e.g., missing or malformed payload)
+    pub const INVALID_ARGUMENT: i32 = -5;
+    /// Process spawn failed
+    pub const SPAWN_FAILED: i32 = -6;
 }
 
 #[cfg(test)]

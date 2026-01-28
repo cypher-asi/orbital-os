@@ -68,6 +68,12 @@ pub enum KeyError {
     InvalidShard(String),
     /// Neural Key verification failed - reconstructed key doesn't match stored identity
     NeuralKeyMismatch,
+    /// Password doesn't meet requirements (too short, etc.)
+    InvalidPassword(String),
+    /// Decryption failed - wrong password or corrupted data
+    DecryptionFailed,
+    /// No encrypted shards found for this user
+    EncryptedShardsNotFound,
 }
 
 /// Errors from credential operations.

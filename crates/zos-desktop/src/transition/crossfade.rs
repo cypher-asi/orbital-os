@@ -1,4 +1,34 @@
 //! Crossfade transition between desktop layers
+//!
+//! ## State Machine
+//!
+//! Crossfade represents an animated transition between view states:
+//!
+//! ```text
+//! +----------+     ToVoid      +------+
+//! | Desktop  | --------------> | Void |
+//! +----------+ <-------------- +------+
+//!      |         ToDesktop
+//!      |
+//!      | SwitchDesktop
+//!      v
+//! +----------+
+//! | Desktop' |
+//! +----------+
+//! ```
+//!
+//! ## Invariants
+//!
+//! - `start_ms` is always a valid timestamp
+//! - Progress is always clamped to [0.0, 1.0]
+//! - Desktop switch transitions never show the void layer
+//! - `source_desktop` is set for ToVoid and SwitchDesktop directions
+//! - `target_desktop` is set for ToDesktop and SwitchDesktop directions
+//!
+//! ## Timing
+//!
+//! - ToVoid/ToDesktop: 750ms with ease-in-out
+//! - SwitchDesktop: 400ms with blackout period (35% fade out, 20% black, 45% fade in)
 
 use super::{ease_in_out, CROSSFADE_DURATION_MS, DESKTOP_SWITCH_DURATION_MS};
 

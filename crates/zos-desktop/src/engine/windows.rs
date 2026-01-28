@@ -4,6 +4,7 @@ use super::DesktopEngine;
 use crate::desktop::DesktopId;
 use crate::math::{Camera, Rect, Size, Vec2};
 use crate::window::{WindowConfig, WindowId, WindowType};
+use tracing::{debug, info, warn};
 
 impl DesktopEngine {
     /// Create a window
@@ -12,9 +13,17 @@ impl DesktopEngine {
             config.position = Some(self.calculate_cascade_position(&config));
         }
 
-        let id = self.windows.create(config);
+        let id = self.windows.create(config.clone());
         let active = self.desktops.active_index();
         self.desktops.add_window_to_desktop(active, id);
+
+        info!(
+            window_id = id,
+            title = %config.title,
+            app_id = %config.app_id,
+            desktop = active,
+            "window created"
+        );
 
         id
     }
@@ -51,10 +60,17 @@ impl DesktopEngine {
         // Cancel any camera animation when closing a window to prevent unwanted panning
         self.camera_animation = None;
 
+        if self.windows.get(id).is_none() {
+            warn!(window_id = id, "attempted to close non-existent window");
+            return;
+        }
+
         self.desktops.remove_window(id);
         self.windows.close(id);
         // Clean up saved camera position for this window
         self.window_cameras.remove(&id);
+
+        info!(window_id = id, "window closed");
     }
 
     /// Get the process ID for a window (if any)
@@ -92,6 +108,7 @@ impl DesktopEngine {
         }
 
         self.windows.focus(id);
+        debug!(window_id = id, "window focused");
     }
 
     /// Move a window
@@ -133,7 +150,9 @@ impl DesktopEngine {
 
     /// Create a desktop
     pub fn create_desktop(&mut self, name: &str) -> DesktopId {
-        self.desktops.create(name)
+        let id = self.desktops.create(name);
+        info!(desktop_id = id, name = %name, "desktop created");
+        id
     }
 
     /// Set background for a desktop by index
@@ -145,6 +164,7 @@ impl DesktopEngine {
     /// Switch to desktop by index
     pub fn switch_desktop(&mut self, index: usize, now_ms: f64) {
         if !self.can_switch_desktop() {
+            debug!(target_index = index, "desktop switch blocked");
             return;
         }
 
@@ -163,6 +183,9 @@ impl DesktopEngine {
                 current_index,
                 index,
             ));
+            info!(from = current_index, to = index, "switching desktop");
+        } else {
+            warn!(target_index = index, "desktop switch failed - index out of bounds");
         }
     }
 
@@ -203,6 +226,7 @@ impl DesktopEngine {
             window_type: app_config.window_type,
         };
 
+        info!(app_id = %app_id, "launching app");
         self.create_window(config)
     }
 

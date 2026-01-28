@@ -203,6 +203,216 @@ pub mod option_bytes_hex {
     }
 }
 
+// ============================================================================
+// Vec<u8> as hex string
+// ============================================================================
+
+/// Serde module for serializing/deserializing `Vec<u8>` as hex string.
+///
+/// # Usage
+///
+/// ```ignore
+/// use serde::{Deserialize, Serialize};
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct MyStruct {
+///     #[serde(with = "zos_identity::serde_helpers::bytes_hex")]
+///     ciphertext: Vec<u8>,
+/// }
+/// ```
+pub mod bytes_hex {
+    use super::*;
+
+    pub fn serialize<S>(value: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex: String = value.iter().map(|b| format!("{:02x}", b)).collect();
+        serializer.serialize_str(&hex)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct BytesVisitor;
+
+        impl<'de> de::Visitor<'de> for BytesVisitor {
+            type Value = Vec<u8>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string or byte array")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                let mut bytes = Vec::with_capacity(s.len() / 2);
+                let mut chars = s.chars();
+                while let (Some(h), Some(l)) = (chars.next(), chars.next()) {
+                    let byte = u8::from_str_radix(&format!("{}{}", h, l), 16)
+                        .map_err(de::Error::custom)?;
+                    bytes.push(byte);
+                }
+                Ok(bytes)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut bytes = Vec::new();
+                while let Some(b) = seq.next_element::<u8>()? {
+                    bytes.push(b);
+                }
+                Ok(bytes)
+            }
+        }
+
+        deserializer.deserialize_any(BytesVisitor)
+    }
+}
+
+// ============================================================================
+// [u8; 12] as hex string (for AES-GCM nonces)
+// ============================================================================
+
+/// Serde module for serializing/deserializing `[u8; 12]` as hex string.
+pub mod array_hex_12 {
+    use super::*;
+
+    pub fn serialize<S>(value: &[u8; 12], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex: String = value.iter().map(|b| format!("{:02x}", b)).collect();
+        serializer.serialize_str(&hex)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 12], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ArrayVisitor;
+
+        impl<'de> de::Visitor<'de> for ArrayVisitor {
+            type Value = [u8; 12];
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string (24 chars) or array of 12 bytes")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                if s.len() != 24 {
+                    return Err(de::Error::custom(format!(
+                        "expected 24 hex chars for 12 bytes, got {}",
+                        s.len()
+                    )));
+                }
+                let mut bytes = [0u8; 12];
+                let mut chars = s.chars();
+                for b in bytes.iter_mut() {
+                    let h = chars.next().ok_or_else(|| de::Error::custom("unexpected end"))?;
+                    let l = chars.next().ok_or_else(|| de::Error::custom("unexpected end"))?;
+                    *b = u8::from_str_radix(&format!("{}{}", h, l), 16)
+                        .map_err(de::Error::custom)?;
+                }
+                Ok(bytes)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 12];
+                for (i, b) in bytes.iter_mut().enumerate() {
+                    *b = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                }
+                Ok(bytes)
+            }
+        }
+
+        deserializer.deserialize_any(ArrayVisitor)
+    }
+}
+
+// ============================================================================
+// [u8; 16] as hex string (for AES-GCM auth tags)
+// ============================================================================
+
+/// Serde module for serializing/deserializing `[u8; 16]` as hex string.
+pub mod array_hex_16 {
+    use super::*;
+
+    pub fn serialize<S>(value: &[u8; 16], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex: String = value.iter().map(|b| format!("{:02x}", b)).collect();
+        serializer.serialize_str(&hex)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 16], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ArrayVisitor;
+
+        impl<'de> de::Visitor<'de> for ArrayVisitor {
+            type Value = [u8; 16];
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string (32 chars) or array of 16 bytes")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                if s.len() != 32 {
+                    return Err(de::Error::custom(format!(
+                        "expected 32 hex chars for 16 bytes, got {}",
+                        s.len()
+                    )));
+                }
+                let mut bytes = [0u8; 16];
+                let mut chars = s.chars();
+                for b in bytes.iter_mut() {
+                    let h = chars.next().ok_or_else(|| de::Error::custom("unexpected end"))?;
+                    let l = chars.next().ok_or_else(|| de::Error::custom("unexpected end"))?;
+                    *b = u8::from_str_radix(&format!("{}{}", h, l), 16)
+                        .map_err(de::Error::custom)?;
+                }
+                Ok(bytes)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 16];
+                for (i, b) in bytes.iter_mut().enumerate() {
+                    *b = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                }
+                Ok(bytes)
+            }
+        }
+
+        deserializer.deserialize_any(ArrayVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +476,53 @@ mod tests {
         let json = r#"{"data": [1, 2, 10, 255]}"#;
         let decoded: TestBytes = serde_json::from_str(json).unwrap();
         assert_eq!(decoded.data, Some(vec![0x01, 0x02, 0x0a, 0xff]));
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct TestBytesRequired {
+        #[serde(with = "bytes_hex")]
+        data: Vec<u8>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct TestArray12 {
+        #[serde(with = "array_hex_12")]
+        nonce: [u8; 12],
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct TestArray16 {
+        #[serde(with = "array_hex_16")]
+        tag: [u8; 16],
+    }
+
+    #[test]
+    fn test_bytes_required_roundtrip() {
+        let original = TestBytesRequired { data: vec![0x01, 0x02, 0xab, 0xcd] };
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("0102abcd"));
+        
+        let decoded: TestBytesRequired = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_array_12_roundtrip() {
+        let original = TestArray12 { nonce: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] };
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("000102030405060708090a0b"));
+        
+        let decoded: TestArray12 = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_array_16_roundtrip() {
+        let original = TestArray16 { tag: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] };
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("000102030405060708090a0b0c0d0e0f"));
+        
+        let decoded: TestArray16 = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, decoded);
     }
 }

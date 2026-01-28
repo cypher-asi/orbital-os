@@ -73,12 +73,17 @@ export interface PublicIdentifiers {
 /** Result of successful Neural Key generation */
 export interface NeuralKeyGenerated {
   public_identifiers: PublicIdentifiers;
+  /**
+   * External Shamir shards (3 of 5) for paper backup.
+   * The other 2 shards are encrypted with the password and stored in keystore.
+   * To create a machine key, user needs 1 external shard + password.
+   */
   shards: NeuralShard[];
   created_at: number;
 }
 
-/** Key scheme for machine keys */
-export type KeyScheme = 'Classical' | 'PqHybrid';
+/** Key scheme for machine keys (matches Rust snake_case) */
+export type KeyScheme = 'classical' | 'pq_hybrid';
 
 /** Machine key capability strings */
 export type MachineKeyCapability =
@@ -249,8 +254,10 @@ export interface CreateMachineKeyRequest {
   machine_name: string | null;
   capabilities: MachineKeyCapabilities;
   key_scheme: KeyScheme;
-  /** Neural shards for key derivation (at least 3 required) */
-  shards: NeuralShard[];
+  /** Single external Neural shard (from paper backup) */
+  external_shard: NeuralShard;
+  /** Password to decrypt stored shards */
+  password: string;
 }
 
 export interface CreateMachineKeyResponse {

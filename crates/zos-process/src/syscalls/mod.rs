@@ -9,8 +9,8 @@ use crate::error;
 use crate::{
     SYS_CALL, SYS_CAP_DELETE, SYS_CAP_DERIVE, SYS_CAP_GRANT, SYS_CAP_INSPECT, SYS_CAP_LIST,
     SYS_CAP_REVOKE, SYS_CONSOLE_WRITE, SYS_CREATE_ENDPOINT, SYS_CREATE_ENDPOINT_FOR, SYS_DEBUG,
-    SYS_DELETE_ENDPOINT, SYS_EXIT, SYS_KILL, SYS_PS, SYS_RECV, SYS_REGISTER_PROCESS, SYS_REPLY,
-    SYS_SEND, SYS_SEND_CAP, SYS_TIME, SYS_WALLCLOCK, SYS_YIELD,
+    SYS_DELETE_ENDPOINT, SYS_EXIT, SYS_KILL, SYS_LOAD_BINARY, SYS_PS, SYS_RECV, SYS_REGISTER_PROCESS,
+    SYS_REPLY, SYS_SEND, SYS_SEND_CAP, SYS_SPAWN_PROCESS, SYS_TIME, SYS_WALLCLOCK, SYS_YIELD,
 };
 use crate::types::{CapInfo, Permissions, ProcessInfo, ReceivedMessage};
 use alloc::vec::Vec;
@@ -706,6 +706,104 @@ pub fn create_endpoint_for(target_pid: u32) -> Result<(u64, u32), u32> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn create_endpoint_for(_target_pid: u32) -> Result<(u64, u32), u32> {
     Err(error::E_NOSYS)
+}
+
+/// Load a binary by name from platform storage (Init-only syscall).
+///
+/// This syscall is part of the pure microkernel spawn protocol. Init uses this
+/// to load service binaries before spawning them with `spawn_process`.
+///
+/// # Platform Behavior
+/// - **QEMU**: Returns embedded binary data
+/// - **WASM**: Returns `NotSupported` error (use Supervisor async flow instead)
+///
+/// # Arguments
+/// - `name`: Binary name (e.g., "permission_service", "vfs_service")
+///
+/// # Returns
+/// - `Ok(Vec<u8>)`: Binary data
+/// - `Err(code)`: Error code
+///   - `PERMISSION_DENIED (-4)`: Caller is not Init
+///   - `NOT_FOUND (-2)`: Binary not found
+///   - `NOT_SUPPORTED (-3)`: Platform doesn't support sync loading
+#[cfg(target_arch = "wasm32")]
+pub fn load_binary(name: &str) -> Result<Vec<u8>, i32> {
+    use crate::SYS_LOAD_BINARY;
+    
+    let bytes = name.as_bytes();
+    unsafe {
+        zos_send_bytes(bytes.as_ptr(), bytes.len() as u32);
+        let result = zos_syscall(SYS_LOAD_BINARY, bytes.len() as u32, 0, 0) as i32;
+        
+        if result < 0 {
+            // Negative result is an error code
+            return Err(result);
+        }
+        
+        // Positive result is the binary size
+        let binary_size = result as usize;
+        let mut buffer = alloc::vec![0u8; binary_size];
+        let received = zos_recv_bytes(buffer.as_mut_ptr(), binary_size as u32) as usize;
+        
+        if received != binary_size {
+            // Truncation - shouldn't happen but handle gracefully
+            buffer.truncate(received);
+        }
+        
+        Ok(buffer)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_binary(_name: &str) -> Result<Vec<u8>, i32> {
+    // NOT_SUPPORTED error code
+    Err(-3)
+}
+
+/// Spawn a process from binary data (Init-only syscall).
+///
+/// This syscall is part of the pure microkernel spawn protocol. Init uses this
+/// to spawn processes after loading their binary with `load_binary`.
+///
+/// # Arguments
+/// - `name`: Process name for debugging/identification
+/// - `binary`: WASM binary data
+///
+/// # Returns
+/// - `Ok(pid)`: PID of the spawned process
+/// - `Err(code)`: Error code
+///   - `PERMISSION_DENIED (-4)`: Caller is not Init
+///   - `INVALID_ARGUMENT (-5)`: Missing or invalid payload
+///   - `SPAWN_FAILED (-6)`: HAL failed to spawn process
+#[cfg(target_arch = "wasm32")]
+pub fn spawn_process(name: &str, binary: &[u8]) -> Result<u32, i32> {
+    use crate::SYS_SPAWN_PROCESS;
+    
+    // Build payload: [name_len: u32 (LE), name: [u8], binary: [u8]]
+    let name_bytes = name.as_bytes();
+    let name_len = name_bytes.len() as u32;
+    
+    let mut payload = Vec::with_capacity(4 + name_bytes.len() + binary.len());
+    payload.extend_from_slice(&name_len.to_le_bytes());
+    payload.extend_from_slice(name_bytes);
+    payload.extend_from_slice(binary);
+    
+    unsafe {
+        zos_send_bytes(payload.as_ptr(), payload.len() as u32);
+        let result = zos_syscall(SYS_SPAWN_PROCESS, payload.len() as u32, 0, 0) as i32;
+        
+        if result < 0 {
+            Err(result)
+        } else {
+            Ok(result as u32)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn spawn_process(_name: &str, _binary: &[u8]) -> Result<u32, i32> {
+    // NOT_SUPPORTED error code
+    Err(-3)
 }
 
 // ============================================================================

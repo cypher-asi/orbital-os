@@ -1,0 +1,34 @@
+[package]
+name = "zos-boot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zero OS bootloader and early initialization for x86_64"
+
+[dependencies]
+# x86_64 hardware abstractions (using workspace versions)
+x86_64 = { workspace = true }
+spin = { workspace = true }
+linked_list_allocator = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Bootloader crate for Multiboot2 boot
+bootloader_api = "0.11"
+
+# Zero OS HAL with x86_64 support
+zos-hal = { workspace = true, features = ["x86_64"] }
+
+# Zero OS kernel (for System integration test)
+zos-kernel = { workspace = true }
+
+[build-dependencies]
+bootloader = "0.11"
+
+[features]
+default = []
+
+[[bin]]
+name = "zero-kernel"
+path = "src/main.rs"

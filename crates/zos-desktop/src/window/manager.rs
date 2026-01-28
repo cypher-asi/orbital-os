@@ -1,4 +1,17 @@
 //! Window manager for lifecycle, focus, and z-order
+//!
+//! ## Invariants
+//!
+//! - Window IDs are globally unique and monotonically increasing
+//! - Z-order values are unique per window and monotonically increasing
+//! - The focus stack contains only valid window IDs
+//! - Focus operations skip minimized windows
+//!
+//! ## Failure Modes
+//!
+//! - Operations on non-existent windows are no-ops (silently ignored)
+//! - Hit testing returns None for positions outside all windows
+//! - Resize respects min/max size constraints
 
 use super::{Window, WindowConfig, WindowId, WindowRegion, WindowState};
 use crate::math::{Rect, Size, Vec2, FRAME_STYLE};

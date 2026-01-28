@@ -35,8 +35,8 @@ export type {
 export interface UseNeuralKeyReturn {
   /** Current Neural Key state */
   state: NeuralKeyState;
-  /** Generate a new Neural Key (returns shards for backup) */
-  generateNeuralKey: () => Promise<NeuralKeyGenerated>;
+  /** Generate a new Neural Key (returns 3 external shards for backup) */
+  generateNeuralKey: (password: string) => Promise<NeuralKeyGenerated>;
   /** Recover Neural Key from shards */
   recoverNeuralKey: (shards: NeuralShard[]) => Promise<NeuralKeyGenerated>;
   /** Confirm shards have been saved - clears pending shards */
@@ -75,7 +75,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
   // Track if we've completed the initial load (to avoid premature "no key" flash)
   const hasCompletedInitialLoadRef = useRef(false);
 
-  const generateNeuralKey = useCallback(async (): Promise<NeuralKeyGenerated> => {
+  const generateNeuralKey = useCallback(async (password: string): Promise<NeuralKeyGenerated> => {
     const userIdVal = getUserIdOrThrow();
     const client = getClientOrThrow();
 
@@ -83,7 +83,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
 
     try {
       console.log(`[useNeuralKey] Generating Neural Key for user ${userIdVal}`);
-      const serviceResult = await client.generateNeuralKey(userIdVal);
+      const serviceResult = await client.generateNeuralKey(userIdVal, password);
       const result = convertNeuralKeyGenerated(serviceResult);
 
       setState((prev) => ({
@@ -91,7 +91,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
         hasNeuralKey: true,
         publicIdentifiers: result.publicIdentifiers,
         createdAt: result.createdAt,
-        pendingShards: result.shards,
+        pendingShards: result.shards, // Now 3 external shards
         isLoading: false,
       }));
 

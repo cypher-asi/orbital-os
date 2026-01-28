@@ -119,12 +119,15 @@ describe('IdentityServiceClient', () => {
   describe('generateNeuralKey', () => {
     it('should send correct IPC message', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
         MSG.GENERATE_NEURAL_KEY,
-        JSON.stringify({ user_id: '0x00000000000000000000000000003039' })
+        JSON.stringify({
+          user_id: '0x00000000000000000000000000003039',
+          password: 'secure-password-123',
+        })
       );
 
       // Simulate response
@@ -159,7 +162,7 @@ describe('IdentityServiceClient', () => {
 
     it('should reject on error response', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       const response = {
         result: {
@@ -269,14 +272,10 @@ describe('IdentityServiceClient', () => {
   });
 
   describe('createMachineKey', () => {
-    // Test shards for Neural key derivation
-    const testShards = [
-      { index: 1, hex: 'abc123def456abc123def456abc123def456' },
-      { index: 2, hex: 'def456abc789def456abc789def456abc789' },
-      { index: 3, hex: '789012345abc789012345abc789012345abc' },
-    ];
+    // Test shard for Neural key derivation
+    const testShard = { index: 2, hex: 'abc123def456abc123def456abc123def456' };
 
-    it('should send correct IPC message with capabilities and shards', async () => {
+    it('should send correct IPC message with capabilities, shard, and password', async () => {
       const userId = BigInt(12345);
       const machineName = 'My Laptop';
       const capabilities: MachineKeyCapabilities = {
@@ -289,7 +288,8 @@ describe('IdentityServiceClient', () => {
         machineName,
         capabilities,
         undefined,
-        testShards
+        testShard,
+        'secure-password-123'
       );
 
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
@@ -304,7 +304,8 @@ describe('IdentityServiceClient', () => {
       expect(requestData.user_id).toBe('0x00000000000000000000000000003039');
       expect(requestData.machine_name).toBe(machineName);
       expect(requestData.capabilities).toEqual(capabilities);
-      expect(requestData.shards).toEqual(testShards);
+      expect(requestData.external_shard).toEqual(testShard);
+      expect(requestData.password).toBe('secure-password-123');
 
       // Simulate success response
       const response = {
@@ -331,7 +332,7 @@ describe('IdentityServiceClient', () => {
       expect(result.machine_name).toBe(machineName);
     });
 
-    it('should throw error when shards are missing', async () => {
+    it('should throw error when shard is missing', async () => {
       const userId = BigInt(12345);
       const machineName = 'My Laptop';
       const capabilities: MachineKeyCapabilities = {
@@ -340,11 +341,11 @@ describe('IdentityServiceClient', () => {
       };
 
       await expect(
-        client.createMachineKey(userId, machineName, capabilities, undefined, undefined)
+        client.createMachineKey(userId, machineName, capabilities, undefined, undefined, 'pw')
       ).rejects.toBeInstanceOf(IdentityServiceError);
     });
 
-    it('should throw error when insufficient shards provided', async () => {
+    it('should throw error when password is missing', async () => {
       const userId = BigInt(12345);
       const machineName = 'My Laptop';
       const capabilities: MachineKeyCapabilities = {
@@ -352,13 +353,8 @@ describe('IdentityServiceClient', () => {
         expires_at: null,
       };
 
-      const insufficientShards = [
-        { index: 1, hex: 'abc123' },
-        { index: 2, hex: 'def456' },
-      ];
-
       await expect(
-        client.createMachineKey(userId, machineName, capabilities, undefined, insufficientShards)
+        client.createMachineKey(userId, machineName, capabilities, undefined, testShard, '')
       ).rejects.toBeInstanceOf(IdentityServiceError);
     });
   });
@@ -529,7 +525,7 @@ describe('IdentityServiceClient', () => {
       // Override mock to return error
       supervisor.send_service_ipc = vi.fn(() => 'error:service_not_found:identity');
 
-      const promise = client.generateNeuralKey(BigInt(12345));
+      const promise = client.generateNeuralKey(BigInt(12345), 'secure-password-123');
 
       await expect(promise).rejects.toBeInstanceOf(ServiceNotFoundError);
       await expect(promise).rejects.toMatchObject({
@@ -541,7 +537,7 @@ describe('IdentityServiceClient', () => {
     it('should throw DeliveryFailedError when delivery fails', async () => {
       supervisor.send_service_ipc = vi.fn(() => 'error:delivery_failed:SomeError');
 
-      const promise = client.generateNeuralKey(BigInt(12345));
+      const promise = client.generateNeuralKey(BigInt(12345), 'secure-password-123');
 
       await expect(promise).rejects.toBeInstanceOf(DeliveryFailedError);
       await expect(promise).rejects.toMatchObject({
@@ -551,7 +547,7 @@ describe('IdentityServiceClient', () => {
 
     it('should throw RequestTimeoutError on timeout', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       // Advance past the timeout (5s configured in beforeEach)
       await vi.advanceTimersByTimeAsync(6000);
@@ -564,7 +560,7 @@ describe('IdentityServiceClient', () => {
 
     it('should throw IdentityKeyAlreadyExistsError for known error code', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       const response = {
         result: {
@@ -601,7 +597,7 @@ describe('IdentityServiceClient', () => {
 
     it('should throw StorageError for structured storage errors', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       const response = {
         result: {
@@ -622,7 +618,7 @@ describe('IdentityServiceClient', () => {
 
     it('should throw generic IdentityServiceError for unknown errors', async () => {
       const userId = BigInt(12345);
-      const promise = client.generateNeuralKey(userId);
+      const promise = client.generateNeuralKey(userId, 'secure-password-123');
 
       const response = {
         result: {
@@ -647,7 +643,7 @@ describe('IdentityServiceClient', () => {
       const userId = BigInt(12345);
 
       // Start two requests of DIFFERENT types (different request IDs)
-      const generatePromise = client.generateNeuralKey(userId);
+      const generatePromise = client.generateNeuralKey(userId, 'secure-password-123');
       const getPromise = client.getIdentityKey(userId);
 
       // Both should have sent messages

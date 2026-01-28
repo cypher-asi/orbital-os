@@ -23,7 +23,7 @@ function isValidHex(value: string): boolean {
  * Generate Machine Key Panel
  *
  * Drill-down panel for creating a new machine key.
- * Requires 3 Neural shards for key derivation.
+ * Requires 1 Neural shard + password for key derivation.
  */
 export function GenerateMachineKeyPanel() {
   const { createMachineKey } = useMachineKeys();
@@ -34,18 +34,23 @@ export function GenerateMachineKeyPanel() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // State for 3 Neural shards
-  const [shard1, setShard1] = useState('');
-  const [shard2, setShard2] = useState('');
-  const [shard3, setShard3] = useState('');
+  // State for external shard + password
+  const [externalShard, setExternalShard] = useState('');
+  const [externalShardIndex, setExternalShardIndex] = useState(1);
+  const [password, setPassword] = useState('');
 
-  // Validate shards
-  const shardsValid = useMemo(() => {
-    const shards = [shard1, shard2, shard3];
-    return shards.every((s) => s.trim().length > 0 && isValidHex(s));
-  }, [shard1, shard2, shard3]);
+  const shardValid = useMemo(() => {
+    return externalShard.trim().length > 0 && isValidHex(externalShard);
+  }, [externalShard]);
+  const shardIndexValid = useMemo(() => {
+    return Number.isInteger(externalShardIndex) && externalShardIndex >= 1 && externalShardIndex <= 5;
+  }, [externalShardIndex]);
 
-  const canGenerate = machineName.trim().length > 0 && shardsValid;
+  const canGenerate =
+    machineName.trim().length > 0 &&
+    shardValid &&
+    shardIndexValid &&
+    password.trim().length > 0;
 
   const handleGenerate = useCallback(async () => {
     if (!canGenerate) return;
@@ -53,14 +58,18 @@ export function GenerateMachineKeyPanel() {
     setIsGenerating(true);
     setError(null);
     try {
-      // Build Neural shards array
-      const shards: NeuralShard[] = [
-        { index: 1, hex: shard1.trim().replace(/^0x/i, '') },
-        { index: 2, hex: shard2.trim().replace(/^0x/i, '') },
-        { index: 3, hex: shard3.trim().replace(/^0x/i, '') },
-      ];
+      const shard: NeuralShard = {
+        index: externalShardIndex,
+        hex: externalShard.trim().replace(/^0x/i, ''),
+      };
 
-      await createMachineKey(machineName.trim(), undefined, keyScheme, shards);
+      await createMachineKey(
+        machineName.trim(),
+        undefined,
+        keyScheme,
+        shard,
+        password
+      );
       // Navigate back after successful creation
       navigateBack();
     } catch (err) {
@@ -69,7 +78,15 @@ export function GenerateMachineKeyPanel() {
     } finally {
       setIsGenerating(false);
     }
-  }, [canGenerate, machineName, keyScheme, shard1, shard2, shard3, createMachineKey, navigateBack]);
+  }, [
+    canGenerate,
+    machineName,
+    keyScheme,
+    externalShard,
+    password,
+    createMachineKey,
+    navigateBack,
+  ]);
 
   const handleCancel = useCallback(() => {
     // Navigate back to Machine Keys panel
@@ -86,8 +103,8 @@ export function GenerateMachineKeyPanel() {
           Generate Machine Key
         </Text>
         <Text size="sm" className={styles.heroDescription}>
-          Create a new machine key derived from your Neural Key. You&apos;ll need 3 of your 5 Neural
-          shards.
+          Create a new machine key derived from your Neural Key. You&apos;ll need 1 Neural shard and
+          your password.
         </Text>
 
         <div className={styles.addForm}>
@@ -112,7 +129,7 @@ export function GenerateMachineKeyPanel() {
             </select>
           </div>
 
-          {keyScheme === 'PqHybrid' && (
+          {keyScheme === 'pq_hybrid' && (
             <Card className={styles.infoCard}>
               <CardItem
                 icon={<Shield size={14} />}
@@ -123,64 +140,70 @@ export function GenerateMachineKeyPanel() {
             </Card>
           )}
 
-          {/* Neural Shards Section */}
+          {/* External Shard Section */}
           <div className={styles.shardsSection}>
             <div className={styles.shardsSectionHeader}>
               <Key size={14} />
               <Text size="xs" className={styles.shardsLabel}>
-                Neural Shards (3 of 5 required)
+                External Shard (1 of 3 required)
               </Text>
             </div>
 
             <Card className={styles.infoCard}>
               <CardItem
                 icon={<Key size={14} />}
-                title="Shard-Based Key Derivation"
-                description="Enter any 3 of your 5 Neural shards. Your machine key will be deterministically derived from your Neural Key."
+                title="Shard + Password Key Derivation"
+                description="Enter one of your external shards and your password. The other two shards are decrypted from keystore."
                 className={styles.infoCardItem}
               />
             </Card>
 
             <div className={styles.shardInputs}>
               <div className={styles.shardInputGroup}>
-                <label className={styles.shardLabel}>Shard 1</label>
-                <textarea
-                  className={`${styles.shardInput} ${shard1 && !isValidHex(shard1) ? styles.shardInputError : ''}`}
-                  value={shard1}
-                  onChange={(e) => setShard1(e.target.value)}
-                  placeholder="Paste hex shard (e.g., 01abc23def...)"
-                  rows={2}
+                <label className={styles.shardLabel}>Shard Index (1-5)</label>
+                <Input
+                  value={String(externalShardIndex)}
+                  onChange={(e) => {
+                    const parsed = Number(e.target.value);
+                    setExternalShardIndex(Number.isNaN(parsed) ? 0 : parsed);
+                  }}
+                  placeholder="1"
+                  type="number"
+                  min={1}
+                  max={5}
                 />
               </div>
-
               <div className={styles.shardInputGroup}>
-                <label className={styles.shardLabel}>Shard 2</label>
+                <label className={styles.shardLabel}>External Shard</label>
                 <textarea
-                  className={`${styles.shardInput} ${shard2 && !isValidHex(shard2) ? styles.shardInputError : ''}`}
-                  value={shard2}
-                  onChange={(e) => setShard2(e.target.value)}
-                  placeholder="Paste hex shard (e.g., 01abc23def...)"
-                  rows={2}
-                />
-              </div>
-
-              <div className={styles.shardInputGroup}>
-                <label className={styles.shardLabel}>Shard 3</label>
-                <textarea
-                  className={`${styles.shardInput} ${shard3 && !isValidHex(shard3) ? styles.shardInputError : ''}`}
-                  value={shard3}
-                  onChange={(e) => setShard3(e.target.value)}
+                  className={`${styles.shardInput} ${externalShard && !isValidHex(externalShard) ? styles.shardInputError : ''}`}
+                  value={externalShard}
+                  onChange={(e) => setExternalShard(e.target.value)}
                   placeholder="Paste hex shard (e.g., 01abc23def...)"
                   rows={2}
                 />
               </div>
             </div>
 
-            {!shardsValid && (shard1 || shard2 || shard3) && (
+            {!shardIndexValid && (
               <Text size="xs" className={styles.shardsHint}>
-                All 3 shards must be valid hexadecimal strings
+                Shard index must be between 1 and 5
               </Text>
             )}
+            {!shardValid && externalShard && (
+              <Text size="xs" className={styles.shardsHint}>
+                Shard must be a valid hexadecimal string
+              </Text>
+            )}
+          </div>
+
+          <div className={styles.addForm}>
+            <Input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password used to encrypt shards"
+              type="password"
+            />
           </div>
 
           {error && (

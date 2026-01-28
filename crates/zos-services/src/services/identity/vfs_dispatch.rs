@@ -717,7 +717,7 @@ impl IdentityService {
         result: Result<bool, alloc::string::String>,
     ) -> Result<(), AppError> {
         match op {
-            PendingStorageOp::CheckIdentityDirectory { ctx, user_id } => {
+            PendingStorageOp::CheckIdentityDirectory { ctx, user_id, password } => {
                 // Rule 5: Handle errors explicitly, don't swallow them
                 match result {
                     Ok(exists) => keys::continue_generate_after_directory_check(
@@ -725,6 +725,7 @@ impl IdentityService {
                         ctx.client_pid,
                         user_id,
                         exists,
+                        password,
                         ctx.cap_slots,
                     ),
                     Err(e) => {
@@ -740,7 +741,7 @@ impl IdentityService {
                     }
                 }
             }
-            PendingStorageOp::CheckKeyExists { ctx, user_id } => {
+            PendingStorageOp::CheckKeyExists { ctx, user_id, password } => {
                 // Rule 5: Handle errors explicitly, don't swallow them
                 match result {
                     Ok(exists) => keys::continue_generate_after_exists_check(
@@ -748,6 +749,7 @@ impl IdentityService {
                         ctx.client_pid,
                         user_id,
                         exists,
+                        password,
                         ctx.cap_slots,
                     ),
                     Err(e) => {
@@ -814,6 +816,7 @@ impl IdentityService {
                 ctx,
                 user_id,
                 directories,
+                password,
             } => {
                 if result.is_ok() {
                     // Continue creating remaining directories
@@ -822,6 +825,7 @@ impl IdentityService {
                         ctx.client_pid,
                         user_id,
                         directories,
+                        password,
                         ctx.cap_slots,
                     )
                 } else {

@@ -1,4 +1,17 @@
 //! Desktop manager for multiple desktops
+//!
+//! ## Invariants
+//!
+//! - At least one desktop always exists after initialization (via `DesktopEngine::init`)
+//! - The `active` index is always valid (`active < desktops.len()`)
+//! - Desktop IDs are globally unique and monotonically increasing
+//! - Window IDs in a desktop are unique within that desktop
+//!
+//! ## Failure Modes
+//!
+//! - Operations on non-existent desktops are no-ops (return false or Option::None)
+//! - Cannot delete the last remaining desktop
+//! - Switching to an invalid index returns false and leaves state unchanged
 
 use super::{Desktop, DesktopId, PersistedDesktop};
 use crate::math::{Camera, Rect, Size, Vec2};
@@ -78,14 +91,45 @@ impl DesktopManager {
     }
 
     /// Get the currently active desktop
+    ///
+    /// # Panics
+    ///
+    /// Panics if no desktops exist. This should never happen after `DesktopEngine::init()`
+    /// has been called, as it guarantees at least one desktop exists.
     #[inline]
+    #[must_use]
     pub fn active_desktop(&self) -> &Desktop {
+        debug_assert!(
+            !self.desktops.is_empty(),
+            "active_desktop() called with no desktops - call init() first"
+        );
+        debug_assert!(
+            self.active < self.desktops.len(),
+            "active index {} out of bounds (len: {})",
+            self.active,
+            self.desktops.len()
+        );
         &self.desktops[self.active]
     }
 
     /// Get the currently active desktop mutably
+    ///
+    /// # Panics
+    ///
+    /// Panics if no desktops exist. This should never happen after `DesktopEngine::init()`
+    /// has been called, as it guarantees at least one desktop exists.
     #[inline]
     pub fn active_desktop_mut(&mut self) -> &mut Desktop {
+        debug_assert!(
+            !self.desktops.is_empty(),
+            "active_desktop_mut() called with no desktops - call init() first"
+        );
+        debug_assert!(
+            self.active < self.desktops.len(),
+            "active index {} out of bounds (len: {})",
+            self.active,
+            self.desktops.len()
+        );
         &mut self.desktops[self.active]
     }
 

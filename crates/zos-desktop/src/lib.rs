@@ -17,6 +17,7 @@
 //! - [`input`]: Input routing and drag state machine
 //! - [`transition`]: Animation and transition systems
 //! - [`persistence`]: State serialization for storage
+//! - [`error`]: Error types for fallible operations
 //!
 //! ## Example
 //!
@@ -43,14 +44,15 @@
 //! 4. **Minimal Dependencies**: Core types have no browser dependencies
 
 pub mod desktop;
+pub mod error;
 pub mod input;
 pub mod math;
 pub mod persistence;
 pub mod transition;
+pub mod types;
 pub mod window;
 
 mod engine;
-mod view_mode;
 mod viewport;
 
 // WASM exports (only available with "wasm" feature)
@@ -64,7 +66,8 @@ pub use wasm::*;
 pub mod background;
 
 // Re-export core types for convenience
-pub use desktop::{Desktop, DesktopId, DesktopManager, PersistedDesktop, VoidState};
+pub use desktop::{Desktop, DesktopId, DesktopManager, PersistedDesktop, ViewMode, VoidState};
+pub use error::{DesktopError, DesktopResult};
 pub use input::{DragState, InputResult, InputRouter};
 pub use math::{Camera, FrameStyle, Rect, Size, Vec2, FRAME_STYLE};
 pub use persistence::Snapshot;
@@ -74,7 +77,6 @@ pub use window::{
 };
 
 pub use engine::{DesktopEngine, WindowScreenRect};
-pub use view_mode::ViewMode;
 pub use viewport::Viewport;
 
 /// Duration of crossfade transitions in milliseconds

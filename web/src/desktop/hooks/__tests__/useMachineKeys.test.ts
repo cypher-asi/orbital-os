@@ -138,14 +138,11 @@ describe('useMachineKeys', () => {
   });
 
   describe('createMachineKey', () => {
-    // Sample Neural shards for testing
-    const testShards = [
-      { index: 1, hex: 'abc123def456' },
-      { index: 2, hex: 'def456abc789' },
-      { index: 3, hex: '789012345abc' },
-    ];
+    // Sample Neural shard for testing
+    const testShard = { index: 2, hex: 'abc123def456' };
+    const testPassword = 'secure-password-123';
 
-    it('calls identity service client with shards', async () => {
+    it('calls identity service client with shard + password', async () => {
       const mockRecord = {
         machine_id: 1,
         signing_public_key: new Array(32).fill(0),
@@ -171,7 +168,13 @@ describe('useMachineKeys', () => {
       });
 
       await act(async () => {
-        await result.current.createMachineKey('Test Device', undefined, undefined, testShards);
+        await result.current.createMachineKey(
+          'Test Device',
+          undefined,
+          undefined,
+          testShard,
+          testPassword
+        );
       });
 
       expect(mockIdentityServiceClient.createMachineKey).toHaveBeenCalledWith(
@@ -179,22 +182,23 @@ describe('useMachineKeys', () => {
         'Test Device',
         expect.anything(),
         expect.anything(),
-        testShards
+        testShard,
+        testPassword
       );
       expect(mockStoreFunctions.addMachine).toHaveBeenCalled();
     });
 
-    it('throws error when shards are missing', async () => {
+    it('throws error when shard is missing', async () => {
       const { result } = renderHook(() => useMachineKeys(), {
         wrapper: createWrapper(mockSupervisor),
       });
 
       await act(async () => {
         try {
-          await result.current.createMachineKey('Test Device');
+          await result.current.createMachineKey('Test Device', undefined, undefined, undefined as never);
         } catch (error) {
           expect((error as Error).message).toBe(
-            'At least 3 Neural shards are required to create a machine key'
+            'An external Neural shard is required to create a machine key'
           );
         }
       });
@@ -202,21 +206,16 @@ describe('useMachineKeys', () => {
       expect(mockIdentityServiceClient.createMachineKey).not.toHaveBeenCalled();
     });
 
-    it('throws error when insufficient shards provided', async () => {
+    it('throws error when password is missing', async () => {
       const { result } = renderHook(() => useMachineKeys(), {
         wrapper: createWrapper(mockSupervisor),
       });
 
       await act(async () => {
         try {
-          await result.current.createMachineKey('Test Device', undefined, undefined, [
-            { index: 1, hex: 'abc123' },
-            { index: 2, hex: 'def456' },
-          ]);
+          await result.current.createMachineKey('Test Device', undefined, undefined, testShard, '');
         } catch (error) {
-          expect((error as Error).message).toBe(
-            'At least 3 Neural shards are required to create a machine key'
-          );
+          expect((error as Error).message).toBe('Password is required to create a machine key');
         }
       });
 
@@ -232,7 +231,13 @@ describe('useMachineKeys', () => {
 
       await act(async () => {
         try {
-          await result.current.createMachineKey('Test Device', undefined, undefined, testShards);
+          await result.current.createMachineKey(
+            'Test Device',
+            undefined,
+            undefined,
+            testShard,
+            testPassword
+          );
         } catch {
           // Expected error
         }

@@ -24,6 +24,9 @@ web/dist/
 # wasm-pack output (built on demand)
 web/pkg/
 
+# QEMU WASM processes (built without shared memory for wasmi)
+qemu/processes/
+
 # Environment files
 .env
 .env.local

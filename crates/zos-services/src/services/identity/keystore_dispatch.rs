@@ -18,7 +18,7 @@ use super::pending::{PendingKeystoreOp, RequestContext};
 use super::{response, IdentityService};
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
-use zos_identity::keystore::{LocalKeyStore, MachineKeyRecord};
+use zos_identity::keystore::{EncryptedShardStore, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
 use zos_ipc::keystore_svc;
 use zos_vfs::client::keystore_async;
@@ -219,13 +219,22 @@ impl IdentityService {
             PendingKeystoreOp::ReadIdentityForMachine { ctx, request } => match result {
                 Ok(data) if !data.is_empty() => {
                     match serde_json::from_slice::<LocalKeyStore>(&data) {
-                        Ok(key_store) => keys::continue_create_machine_after_identity_read(
-                            self,
-                            ctx.client_pid,
-                            request,
-                            key_store.identity_signing_public_key,
-                            ctx.cap_slots,
-                        ),
+                        Ok(key_store) => {
+                            // Chain to read encrypted shards
+                            let shards_path = EncryptedShardStore::storage_path(request.user_id);
+                            syscall::debug(&format!(
+                                "IdentityService: Identity read success, now reading encrypted shards from {}",
+                                shards_path
+                            ));
+                            self.start_keystore_read(
+                                &shards_path,
+                                PendingKeystoreOp::ReadEncryptedShardsForMachine {
+                                    ctx,
+                                    request,
+                                    stored_identity_pubkey: key_store.identity_signing_public_key,
+                                },
+                            )
+                        }
                         Err(e) => {
                             syscall::debug(&format!(
                                 "IdentityService: Failed to parse LocalKeyStore: {}",
@@ -245,6 +254,43 @@ impl IdentityService {
                         ctx.client_pid,
                         &ctx.cap_slots,
                         KeyError::IdentityKeyRequired,
+                    )
+                }
+            },
+            PendingKeystoreOp::ReadEncryptedShardsForMachine {
+                ctx,
+                request,
+                stored_identity_pubkey,
+            } => match result {
+                Ok(data) if !data.is_empty() => {
+                    match serde_json::from_slice::<EncryptedShardStore>(&data) {
+                        Ok(encrypted_store) => keys::continue_create_machine_after_shards_read(
+                            self,
+                            ctx.client_pid,
+                            request,
+                            stored_identity_pubkey,
+                            encrypted_store,
+                            ctx.cap_slots,
+                        ),
+                        Err(e) => {
+                            syscall::debug(&format!(
+                                "IdentityService: Failed to parse EncryptedShardStore: {}",
+                                e
+                            ));
+                            response::send_create_machine_key_error(
+                                ctx.client_pid,
+                                &ctx.cap_slots,
+                                KeyError::StorageError("Corrupted encrypted shard store".into()),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    syscall::debug("IdentityService: Encrypted shards not found (keystore)");
+                    response::send_create_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::EncryptedShardsNotFound,
                     )
                 }
             },
@@ -338,10 +384,12 @@ impl IdentityService {
             // Operations that should NOT receive a read response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::WriteKeyStore { ctx, .. }
+            | PendingKeystoreOp::WriteEncryptedShards { ctx, .. }
             | PendingKeystoreOp::WriteRecoveredKeyStore { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
+            | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore read result for non-read op, client_pid={}",
@@ -363,12 +411,24 @@ impl IdentityService {
         match op {
             PendingKeystoreOp::WriteKeyStore {
                 ctx,
+                user_id,
                 result: key_result,
+                encrypted_shards_json,
                 ..
             } => match result {
                 Ok(()) => {
-                    syscall::debug("IdentityService: Neural key stored successfully via Keystore");
-                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                    syscall::debug("IdentityService: Neural key stored successfully via Keystore, now writing encrypted shards");
+                    // Chain to write encrypted shards
+                    let shards_path = EncryptedShardStore::storage_path(user_id);
+                    self.start_keystore_write(
+                        &shards_path,
+                        &encrypted_shards_json,
+                        PendingKeystoreOp::WriteEncryptedShards {
+                            ctx,
+                            user_id,
+                            result: key_result,
+                        },
+                    )
                 }
                 Err(e) => {
                     syscall::debug(&format!(
@@ -379,6 +439,45 @@ impl IdentityService {
                         ctx.client_pid,
                         &ctx.cap_slots,
                         KeyError::StorageError(format!("Keystore write failed for neural key: {}", e)),
+                    )
+                }
+            },
+            PendingKeystoreOp::WriteEncryptedShards {
+                ctx,
+                user_id,
+                result: key_result,
+                ..
+            } => match result {
+                Ok(()) => {
+                    syscall::debug("IdentityService: Encrypted shards stored successfully via Keystore");
+                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                }
+                Err(e) => {
+                    syscall::debug(&format!(
+                        "IdentityService: WriteEncryptedShards failed - op=write_encrypted_shards, error={}",
+                        e
+                    ));
+                    let key_path = LocalKeyStore::storage_path(user_id);
+                    syscall::debug(&format!(
+                        "IdentityService: Rolling back identity key store at {}",
+                        key_path
+                    ));
+                    if let Err(err) = self.start_keystore_delete(
+                        &key_path,
+                        PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure {
+                            ctx: ctx.clone(),
+                            user_id,
+                        },
+                    ) {
+                        syscall::debug(&format!(
+                            "IdentityService: Failed to schedule rollback delete: {:?}",
+                            err
+                        ));
+                    }
+                    response::send_neural_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError(format!("Keystore write failed for encrypted shards: {}", e)),
                     )
                 }
             },
@@ -448,9 +547,11 @@ impl IdentityService {
             | PendingKeystoreOp::GetIdentityKey { ctx }
             | PendingKeystoreOp::ReadIdentityForRecovery { ctx, .. }
             | PendingKeystoreOp::ReadIdentityForMachine { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
+            | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
             | PendingKeystoreOp::ReadMachineForRotate { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
             | PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, .. }
@@ -473,12 +574,13 @@ impl IdentityService {
         result: Result<bool, String>,
     ) -> Result<(), AppError> {
         match op {
-            PendingKeystoreOp::CheckKeyExists { ctx, user_id } => match result {
+            PendingKeystoreOp::CheckKeyExists { ctx, user_id, password } => match result {
                 Ok(exists) => keys::continue_generate_after_exists_check(
                     self,
                     ctx.client_pid,
                     user_id,
                     exists,
+                    password,
                     ctx.cap_slots,
                 ),
                 Err(e) => {
@@ -495,14 +597,17 @@ impl IdentityService {
             },
             // Operations that should NOT receive an exists response
             PendingKeystoreOp::WriteKeyStore { ctx, .. }
+            | PendingKeystoreOp::WriteEncryptedShards { ctx, .. }
             | PendingKeystoreOp::GetIdentityKey { ctx }
             | PendingKeystoreOp::ReadIdentityForRecovery { ctx, .. }
             | PendingKeystoreOp::WriteRecoveredKeyStore { ctx, .. }
             | PendingKeystoreOp::ReadIdentityForMachine { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
+            | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
             | PendingKeystoreOp::ReadMachineForRotate { ctx, .. }
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
@@ -559,13 +664,16 @@ impl IdentityService {
             // Operations that should NOT receive a list response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::WriteKeyStore { ctx, .. }
+            | PendingKeystoreOp::WriteEncryptedShards { ctx, .. }
             | PendingKeystoreOp::GetIdentityKey { ctx }
             | PendingKeystoreOp::ReadIdentityForRecovery { ctx, .. }
             | PendingKeystoreOp::WriteRecoveredKeyStore { ctx, .. }
             | PendingKeystoreOp::ReadIdentityForMachine { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
+            | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
             | PendingKeystoreOp::ReadMachineForRotate { ctx, .. }
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
@@ -601,13 +709,29 @@ impl IdentityService {
                     )
                 }
             }
+            PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx: _, user_id } => {
+                if result.is_ok() {
+                    syscall::debug(&format!(
+                        "IdentityService: Rolled back identity key store for user {:032x}",
+                        user_id
+                    ));
+                } else {
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to roll back identity key store for user {:032x}",
+                        user_id
+                    ));
+                }
+                Ok(())
+            }
             // Operations that should NOT receive a delete response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::WriteKeyStore { ctx, .. }
+            | PendingKeystoreOp::WriteEncryptedShards { ctx, .. }
             | PendingKeystoreOp::GetIdentityKey { ctx }
             | PendingKeystoreOp::ReadIdentityForRecovery { ctx, .. }
             | PendingKeystoreOp::WriteRecoveredKeyStore { ctx, .. }
             | PendingKeystoreOp::ReadIdentityForMachine { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }

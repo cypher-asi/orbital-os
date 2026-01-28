@@ -2,14 +2,15 @@
 //!
 //! Provides desktop (workspace) management with multiple infinite canvases.
 
-#[allow(clippy::module_inception)]
-mod desktop;
 mod manager;
+mod types;
+mod view_mode;
 mod void;
 
-pub use desktop::{Desktop, PersistedDesktop};
 pub use manager::DesktopManager;
+pub use types::{Desktop, PersistedDesktop};
+pub use view_mode::ViewMode;
 pub use void::VoidState;
 
-/// Unique desktop identifier
-pub type DesktopId = u32;
+// Re-export DesktopId from crate types module for backward compatibility
+pub use crate::types::DesktopId;

@@ -5,13 +5,12 @@
 mod config;
 mod manager;
 mod region;
-#[allow(clippy::module_inception)]
-mod window;
+mod types;
 
 pub use config::WindowConfig;
 pub use manager::WindowManager;
 pub use region::WindowRegion;
-pub use window::{Window, WindowState, WindowType};
+pub use types::{Window, WindowState, WindowType};
 
-/// Unique window identifier
-pub type WindowId = u64;
+// Re-export WindowId from crate types module for backward compatibility
+pub use crate::types::WindowId;

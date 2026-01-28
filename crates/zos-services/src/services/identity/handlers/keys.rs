@@ -34,7 +34,8 @@ use super::super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext}
 use super::super::response;
 use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::{
-    combine_shards_verified, derive_identity_signing_keypair, split_neural_key, 
+    combine_shards_verified, create_kdf_params, decrypt_shard, derive_identity_signing_keypair,
+    encrypt_shard, select_shards_to_encrypt, split_neural_key, validate_password,
     KeyScheme as ZidKeyScheme, MachineKeyPair, NeuralKey, ZidMachineKeyCapabilities,
     ZidNeuralShard,
 };
@@ -46,7 +47,7 @@ use zos_identity::ipc::{
     ListMachineKeysRequest, NeuralKeyGenerated, NeuralShard, PublicIdentifiers, RecoverNeuralKeyRequest,
     RevokeMachineKeyRequest, RotateMachineKeyRequest,
 };
-use zos_identity::keystore::{KeyScheme, LocalKeyStore, MachineKeyRecord};
+use zos_identity::keystore::{EncryptedShardStore, KeyScheme, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
 
 // =============================================================================
@@ -59,6 +60,7 @@ pub fn continue_generate_after_directory_check(
     client_pid: u32,
     user_id: u128,
     exists: bool,
+    password: String,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
@@ -73,7 +75,7 @@ pub fn continue_generate_after_directory_check(
         // Invariant 32: /keys/ paths use Keystore IPC, not VFS
         return service.start_keystore_exists(
             &key_path,
-            PendingKeystoreOp::CheckKeyExists { ctx, user_id },
+            PendingKeystoreOp::CheckKeyExists { ctx, user_id, password },
         );
     }
 
@@ -92,6 +94,7 @@ pub fn continue_generate_after_directory_check(
             ctx,
             user_id,
             directories: vec![], // No remaining dirs - mkdir_all creates them all
+            password,
         },
     )
 }
@@ -103,6 +106,7 @@ pub fn continue_create_directories(
     client_pid: u32,
     user_id: u128,
     _directories: Vec<String>,
+    password: String,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     // directories is now empty after mkdir_all succeeds
@@ -116,7 +120,7 @@ pub fn continue_create_directories(
     // Invariant 32: /keys/ paths use Keystore IPC, not VFS
     service.start_keystore_exists(
         &key_path,
-        PendingKeystoreOp::CheckKeyExists { ctx, user_id },
+        PendingKeystoreOp::CheckKeyExists { ctx, user_id, password },
     )
 }
 
@@ -149,7 +153,14 @@ pub fn handle_generate_neural_key(
         );
     }
 
+    // Validate password before proceeding
+    if let Err(e) = validate_password(&request.password) {
+        syscall::debug(&format!("IdentityService: Password validation failed: {:?}", e));
+        return response::send_neural_key_error(msg.from_pid, &msg.cap_slots, e);
+    }
+
     let user_id = request.user_id;
+    let password = request.password;
     syscall::debug(&format!(
         "IdentityService: Generating Neural Key for user {:032x}",
         user_id
@@ -160,7 +171,7 @@ pub fn handle_generate_neural_key(
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
     service.start_vfs_exists(
         &identity_dir,
-        PendingStorageOp::CheckIdentityDirectory { ctx, user_id },
+        PendingStorageOp::CheckIdentityDirectory { ctx, user_id, password },
     )
 }
 
@@ -169,6 +180,7 @@ pub fn continue_generate_after_exists_check(
     client_pid: u32,
     user_id: u128,
     exists: bool,
+    password: String,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
@@ -213,13 +225,7 @@ pub fn continue_generate_after_exists_check(
     };
 
     // Derive identity signing keypair (canonical way)
-    // We use a temporary identity_id for initial key derivation
-    // This will be replaced when user enrolls with ZID server
     let temp_identity_id = Uuid::from_u128(user_id);
-    // The _identity_keypair is intentionally unused here - we only need the public key
-    // for storage in LocalKeyStore. The full keypair would only be needed for signing
-    // operations, which are performed elsewhere using the Neural Key shards to
-    // reconstruct the keypair on-demand (avoiding persistent private key storage).
     let (identity_signing, _identity_keypair) =
         match derive_identity_signing_keypair(&neural_key, &temp_identity_id) {
             Ok(keypair) => keypair,
@@ -235,11 +241,7 @@ pub fn continue_generate_after_exists_check(
             }
         };
 
-    // Machine signing and encryption keys are NOT stored in LocalKeyStore.
-    // They are derived on-demand via CreateMachineKey using Neural Key shards.
-    // Placeholder zeros are stored here because LocalKeyStore was originally designed
-    // to hold machine keys, but the current architecture derives them separately
-    // for each machine via MachineKeyRecord. See CreateMachineKey for actual derivation.
+    // Machine signing and encryption keys are placeholders - derived via CreateMachineKey
     let machine_signing = [0u8; 32];
     let machine_encryption = [0u8; 32];
 
@@ -255,8 +257,8 @@ pub fn continue_generate_after_exists_check(
         }
     };
 
-    // Convert zid-crypto NeuralShard to our IPC NeuralShard format
-    let shards: Vec<NeuralShard> = zid_shards
+    // Convert zid-crypto NeuralShard to our IPC NeuralShard format (all 5 shards)
+    let all_shards: Vec<NeuralShard> = zid_shards
         .iter()
         .enumerate()
         .map(|(i, shard)| NeuralShard {
@@ -265,13 +267,74 @@ pub fn continue_generate_after_exists_check(
         })
         .collect();
 
+    // Select which 2 shards to encrypt and which 3 to return as external
+    let (encrypted_indices, external_indices) = match select_shards_to_encrypt() {
+        Ok(indices) => indices,
+        Err(e) => {
+            return response::send_neural_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                e,
+            )
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Encrypting shards {:?}, external shards {:?}",
+        encrypted_indices, external_indices
+    ));
+
+    // Create KDF parameters with random salt
+    let kdf = match create_kdf_params() {
+        Ok(k) => k,
+        Err(e) => {
+            return response::send_neural_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                e,
+            )
+        }
+    };
+
+    // Encrypt the selected shards
+    let mut encrypted_shards = Vec::new();
+    for &idx in &encrypted_indices {
+        let shard = &all_shards[(idx - 1) as usize];
+        match encrypt_shard(&shard.hex, idx, &password, &kdf) {
+            Ok(encrypted) => encrypted_shards.push(encrypted),
+            Err(e) => {
+                return response::send_neural_key_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    e,
+                )
+            }
+        }
+    }
+
+    // Filter to only external shards (the 3 that user will backup)
+    let external_shards: Vec<NeuralShard> = external_indices
+        .iter()
+        .map(|&idx| all_shards[(idx - 1) as usize].clone())
+        .collect();
+
+    let created_at = syscall::get_wallclock();
+
+    // Create encrypted shard store
+    let encrypted_shard_store = EncryptedShardStore {
+        user_id,
+        encrypted_shards,
+        external_shard_indices: external_indices.clone(),
+        kdf,
+        created_at,
+    };
+
     let public_identifiers = PublicIdentifiers {
         identity_signing_pub_key: format!("0x{}", bytes_to_hex(&identity_signing)),
         machine_signing_pub_key: format!("0x{}", bytes_to_hex(&machine_signing)),
         machine_encryption_pub_key: format!("0x{}", bytes_to_hex(&machine_encryption)),
     };
 
-    let created_at = syscall::get_wallclock();
     let key_store = LocalKeyStore::new(
         user_id,
         identity_signing,
@@ -279,31 +342,50 @@ pub fn continue_generate_after_exists_check(
         machine_encryption,
         created_at,
     );
+
+    // Result contains only the 3 external shards
     let result = NeuralKeyGenerated {
         public_identifiers,
-        shards,
+        shards: external_shards,
         created_at,
     };
 
+    // Serialize both key store and encrypted shards
+    let key_json = match serde_json::to_vec(&key_store) {
+        Ok(json) => json,
+        Err(e) => {
+            return response::send_neural_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                KeyError::StorageError(format!("Key store serialization failed: {}", e)),
+            )
+        }
+    };
+
+    let encrypted_shards_json = match serde_json::to_vec(&encrypted_shard_store) {
+        Ok(json) => json,
+        Err(e) => {
+            return response::send_neural_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                KeyError::StorageError(format!("Encrypted shards serialization failed: {}", e)),
+            )
+        }
+    };
+
     let key_path = LocalKeyStore::storage_path(user_id);
-    match serde_json::to_vec(&key_store) {
-        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
-        Ok(json_bytes) => service.start_keystore_write(
-            &key_path,
-            &json_bytes,
-            PendingKeystoreOp::WriteKeyStore {
-                ctx,
-                user_id,
-                result,
-                json_bytes: json_bytes.clone(),
-            },
-        ),
-        Err(e) => response::send_neural_key_error(
-            ctx.client_pid,
-            &ctx.cap_slots,
-            KeyError::StorageError(format!("Serialization failed: {}", e)),
-        ),
-    }
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_write(
+        &key_path,
+        &key_json,
+        PendingKeystoreOp::WriteKeyStore {
+            ctx,
+            user_id,
+            result,
+            json_bytes: key_json.clone(),
+            encrypted_shards_json,
+        },
+    )
 }
 
 pub fn handle_recover_neural_key(
@@ -582,40 +664,136 @@ pub fn handle_create_machine_key(
     )
 }
 
+/// Legacy function - now just a stub that should not be called directly.
+/// Machine key creation now goes through continue_create_machine_after_shards_read.
 pub fn continue_create_machine_after_identity_read(
+    _service: &mut IdentityService,
+    client_pid: u32,
+    _request: CreateMachineKeyRequest,
+    _stored_identity_pubkey: [u8; 32],
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    // This should not be called directly anymore - see keystore_dispatch.rs
+    // which now chains to ReadEncryptedShardsForMachine
+    response::send_create_machine_key_error(
+        client_pid,
+        &cap_slots,
+        KeyError::StorageError("Internal error: legacy path invoked".into()),
+    )
+}
+
+/// Continue machine key creation after reading encrypted shards from keystore.
+///
+/// This function:
+/// 1. Decrypts the 2 stored shards using the password
+/// 2. Combines with the 1 external shard (total 3)
+/// 3. Reconstructs the Neural Key
+/// 4. Verifies against stored identity public key
+/// 5. Derives machine keypair
+pub fn continue_create_machine_after_shards_read(
     service: &mut IdentityService,
     client_pid: u32,
     request: CreateMachineKeyRequest,
     stored_identity_pubkey: [u8; 32],
+    encrypted_store: EncryptedShardStore,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
-    
-    // Convert IPC shards to zid-crypto format
-    let zid_shards: Result<Vec<ZidNeuralShard>, _> = request
-        .shards
-        .iter()
-        .map(|s| ZidNeuralShard::from_hex(&s.hex))
-        .collect();
 
-    let zid_shards = match zid_shards {
-        Ok(shards) => shards,
+    // Decrypt the 2 stored shards
+    let mut decrypted_shard_hexes = Vec::new();
+    for encrypted_shard in &encrypted_store.encrypted_shards {
+        match decrypt_shard(encrypted_shard, &request.password, &encrypted_store.kdf) {
+            Ok(hex) => decrypted_shard_hexes.push((encrypted_shard.index, hex)),
+            Err(e) => {
+                syscall::debug(&format!(
+                    "IdentityService: Failed to decrypt shard {}: {:?}",
+                    encrypted_shard.index, e
+                ));
+                return response::send_create_machine_key_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    e,
+                );
+            }
+        }
+    }
+
+    syscall::debug(&format!(
+        "IdentityService: Successfully decrypted {} stored shards",
+        decrypted_shard_hexes.len()
+    ));
+
+    // Validate external shard index is expected and unique
+    if !encrypted_store
+        .external_shard_indices
+        .contains(&request.external_shard.index)
+    {
+        return response::send_create_machine_key_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            KeyError::InvalidShard("External shard index not recognized".into()),
+        );
+    }
+
+    let mut shard_indices = Vec::new();
+    shard_indices.push(request.external_shard.index);
+    shard_indices.extend(encrypted_store.encrypted_shards.iter().map(|s| s.index));
+
+    shard_indices.sort_unstable();
+    shard_indices.dedup();
+    if shard_indices.len() != 3 {
+        return response::send_create_machine_key_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            KeyError::InvalidShard("Shard indices must be unique (3 total)".into()),
+        );
+    }
+
+    // Convert all shards (1 external + 2 decrypted) to zid-crypto format
+    let mut all_shards = Vec::new();
+
+    // Add external shard
+    match ZidNeuralShard::from_hex(&request.external_shard.hex) {
+        Ok(shard) => all_shards.push(shard),
         Err(e) => {
             syscall::debug(&format!(
-                "IdentityService: Invalid shard format: {:?}",
+                "IdentityService: Invalid external shard format: {:?}",
                 e
             ));
             return response::send_create_machine_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
-                KeyError::InvalidShard(format!("Invalid shard format: {:?}", e)),
+                KeyError::InvalidShard(format!("Invalid external shard format: {:?}", e)),
             );
         }
-    };
+    }
+
+    // Add decrypted shards
+    for (_idx, hex) in decrypted_shard_hexes {
+        match ZidNeuralShard::from_hex(&hex) {
+            Ok(shard) => all_shards.push(shard),
+            Err(e) => {
+                syscall::debug(&format!(
+                    "IdentityService: Invalid decrypted shard format: {:?}",
+                    e
+                ));
+                return response::send_create_machine_key_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    KeyError::InvalidShard(format!("Invalid decrypted shard format: {:?}", e)),
+                );
+            }
+        }
+    }
+
+    syscall::debug(&format!(
+        "IdentityService: Total shards for reconstruction: {}",
+        all_shards.len()
+    ));
 
     // Reconstruct Neural Key from shards WITH VERIFICATION against stored identity
-    // This ensures the provided shards actually belong to this user's Neural Key
-    let neural_key = match combine_shards_verified(&zid_shards, request.user_id, &stored_identity_pubkey) {
+    let neural_key = match combine_shards_verified(&all_shards, request.user_id, &stored_identity_pubkey) {
         Ok(key) => key,
         Err(e) => {
             syscall::debug(&format!(

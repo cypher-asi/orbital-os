@@ -125,7 +125,7 @@ impl<H: HAL> System<H> {
             .log_request(sender.0, syscall_num, args, timestamp);
 
         // 2. Execute syscall via KernelCore
-        let (result, commit_types) =
+        let (result, commit_types, kernel_response_data) =
             execute_syscall_kernel_fn(&mut self.kernel, syscall_num, sender, args, data, timestamp);
 
         // 3. Record commits to CommitLog
@@ -134,7 +134,7 @@ impl<H: HAL> System<H> {
         }
 
         // 4. Get rich result and response data
-        let (rich_result, response_data, additional_commits) = metrics::get_syscall_rich_result(
+        let (rich_result, metrics_response_data, additional_commits) = metrics::get_syscall_rich_result(
             &mut self.kernel,
             sender,
             syscall_num,
@@ -153,6 +153,13 @@ impl<H: HAL> System<H> {
         self.axiom
             .syslog_mut()
             .log_response(sender.0, req_id, result, timestamp);
+
+        // Use kernel response data if present, otherwise metrics response data
+        let response_data = if !kernel_response_data.is_empty() {
+            kernel_response_data
+        } else {
+            metrics_response_data
+        };
 
         (result, rich_result, response_data)
     }
@@ -507,7 +514,9 @@ impl<H: HAL + Default> System<H> {
 
 /// Execute the kernel-side syscall operation.
 ///
-/// Returns (result_code, commits).
+/// Returns (result_code, commits, response_data).
+/// Most syscalls return empty response_data; it's only used for syscalls like
+/// SYS_LOAD_BINARY that need to return binary data.
 fn execute_syscall_kernel_fn<H: HAL>(
     core: &mut KernelCore<H>,
     syscall_num: u32,
@@ -515,19 +524,35 @@ fn execute_syscall_kernel_fn<H: HAL>(
     args: [u32; 4],
     data: &[u8],
     timestamp: u64,
-) -> (i64, Vec<CommitType>) {
+) -> (i64, Vec<CommitType>, Vec<u8>) {
     match syscall_num {
-        0x00..=0x07 => execute_basic_syscall(core, syscall_num, sender, args),
-        0x11..=0x15 => execute_process_syscall(core, syscall_num, sender, args, data, timestamp),
-        0x30 | 0x31 | 0x35 => {
-            execute_capability_syscall(core, syscall_num, sender, args, timestamp)
+        0x00..=0x07 => {
+            let (r, c) = execute_basic_syscall(core, syscall_num, sender, args);
+            (r, c, Vec::new())
         }
-        0x40 | 0x41 => execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp),
-        0x50 => (0, Vec::new()), // SYS_PS - success, data formatted in metrics.rs
-        0x70..=0x74 => execute_storage_syscall(core, syscall_num, sender, data),
-        0x80..=0x84 => execute_keystore_syscall(core, syscall_num, sender, data),
-        0x90 => execute_network_syscall(core, sender, data),
-        _ => (-1, Vec::new()),
+        0x11..=0x17 => execute_process_syscall(core, syscall_num, sender, args, data, timestamp),
+        0x30 | 0x31 | 0x35 => {
+            let (r, c) = execute_capability_syscall(core, syscall_num, sender, args, timestamp);
+            (r, c, Vec::new())
+        }
+        0x40 | 0x41 => {
+            let (r, c) = execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp);
+            (r, c, Vec::new())
+        }
+        0x50 => (0, Vec::new(), Vec::new()), // SYS_PS - success, data formatted in metrics.rs
+        0x70..=0x74 => {
+            let (r, c) = execute_storage_syscall(core, syscall_num, sender, data);
+            (r, c, Vec::new())
+        }
+        0x80..=0x84 => {
+            let (r, c) = execute_keystore_syscall(core, syscall_num, sender, data);
+            (r, c, Vec::new())
+        }
+        0x90 => {
+            let (r, c) = execute_network_syscall(core, sender, data);
+            (r, c, Vec::new())
+        }
+        _ => (-1, Vec::new(), Vec::new()),
     }
 }
 
@@ -573,14 +598,31 @@ fn execute_process_syscall<H: HAL>(
     args: [u32; 4],
     data: &[u8],
     timestamp: u64,
-) -> (i64, Vec<CommitType>) {
+) -> (i64, Vec<CommitType>, Vec<u8>) {
     match syscall_num {
-        0x11 => lifecycle::execute_exit(core, sender, timestamp),
-        0x12 => (0, Vec::new()),
-        0x13 => lifecycle::execute_kill_with_cap(core, sender, args, timestamp),
-        0x14 => lifecycle::execute_register_process(core, sender, data, timestamp),
-        0x15 => lifecycle::execute_create_endpoint_for(core, sender, args, timestamp),
-        _ => (-1, Vec::new()),
+        0x11 => {
+            let (r, c) = lifecycle::execute_exit(core, sender, timestamp);
+            (r, c, Vec::new())
+        }
+        0x12 => (0, Vec::new(), Vec::new()),
+        0x13 => {
+            let (r, c) = lifecycle::execute_kill_with_cap(core, sender, args, timestamp);
+            (r, c, Vec::new())
+        }
+        0x14 => {
+            let (r, c) = lifecycle::execute_register_process(core, sender, data, timestamp);
+            (r, c, Vec::new())
+        }
+        0x15 => {
+            let (r, c) = lifecycle::execute_create_endpoint_for(core, sender, args, timestamp);
+            (r, c, Vec::new())
+        }
+        0x16 => lifecycle::execute_load_binary(core, sender, data),
+        0x17 => {
+            let (r, c) = lifecycle::execute_spawn_process(core, sender, data, timestamp);
+            (r, c, Vec::new())
+        }
+        _ => (-1, Vec::new(), Vec::new()),
     }
 }
 

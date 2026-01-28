@@ -2,7 +2,8 @@
 
 use super::DesktopEngine;
 use crate::transition::{Crossfade, CrossfadeDirection};
-use crate::view_mode::ViewMode;
+use crate::desktop::ViewMode;
+use tracing::debug;
 
 impl DesktopEngine {
     /// Get the current crossfade transition
@@ -106,6 +107,7 @@ impl DesktopEngine {
                 self.view_mode = ViewMode::Void;
                 self.viewport.center = self.void_state.camera().center;
                 self.viewport.zoom = self.void_state.camera().zoom;
+                debug!("transition to void completed");
             }
             CrossfadeDirection::ToDesktop | CrossfadeDirection::SwitchDesktop => {
                 let index = crossfade.target_desktop.unwrap_or(0);
@@ -115,6 +117,7 @@ impl DesktopEngine {
                     self.viewport.zoom = saved.zoom;
                 }
                 self.focus_top_window_on_desktop(index);
+                debug!(desktop_index = index, "transition to desktop completed");
             }
         }
     }

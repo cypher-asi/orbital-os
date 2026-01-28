@@ -4,6 +4,7 @@ members = [
     "crates/zos-allocator",
     "crates/zos-apps",
     "crates/zos-axiom",
+    "crates/zos-boot",
     "crates/zos-desktop",
     "crates/zos-hal",
     "crates/zos-identity",
@@ -19,6 +20,9 @@ members = [
     "crates/zos-unsafe-primitives",
     "crates/zos-vfs",
 ]
+exclude = [
+    "tools/bootimage",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -31,6 +35,7 @@ repository = "https://github.com/cypher-asi/zero-os"
 zos-allocator = { path = "crates/zos-allocator" }
 zos-apps = { path = "crates/zos-apps" }
 zos-axiom = { path = "crates/zos-axiom" }
+zos-boot = { path = "crates/zos-boot" }
 zos-desktop = { path = "crates/zos-desktop" }
 zos-hal = { path = "crates/zos-hal" }
 zos-identity = { path = "crates/zos-identity" }
@@ -44,6 +49,14 @@ zos-services = { path = "crates/zos-services" }
 zos-system-procs = { path = "crates/zos-system-procs" }
 zos-unsafe-primitives = { path = "crates/zos-unsafe-primitives" }
 zos-vfs = { path = "crates/zos-vfs" }
+
+# x86_64 bare metal dependencies
+x86_64 = { version = "0.15", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
+uart_16550 = "0.3"
+spin = { version = "0.9", default-features = false, features = ["lazy", "spin_mutex"] }
+linked_list_allocator = "0.10"
+bootloader_api = "0.11"
+bootloader = "0.11"
 
 # External dependencies
 wasm-bindgen = "0.2"
@@ -71,6 +84,10 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 zid-crypto = { path = "../zero-id/crates/zid-crypto" }
 getrandom = { version = "0.2", features = ["js"] }
 uuid = { version = "1.6", features = ["v4", "serde", "js"] }
+
+# Cryptography - AES-GCM and Argon2 for shard encryption
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 
 [profile.release]
 opt-level = "z"

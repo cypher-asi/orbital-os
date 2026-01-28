@@ -1,34 +1,54 @@
-import { useState, useCallback } from 'react';
-import { GroupCollapsible, Button, Card, CardItem, Text, Label } from '@cypher-asi/zui';
-import { Brain, Copy, Check, Key, Calendar, AlertTriangle, Sparkles, Loader } from 'lucide-react';
+import { useState, useCallback, useMemo } from 'react';
+import { GroupCollapsible, Button, Card, CardItem, Text, Label, Input } from '@cypher-asi/zui';
+import { Brain, Copy, Check, Key, Calendar, AlertTriangle, Sparkles, Loader, Eye, EyeOff } from 'lucide-react';
 import { useNeuralKey } from '@desktop/hooks/useNeuralKey';
 import { useCopyToClipboard } from '@desktop/hooks/useCopyToClipboard';
 import styles from './NeuralKeyPanel.module.css';
+
+/** Minimum password length */
+const MIN_PASSWORD_LENGTH = 12;
 
 /**
  * Neural Key Panel
  *
  * States:
- * 1. Not Set - Show explanation and "Generate" button
- * 2. Generating - Show 5 shards with copy buttons
+ * 1. Not Set - Show explanation, password inputs, and "Generate" button
+ * 2. Generating - Show 3 external shards with copy buttons
  * 3. Active - Show fingerprint and created date
  */
 export function NeuralKeyPanel() {
   const { state, generateNeuralKey, confirmShardsSaved } = useNeuralKey();
   const { copy, isCopied } = useCopyToClipboard();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+
+  // Password validation
+  const passwordValidation = useMemo(() => {
+    const isTooShort = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
+    const passwordsMatch = password === passwordConfirm;
+    const isValid = password.length >= MIN_PASSWORD_LENGTH && passwordsMatch;
+    return { isTooShort, passwordsMatch, isValid };
+  }, [password, passwordConfirm]);
 
   // Handle generate button click
   const handleGenerate = useCallback(async () => {
+    if (!passwordValidation.isValid) return;
+    
     setIsGenerating(true);
     try {
-      await generateNeuralKey();
+      await generateNeuralKey(password);
+      // Clear password fields after successful generation
+      setPassword('');
+      setPasswordConfirm('');
     } catch (err) {
       console.error('Failed to generate Neural Key:', err);
     } finally {
       setIsGenerating(false);
     }
-  }, [generateNeuralKey]);
+  }, [generateNeuralKey, password, passwordValidation.isValid]);
 
   // Handle copy all shards to clipboard
   const handleCopyAll = useCallback(() => {
@@ -36,7 +56,7 @@ export function NeuralKeyPanel() {
     const formattedShards = state.pendingShards
       .map((shard) => `Shard ${shard.index}: ${shard.hex}`)
       .join('\n');
-    const text = `Neural Key Recovery Shards (3 of 5 required)\n${'='.repeat(45)}\n${formattedShards}`;
+    const text = `Neural Key Recovery Shards (1 of 3 + password required)\n${'='.repeat(50)}\n${formattedShards}`;
     copy(text, 'all');
   }, [state.pendingShards, copy]);
 
@@ -109,7 +129,7 @@ export function NeuralKeyPanel() {
     );
   }
 
-  // State 1: No neural key - show explanation and generate button
+  // State 1: No neural key - show explanation, password inputs, and generate button
   if (!state.hasNeuralKey && !state.pendingShards) {
     return (
       <div className={styles.panelContainer}>
@@ -123,9 +143,62 @@ export function NeuralKeyPanel() {
                 Your Neural Key is Your Identity
               </Text>
               <Text size="sm" className={styles.heroDescription}>
-                A Neural Key is a cryptographic identity that represents you across all devices. It
-                uses Shamir's Secret Sharing to split into 5 shards - you need any 3 to recover it.
+                A Neural Key is a cryptographic identity that represents you across all devices.
+                You'll receive 3 backup shards to store securely. To access your identity on a new
+                device, you'll need 1 shard plus your password.
               </Text>
+            </div>
+
+            <div className={styles.passwordSection}>
+              <div className={styles.passwordField}>
+                <Label size="xs">Password (min {MIN_PASSWORD_LENGTH} characters)</Label>
+                <div className={styles.passwordInputWrapper}>
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter a secure password"
+                    className={styles.passwordInput}
+                  />
+                  <button
+                    type="button"
+                    className={styles.passwordToggle}
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {passwordValidation.isTooShort && (
+                  <Text size="xs" className={styles.passwordError}>
+                    Password must be at least {MIN_PASSWORD_LENGTH} characters
+                  </Text>
+                )}
+              </div>
+
+              <div className={styles.passwordField}>
+                <Label size="xs">Confirm Password</Label>
+                <div className={styles.passwordInputWrapper}>
+                  <Input
+                    type={showPasswordConfirm ? 'text' : 'password'}
+                    value={passwordConfirm}
+                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                    placeholder="Confirm your password"
+                    className={styles.passwordInput}
+                  />
+                  <button
+                    type="button"
+                    className={styles.passwordToggle}
+                    onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
+                  >
+                    {showPasswordConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {passwordConfirm.length > 0 && !passwordValidation.passwordsMatch && (
+                  <Text size="xs" className={styles.passwordError}>
+                    Passwords do not match
+                  </Text>
+                )}
+              </div>
             </div>
 
             <div className={styles.buttonContainer}>
@@ -133,7 +206,7 @@ export function NeuralKeyPanel() {
                 variant="primary"
                 size="lg"
                 onClick={handleGenerate}
-                disabled={isGenerating}
+                disabled={isGenerating || !passwordValidation.isValid}
                 className={styles.generateButton}
               >
                 {isGenerating ? (
@@ -170,7 +243,7 @@ export function NeuralKeyPanel() {
               <CardItem
                 icon={<AlertTriangle size={16} />}
                 title="Save these shards now!"
-                description="These will only be shown once. Store each shard in a separate secure location. You need any 3 of 5 shards to recover your identity."
+                description="These will only be shown once. Store each shard in a separate secure location. To recover your identity on a new device, you'll need 1 shard plus your password."
                 className={styles.warningCardItem}
               />
             </Card>
@@ -302,8 +375,8 @@ export function NeuralKeyPanel() {
           <Card className={styles.infoCard}>
             <CardItem
               icon={<AlertTriangle size={16} />}
-              title="Lost your shards?"
-              description="If you lose access to 3 or more shards, you won't be able to recover your identity on a new device."
+              title="Lost your shards or password?"
+              description="If you forget your password and lose all 3 backup shards, you won't be able to recover your identity on a new device."
             />
           </Card>
         </div>

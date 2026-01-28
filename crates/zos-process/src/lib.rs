@@ -152,8 +152,8 @@ pub use zos_ipc::ObjectType;
 pub use syscalls::{
     call, cap_delete, cap_derive, cap_grant, cap_inspect, cap_revoke, cap_revoke_from,
     console_write, create_endpoint, create_endpoint_for, debug, exit, get_pid, get_time,
-    get_wallclock, kill, list_caps, list_processes, receive, receive_blocking, receive_opt,
-    register_process, reply, send, send_with_caps, yield_now,
+    get_wallclock, kill, list_caps, list_processes, load_binary, receive, receive_blocking,
+    receive_opt, register_process, reply, send, send_with_caps, spawn_process, yield_now,
 };
 
 // Re-export typed error types
@@ -183,8 +183,8 @@ pub use syscalls::network::network_fetch_async;
 pub use zos_ipc::{
     console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
     identity_prefs, identity_query, identity_remote, identity_session, identity_user, identity_zid,
-    init, kernel, keystore, net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir,
-    vfs_file, vfs_meta, vfs_quota,
+    init, kernel, keystore, net, permission, pid, pm, revoke_reason, slots, storage, supervisor,
+    syscall_error, vfs_dir, vfs_file, vfs_meta, vfs_quota,
 };
 
 /// Console input message tag - used by terminal for receiving keyboard input.

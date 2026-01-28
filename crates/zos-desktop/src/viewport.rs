@@ -199,3 +199,85 @@ mod tests {
         assert!((viewport.zoom - 0.5).abs() < 0.001);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Round-trip property: screen -> canvas -> screen should return original point
+        #[test]
+        fn screen_canvas_roundtrip(
+            screen_x in 0.0f32..1920.0,
+            screen_y in 0.0f32..1080.0,
+            center_x in -10000.0f32..10000.0,
+            center_y in -10000.0f32..10000.0,
+            zoom in 0.1f32..10.0,
+        ) {
+            let mut viewport = Viewport::new(1920.0, 1080.0);
+            viewport.center = Vec2::new(center_x, center_y);
+            viewport.zoom = zoom;
+
+            let screen = Vec2::new(screen_x, screen_y);
+            let canvas = viewport.screen_to_canvas(screen);
+            let result = viewport.canvas_to_screen(canvas);
+
+            prop_assert!((result.x - screen.x).abs() < 0.01, "x mismatch: {} vs {}", result.x, screen.x);
+            prop_assert!((result.y - screen.y).abs() < 0.01, "y mismatch: {} vs {}", result.y, screen.y);
+        }
+
+        /// Zoom at anchor point should preserve that point's canvas position
+        #[test]
+        fn zoom_preserves_anchor(
+            anchor_x in 0.0f32..1920.0,
+            anchor_y in 0.0f32..1080.0,
+            initial_zoom in 0.5f32..2.0,
+            zoom_factor in 0.5f32..2.0,
+        ) {
+            let mut viewport = Viewport::new(1920.0, 1080.0);
+            viewport.zoom = initial_zoom;
+
+            let anchor_screen = Vec2::new(anchor_x, anchor_y);
+            let anchor_canvas_before = viewport.screen_to_canvas(anchor_screen);
+
+            viewport.zoom_at(zoom_factor, anchor_x, anchor_y);
+
+            let anchor_canvas_after = viewport.screen_to_canvas(anchor_screen);
+
+            prop_assert!(
+                (anchor_canvas_before.x - anchor_canvas_after.x).abs() < 0.1,
+                "anchor x shifted: {} vs {}",
+                anchor_canvas_before.x,
+                anchor_canvas_after.x
+            );
+            prop_assert!(
+                (anchor_canvas_before.y - anchor_canvas_after.y).abs() < 0.1,
+                "anchor y shifted: {} vs {}",
+                anchor_canvas_before.y,
+                anchor_canvas_after.y
+            );
+        }
+
+        /// Pan should move center inversely to screen direction
+        #[test]
+        fn pan_moves_center_inversely(
+            dx in -500.0f32..500.0,
+            dy in -500.0f32..500.0,
+            zoom in 0.5f32..2.0,
+        ) {
+            let mut viewport = Viewport::new(1920.0, 1080.0);
+            viewport.zoom = zoom;
+            let initial_center = viewport.center;
+
+            viewport.pan(dx, dy);
+
+            // Pan moves center in opposite direction, scaled by zoom
+            let expected_x = initial_center.x - dx / zoom;
+            let expected_y = initial_center.y - dy / zoom;
+
+            prop_assert!((viewport.center.x - expected_x).abs() < 0.001);
+            prop_assert!((viewport.center.y - expected_y).abs() < 0.001);
+        }
+    }
+}

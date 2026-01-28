@@ -44,12 +44,16 @@ export interface UseMachineKeysReturn {
   listMachineKeys: () => Promise<import('@/stores').MachineKeyRecord[]>;
   /** Get a specific machine key */
   getMachineKey: (machineId: string) => Promise<import('@/stores').MachineKeyRecord | null>;
-  /** Create a new machine key (requires 3 Neural shards for key derivation) */
+  /**
+   * Create a new machine key.
+   * Requires 1 external Neural shard (from paper backup) + password (to decrypt 2 stored shards).
+   */
   createMachineKey: (
-    machineName?: string,
-    capabilities?: MachineKeyCapability[],
-    keyScheme?: KeyScheme,
-    shards?: NeuralShard[]
+    machineName: string | undefined,
+    capabilities: MachineKeyCapability[] | undefined,
+    keyScheme: KeyScheme | undefined,
+    externalShard: NeuralShard,
+    password: string
   ) => Promise<import('@/stores').MachineKeyRecord>;
   /** Revoke a machine key */
   revokeMachineKey: (machineId: string) => Promise<void>;
@@ -184,17 +188,21 @@ export function useMachineKeys(): UseMachineKeysReturn {
 
   const createMachineKey = useCallback(
     async (
-      machineName?: string,
-      capabilities?: MachineKeyCapability[],
-      keyScheme?: KeyScheme,
-      shards?: NeuralShard[]
+      machineName: string | undefined,
+      capabilities: MachineKeyCapability[] | undefined,
+      keyScheme: KeyScheme | undefined,
+      externalShard: NeuralShard,
+      password: string
     ): Promise<import('@/stores').MachineKeyRecord> => {
       const userIdVal = getUserIdOrThrow();
       const client = getClientOrThrow();
 
-      // Validate shards
-      if (!shards || shards.length < 3) {
-        throw new Error('At least 3 Neural shards are required to create a machine key');
+      // Validate inputs
+      if (!externalShard) {
+        throw new Error('An external Neural shard is required to create a machine key');
+      }
+      if (!password) {
+        throw new Error('Password is required to create a machine key');
       }
 
       setLoading(true);
@@ -202,7 +210,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
       try {
         const schemeToUse = keyScheme ?? 'classical';
         console.log(
-          `[useMachineKeys] Creating machine key for user ${userIdVal} (scheme: ${schemeToUse}, shards: ${shards.length})`
+          `[useMachineKeys] Creating machine key for user ${userIdVal} (scheme: ${schemeToUse})`
         );
         const serviceCaps = convertCapabilitiesForService(capabilities);
         const serviceRecord = await client.createMachineKey(
@@ -210,7 +218,8 @@ export function useMachineKeys(): UseMachineKeysReturn {
           machineName || 'New Device',
           serviceCaps,
           schemeToUse as ServiceKeyScheme,
-          shards
+          externalShard,
+          password
         );
         const newMachine = convertMachineRecord(serviceRecord, state.currentMachineId || undefined);
 

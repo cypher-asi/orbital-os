@@ -259,13 +259,15 @@ pub struct PublicIdentifiers {
 /// 1. Generate 32 bytes of secure entropy
 /// 2. Derive Ed25519/X25519 keypairs
 /// 3. Split entropy into 5 Shamir shards
-/// 4. Store public keys to VFS
-/// 5. Return shards + public identifiers
+/// 4. Encrypt 2 shards with password, store to keystore
+/// 5. Return 3 external shards + public identifiers
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateNeuralKeyRequest {
     /// User ID to generate keys for
     #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
+    /// Password for encrypting 2 shards (minimum 12 characters)
+    pub password: String,
 }
 
 /// Result of successful Neural Key generation.
@@ -273,7 +275,8 @@ pub struct GenerateNeuralKeyRequest {
 pub struct NeuralKeyGenerated {
     /// Public identifiers (stored server-side)
     pub public_identifiers: PublicIdentifiers,
-    /// Shamir shards (3-of-5) - returned to UI for backup, NOT stored
+    /// External Shamir shards (3 of 5) - returned to UI for backup, NOT stored
+    /// The other 2 shards are encrypted with the password and stored in keystore.
     pub shards: Vec<NeuralShard>,
     /// Timestamp when the key was created
     pub created_at: u64,
@@ -349,7 +352,9 @@ pub struct GetIdentityKeyResponse {
 /// Create machine key request.
 ///
 /// Creates a new machine key record. Requires identity key to be registered first.
-/// Machine keys are derived from the user's Neural Key using 3 Shamir shards.
+/// Machine keys are derived from the user's Neural Key using:
+/// - 1 external shard (from paper backup)
+/// - Password (to decrypt 2 stored shards from keystore)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateMachineKeyRequest {
     /// User ID
@@ -362,8 +367,10 @@ pub struct CreateMachineKeyRequest {
     /// Key scheme to use (defaults to Classical)
     #[serde(default)]
     pub key_scheme: KeyScheme,
-    /// Neural shards for key derivation (at least 3 required)
-    pub shards: Vec<NeuralShard>,
+    /// Single external Neural shard (from paper backup)
+    pub external_shard: NeuralShard,
+    /// Password to decrypt stored shards
+    pub password: String,
 }
 
 /// Create machine key response.
@@ -723,15 +730,12 @@ mod tests {
             machine_name: Some(String::from("My Laptop")),
             capabilities: MachineKeyCapabilities::default(),
             key_scheme: crate::keystore::KeyScheme::default(),
-            shards: alloc::vec![
-                NeuralShard { index: 1, hex: "abc123".to_string() },
-                NeuralShard { index: 2, hex: "def456".to_string() },
-                NeuralShard { index: 3, hex: "789012".to_string() },
-            ],
+            external_shard: NeuralShard { index: 1, hex: "abc123".to_string() },
+            password: "secure-password-123".to_string(),
         };
         assert_eq!(create_req.user_id, 3);
         assert!(create_req.machine_name.is_some());
-        assert_eq!(create_req.shards.len(), 3);
+        assert_eq!(create_req.external_shard.index, 1);
 
         // Test ListMachineKeysRequest
         let list_req = ListMachineKeysRequest { user_id: 4 };
