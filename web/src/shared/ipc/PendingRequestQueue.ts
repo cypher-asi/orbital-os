@@ -79,23 +79,30 @@ export class PendingRequestQueue {
     }
 
     supervisor.set_ipc_response_callback((requestId: string, data: string) => {
-      try {
-        const parsed = JSON.parse(data);
-        if (this.resolveOldestPendingRequest(requestId, parsed)) {
-          // Successfully resolved a pending request
-        } else {
-          console.log(
-            `[${this.name}] Received response for tag ${requestId} with no pending requests`
-          );
+      // IMPORTANT: Use queueMicrotask to defer processing and prevent wasm-bindgen reentrancy.
+      // The Rust Supervisor is borrowed when this callback is invoked via callback.call2().
+      // If we process synchronously, promise resolution could trigger React re-renders that
+      // call back into the Supervisor (e.g., get_wallclock_ms), causing "recursive use of an
+      // object detected" errors. Deferring to a microtask releases the Rust borrow first.
+      queueMicrotask(() => {
+        try {
+          const parsed = JSON.parse(data);
+          if (this.resolveOldestPendingRequest(requestId, parsed)) {
+            // Successfully resolved a pending request
+          } else {
+            console.log(
+              `[${this.name}] Received response for tag ${requestId} with no pending requests`
+            );
+          }
+        } catch (e) {
+          // Try to reject the oldest pending request for this tag
+          if (!this.rejectOldestRequest(requestId, new Error(`Invalid response JSON: ${e}`))) {
+            console.log(
+              `[${this.name}] Received invalid JSON for tag ${requestId} with no pending requests`
+            );
+          }
         }
-      } catch (e) {
-        // Try to reject the oldest pending request for this tag
-        if (!this.rejectOldestRequest(requestId, new Error(`Invalid response JSON: ${e}`))) {
-          console.log(
-            `[${this.name}] Received invalid JSON for tag ${requestId} with no pending requests`
-          );
-        }
-      }
+      });
     });
 
     this.callbackRegistered = true;

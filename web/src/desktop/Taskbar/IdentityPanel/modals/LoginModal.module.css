@@ -41,6 +41,14 @@
   flex: 0 0 auto;
 }
 
+.machineKeyButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .errorBox {
   position: absolute;
   top: 100%;

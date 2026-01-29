@@ -23,6 +23,7 @@ export {
   type LinkedCredential,
   type ZidTokens,
   type ZidSession,
+  type MachineKeyAndTokens,
   type Supervisor,
   type Result,
   type ResultOk,

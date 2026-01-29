@@ -2,11 +2,34 @@
  * Identity Store - Centralized state for user/session management.
  *
  * Manages user authentication, sessions, and user list.
+ * Also manages ZERO ID remote auth state (shared across all consumers).
  * Persists user list to localStorage for development.
  */
 
 import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
+
+// =============================================================================
+// ZERO ID Remote Auth Types
+// =============================================================================
+
+/** Remote authentication state for ZERO ID */
+export interface RemoteAuthState {
+  /** Remote authentication server endpoint */
+  serverEndpoint: string;
+  /** OAuth2/OIDC access token */
+  accessToken: string;
+  /** When the access token expires (timestamp) */
+  tokenExpiresAt: number;
+  /** Refresh token (if available) */
+  refreshToken: string | null;
+  /** Granted OAuth scopes */
+  scopes: string[];
+  /** Session ID from ZID server */
+  sessionId: string;
+  /** Machine ID used for this session */
+  machineId: string;
+}
 
 // =============================================================================
 // Identity Types
@@ -50,12 +73,16 @@ interface IdentityStoreState {
   isLoading: boolean;
   error: string | null;
 
+  // ZERO ID remote auth state (shared across all consumers)
+  remoteAuthState: RemoteAuthState | null;
+
   // Actions
   setCurrentUser: (user: User | null) => void;
   setCurrentSession: (session: Session | null) => void;
   setUsers: (users: User[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setRemoteAuthState: (state: RemoteAuthState | null) => void;
 
   // Async actions (will call supervisor when integrated)
   login: (userId: UserId) => Promise<void>;
@@ -98,12 +125,14 @@ export const useIdentityStore = create<IdentityStoreState>()(
         users: [MOCK_USER],
         isLoading: false,
         error: null,
+        remoteAuthState: null,
 
         setCurrentUser: (currentUser) => set({ currentUser }),
         setCurrentSession: (currentSession) => set({ currentSession }),
         setUsers: (users) => set({ users }),
         setLoading: (isLoading) => set({ isLoading }),
         setError: (error) => set({ error }),
+        setRemoteAuthState: (remoteAuthState) => set({ remoteAuthState }),
 
         login: async (userId) => {
           set({ isLoading: true, error: null });
@@ -137,10 +166,9 @@ export const useIdentityStore = create<IdentityStoreState>()(
         logout: async () => {
           set({ isLoading: true, error: null });
           try {
-            // TODO: Call supervisor to invalidate session
-            const currentUser = get().currentUser;
+            // Clear current user completely to allow a different user to log in
             set({
-              currentUser: currentUser ? { ...currentUser, status: 'Offline' } : null,
+              currentUser: null,
               currentSession: null,
               isLoading: false,
             });
@@ -218,6 +246,9 @@ export const selectError = (state: IdentityStoreState) => state.error;
 /** Select whether user is logged in */
 export const selectIsLoggedIn = (state: IdentityStoreState) =>
   state.currentUser !== null && state.currentSession !== null;
+
+/** Select remote auth state (ZERO ID) */
+export const selectRemoteAuthState = (state: IdentityStoreState) => state.remoteAuthState;
 
 /** Select user by ID */
 export const selectUserById = (id: UserId) => (state: IdentityStoreState) =>

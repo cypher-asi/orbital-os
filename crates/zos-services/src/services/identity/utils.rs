@@ -122,3 +122,74 @@ pub fn sign_with_machine_keypair(
     // Sign using the machine keypair's signing component
     sign_message(&machine_keypair.signing_key_pair(), message)
 }
+
+/// Parse an RFC3339 timestamp string to Unix timestamp in milliseconds.
+///
+/// Accepts formats like:
+/// - "2024-01-15T10:30:00Z"
+/// - "2024-01-15T10:30:00.123Z"
+/// - "2024-01-15T10:30:00+00:00"
+///
+/// Returns milliseconds since Unix epoch, or current time + 1 hour on parse failure.
+pub fn parse_rfc3339_to_millis(timestamp: &str) -> u64 {
+    // Try to parse: YYYY-MM-DDTHH:MM:SS[.sss]Z or with offset
+    // Simple parser for common formats
+    
+    let parts: Vec<&str> = timestamp.split('T').collect();
+    if parts.len() != 2 {
+        // Fallback: return current time + 1 hour
+        return zos_apps::syscall::get_wallclock() + 3600_000;
+    }
+    
+    let date_parts: Vec<&str> = parts[0].split('-').collect();
+    if date_parts.len() != 3 {
+        return zos_apps::syscall::get_wallclock() + 3600_000;
+    }
+    
+    let year: i64 = date_parts[0].parse().unwrap_or(2024);
+    let month: i64 = date_parts[1].parse().unwrap_or(1);
+    let day: i64 = date_parts[2].parse().unwrap_or(1);
+    
+    // Parse time part (strip timezone)
+    let time_str = parts[1]
+        .trim_end_matches('Z')
+        .split('+').next().unwrap_or("00:00:00")
+        .split('-').next().unwrap_or("00:00:00");
+    
+    let time_parts: Vec<&str> = time_str.split(':').collect();
+    let hour: i64 = time_parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let minute: i64 = time_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let second: i64 = time_parts.get(2)
+        .and_then(|s| s.split('.').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    
+    // Calculate days since Unix epoch (1970-01-01)
+    // Using a simplified calculation (doesn't handle all edge cases but good enough)
+    let mut days: i64 = 0;
+    
+    // Years
+    for y in 1970..year {
+        days += if is_leap_year(y) { 366 } else { 365 };
+    }
+    
+    // Months
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for m in 1..month {
+        days += days_in_month[(m - 1) as usize] as i64;
+        if m == 2 && is_leap_year(year) {
+            days += 1;
+        }
+    }
+    
+    // Days
+    days += day - 1;
+    
+    // Calculate total milliseconds
+    let total_seconds = days * 86400 + hour * 3600 + minute * 60 + second;
+    (total_seconds * 1000) as u64
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}

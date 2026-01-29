@@ -12,6 +12,7 @@ import {
   type MachineKeyRecord as ServiceMachineKeyRecord,
   type KeyScheme as ServiceKeyScheme,
   type NeuralShard,
+  type ZidTokens,
   KeystoreClient,
   getMachineKeysDir,
 } from '@/client-services';
@@ -55,6 +56,19 @@ export interface UseMachineKeysReturn {
     externalShard: NeuralShard,
     password: string
   ) => Promise<import('@/stores').MachineKeyRecord>;
+  /**
+   * Create a machine key AND enroll with ZID in one atomic operation.
+   * This solves the signature mismatch problem by ensuring the same keypair
+   * is used for both local storage and ZID registration.
+   */
+  createMachineKeyAndEnroll: (
+    machineName: string | undefined,
+    capabilities: MachineKeyCapability[] | undefined,
+    keyScheme: KeyScheme | undefined,
+    externalShard: NeuralShard,
+    password: string,
+    zidEndpoint: string
+  ) => Promise<{ machineKey: import('@/stores').MachineKeyRecord; tokens: ZidTokens }>;
   /** Revoke a machine key */
   revokeMachineKey: (machineId: string) => Promise<void>;
   /** Rotate a machine key (new epoch) */
@@ -236,6 +250,69 @@ export function useMachineKeys(): UseMachineKeysReturn {
     [getClientOrThrow, getUserIdOrThrow, state.currentMachineId, setLoading, addMachine, setError]
   );
 
+  const createMachineKeyAndEnroll = useCallback(
+    async (
+      machineName: string | undefined,
+      capabilities: MachineKeyCapability[] | undefined,
+      keyScheme: KeyScheme | undefined,
+      externalShard: NeuralShard,
+      password: string,
+      zidEndpoint: string
+    ): Promise<{ machineKey: import('@/stores').MachineKeyRecord; tokens: ZidTokens }> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
+
+      // Validate inputs
+      if (!externalShard) {
+        throw new Error('An external Neural shard is required');
+      }
+      if (!password) {
+        throw new Error('Password is required');
+      }
+      if (!zidEndpoint) {
+        throw new Error('ZID endpoint is required');
+      }
+
+      setLoading(true);
+
+      try {
+        const schemeToUse = keyScheme ?? 'classical';
+        console.log(
+          `[useMachineKeys] Creating machine key AND enrolling for user ${userIdVal} (scheme: ${schemeToUse})`
+        );
+        const serviceCaps = convertCapabilitiesForService(capabilities);
+        const result = await client.createMachineKeyAndEnroll(
+          userIdVal,
+          machineName || 'This Device',
+          serviceCaps,
+          schemeToUse as ServiceKeyScheme,
+          externalShard,
+          password,
+          zidEndpoint
+        );
+        const newMachine = convertMachineRecord(
+          result.machine_key,
+          state.currentMachineId || undefined
+        );
+
+        addMachine(newMachine);
+
+        console.log(
+          `[useMachineKeys] Machine key created and enrolled successfully: ${newMachine.machineId}`
+        );
+
+        return { machineKey: newMachine, tokens: result.tokens };
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : 'Failed to create machine key and enroll';
+        console.error('[useMachineKeys] createMachineKeyAndEnroll error:', errorMsg);
+        setError(errorMsg);
+        throw err;
+      }
+    },
+    [getClientOrThrow, getUserIdOrThrow, state.currentMachineId, setLoading, addMachine, setError]
+  );
+
   const revokeMachineKey = useCallback(
     async (machineId: string): Promise<void> => {
       const userIdVal = getUserIdOrThrow();
@@ -350,6 +427,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
     listMachineKeys,
     getMachineKey,
     createMachineKey,
+    createMachineKeyAndEnroll,
     revokeMachineKey,
     rotateMachineKey,
     refresh,

@@ -38,6 +38,7 @@ export function Taskbar() {
   const [beginMenuOpen, setBeginMenuOpen] = useState(false);
   const [identityPanelOpen, setIdentityPanelOpen] = useState(false);
   const beginSectionRef = useRef<HTMLDivElement>(null);
+  const neuralKeyWrapperRef = useRef<HTMLDivElement>(null);
 
   // Use Zustand stores directly for better performance
   const windows = useWindowStore(selectWindows);
@@ -192,12 +193,12 @@ export function Taskbar() {
           <CreditCard size={16} />
         </Button>
         <DateTime />
-        <div className={styles.neuralKeyWrapper}>
+        <div ref={neuralKeyWrapperRef} className={styles.neuralKeyWrapper}>
           <Button
             variant={identityPanelOpen ? 'glass' : 'transparent'}
             rounded="none"
             iconOnly
-            className={styles.neuralKey}
+            className={`${styles.neuralKey} ${identityPanelOpen ? styles.neuralKeyActive : ''}`}
             onClick={() => setIdentityPanelOpen(!identityPanelOpen)}
             title="Neural Link - Identity & Security"
             aria-label="Neural Link - Identity & Security"
@@ -209,7 +210,12 @@ export function Taskbar() {
             <KeyRound size={16} />
           </Button>
 
-          {identityPanelOpen && <IdentityPanel onClose={() => setIdentityPanelOpen(false)} />}
+          {identityPanelOpen && (
+            <IdentityPanel
+              onClose={() => setIdentityPanelOpen(false)}
+              containerRef={neuralKeyWrapperRef}
+            />
+          )}
         </div>
       </div>
     </div>

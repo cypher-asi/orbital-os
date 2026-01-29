@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  height: 100%;
 }
 
 /* Collapsible Section - full bleed */
@@ -274,4 +275,235 @@
 .passwordError {
   color: var(--color-danger, #ef4444);
   margin-top: 2px;
+}
+
+/* =========================================================================
+   Wizard Panel Styles
+   ========================================================================= */
+
+.wizardPanel {
+  height: 100%;
+}
+
+.wizardStepContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.stepHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  padding: 8px 0 16px;
+}
+
+.stepTitle {
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+}
+
+.stepDescription {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  max-width: 320px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Verification Step */
+.verificationContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 24px;
+}
+
+.verificationStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.verificationIcon {
+  color: var(--color-accent, #01f4cb);
+  padding: 16px;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.1));
+  border-radius: 50%;
+}
+
+.verificationIconSuccess {
+  color: var(--color-success, #22c55e);
+  padding: 16px;
+  background: var(--color-success-muted, rgba(34, 197, 94, 0.1));
+  border-radius: 50%;
+}
+
+.verificationIconError {
+  color: var(--color-danger, #ef4444);
+  padding: 16px;
+  background: var(--color-danger-muted, rgba(239, 68, 68, 0.1));
+  border-radius: 50%;
+}
+
+.verificationTitle {
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+  margin-top: 8px;
+}
+
+.verificationDescription {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.retryContainer,
+.verifyButtonContainer {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+/* Shards container for wizard */
+.shardsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Adjust warning card margin in wizard context */
+.wizardStepContent .warningCard {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Adjust copy all container in wizard context */
+.wizardStepContent .copyAllContainer {
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 8px;
+}
+
+/* Adjust shard items in wizard context */
+.wizardStepContent .shardItem {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* =========================================================================
+   Setup Status Section (Active Neural Key View)
+   ========================================================================= */
+
+.setupStatusSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.setupStatusHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.setupStatusTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.setupStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.setupStatusRow:hover {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.03));
+}
+
+.setupStatusIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.setupStatusIconSuccess {
+  color: var(--color-success, #22c55e);
+}
+
+.setupStatusIconWarning {
+  color: var(--color-warning, #f59e0b);
+}
+
+.setupStatusIconError {
+  color: var(--color-danger, #ef4444);
+}
+
+.setupStatusIconPending {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
+}
+
+.setupStatusLabel {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-primary, #fff);
+}
+
+.setupStatusValue {
+  font-size: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setupStatusRetryBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--color-surface, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  color: var(--color-text-primary, #fff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.setupStatusRetryBtn:hover {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--color-border, rgba(255, 255, 255, 0.15));
+}
+
+.setupStatusRetryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.setupStatusRetryBtn .spinner {
+  width: 12px;
+  height: 12px;
 }

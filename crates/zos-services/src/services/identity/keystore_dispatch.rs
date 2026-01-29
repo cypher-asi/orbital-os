@@ -13,7 +13,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::handlers::keys;
+use super::handlers::{keys, session};
 use super::pending::{PendingKeystoreOp, RequestContext};
 use super::{response, IdentityService};
 use zos_apps::syscall;
@@ -294,6 +294,85 @@ impl IdentityService {
                     )
                 }
             },
+            // Combined Machine Key + ZID Enrollment operations
+            PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, request } => match result {
+                Ok(data) if !data.is_empty() => {
+                    match serde_json::from_slice::<LocalKeyStore>(&data) {
+                        Ok(key_store) => {
+                            // Chain to read encrypted shards
+                            let shards_path = EncryptedShardStore::storage_path(request.user_id);
+                            syscall::debug(&format!(
+                                "IdentityService: Identity read for combined flow, reading encrypted shards from {}",
+                                shards_path
+                            ));
+                            self.start_keystore_read(
+                                &shards_path,
+                                PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll {
+                                    ctx,
+                                    request,
+                                    stored_identity_pubkey: key_store.identity_signing_public_key,
+                                },
+                            )
+                        }
+                        Err(e) => {
+                            syscall::debug(&format!(
+                                "IdentityService: Failed to parse LocalKeyStore for combined flow: {}",
+                                e
+                            ));
+                            response::send_create_machine_key_and_enroll_error(
+                                ctx.client_pid,
+                                &ctx.cap_slots,
+                                zos_identity::error::ZidError::NetworkError("Corrupted identity key store".into()),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    syscall::debug("IdentityService: Identity read for combined flow failed (keystore)");
+                    response::send_create_machine_key_and_enroll_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        zos_identity::error::ZidError::MachineKeyNotFound,
+                    )
+                }
+            },
+            PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll {
+                ctx,
+                request,
+                stored_identity_pubkey,
+            } => match result {
+                Ok(data) if !data.is_empty() => {
+                    match serde_json::from_slice::<EncryptedShardStore>(&data) {
+                        Ok(encrypted_store) => keys::continue_create_machine_enroll_after_shards_read(
+                            self,
+                            ctx.client_pid,
+                            request,
+                            stored_identity_pubkey,
+                            encrypted_store,
+                            ctx.cap_slots,
+                        ),
+                        Err(e) => {
+                            syscall::debug(&format!(
+                                "IdentityService: Failed to parse EncryptedShardStore for combined flow: {}",
+                                e
+                            ));
+                            response::send_create_machine_key_and_enroll_error(
+                                ctx.client_pid,
+                                &ctx.cap_slots,
+                                zos_identity::error::ZidError::NetworkError("Corrupted encrypted shard store".into()),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    syscall::debug("IdentityService: Encrypted shards not found for combined flow (keystore)");
+                    response::send_create_machine_key_and_enroll_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        zos_identity::error::ZidError::AuthenticationFailed,
+                    )
+                }
+            },
             PendingKeystoreOp::ReadMachineKey {
                 ctx,
                 user_id,
@@ -357,30 +436,42 @@ impl IdentityService {
             },
             PendingKeystoreOp::ReadMachineKeyForZidLogin {
                 ctx,
-                user_id: _,
-                zid_endpoint: _,
-            } => {
-                // ZID login reads machine key - for now just log (session handlers will be updated separately)
-                syscall::debug("IdentityService: ReadMachineKeyForZidLogin via keystore - not yet migrated");
-                response::send_zid_login_error(
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(data) => session::continue_zid_login_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_zid_login_error(
                     ctx.client_pid,
                     &ctx.cap_slots,
                     zos_identity::error::ZidError::MachineKeyNotFound,
-                )
-            }
+                ),
+            },
             PendingKeystoreOp::ReadMachineKeyForZidEnroll {
                 ctx,
-                user_id: _,
-                zid_endpoint: _,
-            } => {
-                // ZID enroll reads machine key - for now just log (session handlers will be updated separately)
-                syscall::debug("IdentityService: ReadMachineKeyForZidEnroll via keystore - not yet migrated");
-                response::send_zid_enroll_error(
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(data) => session::continue_zid_enroll_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_zid_enroll_error(
                     ctx.client_pid,
                     &ctx.cap_slots,
                     zos_identity::error::ZidError::MachineKeyNotFound,
-                )
-            }
+                ),
+            },
             // Operations that should NOT receive a read response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::WriteKeyStore { ctx, .. }
@@ -388,9 +479,12 @@ impl IdentityService {
             | PendingKeystoreOp::WriteRecoveredKeyStore { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidLogin { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidEnroll { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
-            | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. } => {
+            | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
+            | PendingKeystoreOp::WriteMachineKeyForEnroll { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore read result for non-read op, client_pid={}",
                     ctx.client_pid
@@ -542,6 +636,49 @@ impl IdentityService {
                     )
                 }
             },
+            // Combined Machine Key + ZID Enrollment write
+            PendingKeystoreOp::WriteMachineKeyForEnroll {
+                ctx,
+                user_id,
+                record,
+                zid_endpoint,
+                identity_signing_public_key,
+                identity_signing_sk,
+                machine_signing_sk,
+                machine_encryption_sk,
+                ..
+            } => match result {
+                Ok(()) => {
+                    syscall::debug(&format!(
+                        "IdentityService: Machine key {:032x} stored, now enrolling with ZID",
+                        record.machine_id
+                    ));
+                    // Chain to ZID enrollment with the stored machine key
+                    session::continue_combined_enroll_after_machine_write(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        zid_endpoint,
+                        record,
+                        identity_signing_public_key,
+                        identity_signing_sk,
+                        machine_signing_sk,
+                        machine_encryption_sk,
+                        ctx.cap_slots,
+                    )
+                }
+                Err(e) => {
+                    syscall::debug(&format!(
+                        "IdentityService: WriteMachineKeyForEnroll failed - machine_id={:032x}, error={}",
+                        record.machine_id, e
+                    ));
+                    response::send_create_machine_key_and_enroll_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        zos_identity::error::ZidError::NetworkError(format!("Machine key storage failed: {}", e)),
+                    )
+                }
+            },
             // Operations that should NOT receive a write response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::GetIdentityKey { ctx }
@@ -549,13 +686,17 @@ impl IdentityService {
             | PendingKeystoreOp::ReadIdentityForMachine { ctx, .. }
             | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidLogin { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidEnroll { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
             | PendingKeystoreOp::ReadMachineForRotate { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
             | PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, .. }
-            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. } => {
+            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore write result for non-write op, client_pid={}",
                     ctx.client_pid
@@ -605,6 +746,8 @@ impl IdentityService {
             | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidLogin { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidEnroll { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteMachineKey { ctx, .. }
             | PendingKeystoreOp::DeleteIdentityKeyAfterShardFailure { ctx, .. }
@@ -612,7 +755,10 @@ impl IdentityService {
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
             | PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, .. }
-            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. } => {
+            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::WriteMachineKeyForEnroll { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore exists result for non-exists op, client_pid={}",
                     ctx.client_pid
@@ -661,6 +807,50 @@ impl IdentityService {
                     response::send_list_machine_keys(ctx.client_pid, &ctx.cap_slots, alloc::vec![])
                 }
             },
+            PendingKeystoreOp::ListMachineKeysForZidLogin { ctx, user_id, zid_endpoint } => match result {
+                Ok(keys) => {
+                    // Find first machine key for ZID login
+                    let path = keys.into_iter().find(|k| k.ends_with(".json"));
+                    match path {
+                        Some(p) => self.start_keystore_read(
+                            &p,
+                            PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, user_id, zid_endpoint },
+                        ),
+                        None => response::send_zid_login_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            zos_identity::error::ZidError::MachineKeyNotFound,
+                        ),
+                    }
+                }
+                Err(_) => response::send_zid_login_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
+            PendingKeystoreOp::ListMachineKeysForZidEnroll { ctx, user_id, zid_endpoint } => match result {
+                Ok(keys) => {
+                    // Find first machine key for ZID enrollment
+                    let path = keys.into_iter().find(|k| k.ends_with(".json"));
+                    match path {
+                        Some(p) => self.start_keystore_read(
+                            &p,
+                            PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, user_id, zid_endpoint },
+                        ),
+                        None => response::send_zid_enroll_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            zos_identity::error::ZidError::MachineKeyNotFound,
+                        ),
+                    }
+                }
+                Err(_) => response::send_zid_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
             // Operations that should NOT receive a list response
             PendingKeystoreOp::CheckKeyExists { ctx, .. }
             | PendingKeystoreOp::WriteKeyStore { ctx, .. }
@@ -678,7 +868,10 @@ impl IdentityService {
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
             | PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, .. }
-            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. } => {
+            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::WriteMachineKeyForEnroll { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore list result for non-list op, client_pid={}",
                     ctx.client_pid
@@ -734,12 +927,17 @@ impl IdentityService {
             | PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, .. }
             | PendingKeystoreOp::WriteMachineKey { ctx, .. }
             | PendingKeystoreOp::ListMachineKeys { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidLogin { ctx, .. }
+            | PendingKeystoreOp::ListMachineKeysForZidEnroll { ctx, .. }
             | PendingKeystoreOp::ReadMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadMachineForRotate { ctx, .. }
             | PendingKeystoreOp::WriteRotatedMachineKey { ctx, .. }
             | PendingKeystoreOp::ReadSingleMachineKey { ctx }
             | PendingKeystoreOp::ReadMachineKeyForZidLogin { ctx, .. }
-            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. } => {
+            | PendingKeystoreOp::ReadMachineKeyForZidEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::ReadEncryptedShardsForMachineEnroll { ctx, .. }
+            | PendingKeystoreOp::WriteMachineKeyForEnroll { ctx, .. } => {
                 syscall::debug(&format!(
                     "IdentityService: STATE_MACHINE_ERROR - unexpected keystore delete result for non-delete op, client_pid={}",
                     ctx.client_pid

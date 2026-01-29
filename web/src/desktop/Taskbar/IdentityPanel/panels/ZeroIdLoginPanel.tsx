@@ -1,81 +1,53 @@
 import { useState } from 'react';
+import { Button, Label, Spinner } from '@cypher-asi/zui';
 import {
-  Button,
-  Card,
-  CardItem,
-  Text,
-  Input,
-  Label,
-  Spinner,
-  ButtonCollapsible,
-} from '@cypher-asi/zui';
-import { User, LogIn, LogOut, Key, Clock, Copy, Check, Shield } from 'lucide-react';
+  Key,
+  Clock,
+  Server,
+  Fingerprint,
+  Shield,
+  Laptop,
+  Copy,
+  Check,
+  LogOut,
+} from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
+import { useMachineKeys } from '../../../hooks/useMachineKeys';
 import styles from './ZeroIdLoginPanel.module.css';
 
-export function ZeroIdLoginPanel() {
+interface ZeroIdLoginPanelProps {
+  /** Callback to close the subpanel (e.g., after disconnect) */
+  onClose?: () => void;
+}
+
+/**
+ * ZeroIdLoginPanel - Shows connected session info
+ * 
+ * This panel is only displayed when the user is connected to ZERO ID.
+ * Login functionality is handled by the LoginModal.
+ */
+export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
   const {
     remoteAuthState,
     isAuthenticating,
     error,
-    loginWithEmail,
-    loginWithMachineKey,
-    enrollMachine,
-    logout,
+    disconnect,
     refreshToken,
     getTimeRemaining,
     isTokenExpired,
   } = useZeroIdAuth();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [showTokens, setShowTokens] = useState(false);
   const { copy, isCopied } = useCopyToClipboard();
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
-  const handleLogin = async () => {
-    setLocalError(null);
-
-    if (!email || !password) {
-      setLocalError('Email and password are required');
-      return;
-    }
-
-    try {
-      await loginWithEmail(email, password);
-      setEmail('');
-      setPassword('');
-    } catch {
-      // Error is already set in the hook
-    }
-  };
-
-  const handleMachineKeyLogin = async () => {
-    setLocalError(null);
-    try {
-      await loginWithMachineKey();
-    } catch {
-      // Error is already set in the hook
-    }
-  };
-
-  const handleEnrollMachine = async () => {
-    setLocalError(null);
-    try {
-      await enrollMachine();
-    } catch {
-      // Error is already set in the hook
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch {
-      // Error is already set in the hook
-    }
-  };
+  // Machine keys data (using hook triggers auto-refresh from keystore cache)
+  const { state: machineKeysState } = useMachineKeys();
+  const machines = machineKeysState.machines;
+  // Look up the authorized machine for this session (by machineId from auth state)
+  const authorizedMachine = machines.find(
+    (m) => m.machineId === (remoteAuthState?.machineId ?? '')
+  );
 
   const handleRefresh = async () => {
     try {
@@ -85,206 +57,188 @@ export function ZeroIdLoginPanel() {
     }
   };
 
-  const truncateToken = (token: string) => {
-    if (token.length <= 20) return token;
-    return token.slice(0, 10) + '...' + token.slice(-6);
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await disconnect();
+      // Close subpanel after successful disconnect
+      onClose?.();
+    } catch {
+      // Error is already set in the hook
+    } finally {
+      setIsDisconnecting(false);
+    }
   };
 
-  // Logged In State
-  if (remoteAuthState) {
-    const expired = isTokenExpired();
+  // Helper to truncate session ID
+  const truncateId = (id: string) => {
+    if (id.length <= 12) return id;
+    return id.slice(0, 6) + '...' + id.slice(-4);
+  };
 
-    return (
-      <div className={styles.panel}>
-        <div className={styles.header}>
-          <User size={20} />
-          <Text variant="heading">ZERO ID</Text>
-          <Label variant={expired ? 'warning' : 'success'} className={styles.statusLabel}>
-            {expired ? 'Expired' : 'Connected'}
-          </Label>
-        </div>
+  // Helper to format server endpoint
+  const formatServer = (endpoint: string) => {
+    try {
+      const url = new URL(endpoint);
+      return url.host;
+    } catch {
+      return endpoint;
+    }
+  };
 
-        <div className={styles.content}>
-          <Card className={styles.userCard}>
-            <CardItem className={styles.userItem}>
-              <div className={styles.userAvatar}>
-                <Shield size={20} />
-              </div>
-              <div className={styles.userInfo}>
-                <div className={styles.userKey}>{remoteAuthState.userKey}</div>
-                <div className={styles.expiresInfo}>
-                  <Clock size={10} />
-                  <span>Expires: {getTimeRemaining()}</span>
-                </div>
-              </div>
-            </CardItem>
-          </Card>
-
-          <ButtonCollapsible
-            label="Session Tokens"
-            expanded={showTokens}
-            onToggle={() => setShowTokens(!showTokens)}
-          >
-            <div className={styles.tokensSection}>
-              <div className={styles.tokenItem}>
-                <Label variant="default">Access Token</Label>
-                <div className={styles.tokenValue}>
-                  <code>{truncateToken(remoteAuthState.accessToken)}</code>
-                  <Button
-                    variant="ghost"
-                    onClick={() => copy(remoteAuthState.accessToken, 'access')}
-                    className={styles.copyButton}
-                  >
-                    {isCopied('access') ? (
-                      <Check size={12} className={styles.checkIcon} />
-                    ) : (
-                      <Copy size={12} />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {remoteAuthState.refreshToken && (
-                <div className={styles.tokenItem}>
-                  <Label variant="default">Refresh Token</Label>
-                  <div className={styles.tokenValue}>
-                    <code>{truncateToken(remoteAuthState.refreshToken)}</code>
-                    <Button
-                      variant="ghost"
-                      onClick={() => copy(remoteAuthState.refreshToken ?? '', 'refresh')}
-                      className={styles.copyButton}
-                    >
-                      {isCopied('refresh') ? (
-                        <Check size={12} className={styles.checkIcon} />
-                      ) : (
-                        <Copy size={12} />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className={styles.tokenItem}>
-                <Label variant="default">Scopes</Label>
-                <div className={styles.scopesList}>
-                  {remoteAuthState.scopes.map((scope, i) => (
-                    <Label key={i} variant="default" className={styles.scopeBadge}>
-                      {scope}
-                    </Label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </ButtonCollapsible>
-
-          <div className={styles.actions}>
-            {expired && remoteAuthState.refreshToken && (
-              <Button
-                variant="secondary"
-                onClick={handleRefresh}
-                disabled={isAuthenticating}
-                className={styles.refreshButton}
-              >
-                {isAuthenticating ? <Spinner size="small" /> : <Key size={14} />}
-                Refresh Token
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={handleLogout}
-              disabled={isAuthenticating}
-              className={styles.logoutButton}
-            >
-              <LogOut size={14} />
-              Logout
-            </Button>
-          </div>
-
-          {error && (
-            <Label variant="error" className={styles.error}>
-              {error}
-            </Label>
-          )}
-        </div>
-      </div>
-    );
+  // Only render when connected
+  if (!remoteAuthState) {
+    return null;
   }
 
-  // Login State
+  const expired = isTokenExpired();
+
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <User size={20} />
-        <Text variant="heading">Login w/ ZERO ID</Text>
-      </div>
-
+      {/* Scrollable Content Section */}
       <div className={styles.content}>
-        <div className={styles.formGroup}>
-          <Label variant="default">Email</Label>
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            disabled={isAuthenticating}
-          />
+        {/* Session Info List */}
+        <div className={styles.infoList}>
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Server size={12} />
+              <span>Server</span>
+            </div>
+            <div className={styles.infoValueWithCopy}>
+              <code className={styles.infoValueCode}>{formatServer(remoteAuthState.serverEndpoint)}</code>
+              <Button
+                variant={isCopied('server') ? 'primary' : 'ghost'}
+                size="xs"
+                onClick={() => copy(remoteAuthState.serverEndpoint, 'server')}
+                className={styles.copyButton}
+              >
+                {isCopied('server') ? <Check size={12} /> : <Copy size={12} />}
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Fingerprint size={12} />
+              <span>Session</span>
+            </div>
+            <div className={styles.infoValueWithCopy}>
+              <code className={styles.infoValueCode}>{truncateId(remoteAuthState.sessionId)}</code>
+              <Button
+                variant={isCopied('session') ? 'primary' : 'ghost'}
+                size="xs"
+                onClick={() => copy(remoteAuthState.sessionId, 'session')}
+                className={styles.copyButton}
+              >
+                {isCopied('session') ? <Check size={12} /> : <Copy size={12} />}
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Clock size={12} />
+              <span>Expires</span>
+            </div>
+            <div className={expired ? styles.infoValueWarning : styles.infoValueAccent}>
+              {getTimeRemaining()}
+            </div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Key size={12} />
+              <span>Authorized Key</span>
+            </div>
+            <div className={styles.infoValueWithBadge}>
+              {authorizedMachine ? (
+                <>
+                  <span>{authorizedMachine.machineName || 'Machine Key'}</span>
+                  <Label variant="default" size="xs">
+                    {authorizedMachine.keyScheme === 'pq_hybrid' ? 'PQ' : 'ED'}
+                  </Label>
+                  <Button
+                    variant={isCopied('auth-key') ? 'primary' : 'ghost'}
+                    size="xs"
+                    onClick={() => copy(authorizedMachine.publicKey, 'auth-key')}
+                    className={styles.copyButton}
+                  >
+                    {isCopied('auth-key') ? <Check size={12} /> : <Copy size={12} />}
+                  </Button>
+                </>
+              ) : remoteAuthState.machineId ? (
+                <>
+                  <code className={styles.infoValueCode}>{truncateId(remoteAuthState.machineId)}</code>
+                  <Button
+                    variant={isCopied('auth-key') ? 'primary' : 'ghost'}
+                    size="xs"
+                    onClick={() => copy(remoteAuthState.machineId, 'auth-key')}
+                    className={styles.copyButton}
+                  >
+                    {isCopied('auth-key') ? <Check size={12} /> : <Copy size={12} />}
+                  </Button>
+                </>
+              ) : (
+                <span className={styles.textMuted}>Unknown</span>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Laptop size={12} />
+              <span>Devices</span>
+            </div>
+            <div className={styles.infoValue}>{machines.length} linked</div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <Shield size={12} />
+              <span>Scopes</span>
+            </div>
+            <div className={styles.scopesList}>
+              {remoteAuthState.scopes.map((scope, i) => (
+                <Label key={i} variant="default" size="xs">
+                  {scope}
+                </Label>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className={styles.formGroup}>
-          <Label variant="default">Password</Label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
-            disabled={isAuthenticating}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-          />
-        </div>
+        {/* Actions */}
+        {expired && remoteAuthState.refreshToken && (
+          <div className={styles.actions}>
+            <Button
+              variant="secondary"
+              onClick={handleRefresh}
+              disabled={isAuthenticating}
+              className={styles.actionButton}
+            >
+              {isAuthenticating ? <Spinner size="small" /> : <Key size={14} />}
+              Refresh Token
+            </Button>
+          </div>
+        )}
 
-        <Button
-          variant="primary"
-          onClick={handleLogin}
-          disabled={isAuthenticating || !email || !password}
-          className={styles.loginButton}
-        >
-          {isAuthenticating ? <Spinner size="small" /> : <LogIn size={14} />}
-          Login
-        </Button>
-
-        <div className={styles.divider}>
-          <span>or</span>
-        </div>
-
-        <Button
-          variant="secondary"
-          onClick={handleMachineKeyLogin}
-          disabled={isAuthenticating}
-          className={styles.machineKeyButton}
-        >
-          <Key size={14} />
-          Login with Machine Key
-        </Button>
-
-        <div className={styles.divider}>
-          <span>or</span>
-        </div>
-
-        <Button
-          variant="ghost"
-          onClick={handleEnrollMachine}
-          disabled={isAuthenticating}
-          className={styles.enrollButton}
-        >
-          {isAuthenticating ? <Spinner size="small" /> : <Shield size={14} />}
-          Verify Identity
-        </Button>
-
-        {(localError || error) && (
+        {error && (
           <Label variant="error" className={styles.error}>
-            {localError || error}
+            {error}
           </Label>
         )}
+      </div>
+
+      {/* Footer - Disconnect Button pinned to bottom */}
+      <div className={styles.footer}>
+        <button
+          className={styles.disconnectButton}
+          onClick={handleDisconnect}
+          disabled={isDisconnecting || isAuthenticating}
+        >
+          {isDisconnecting ? <Spinner size="small" /> : <LogOut size={14} />}
+          <span>Disconnect</span>
+        </button>
       </div>
     </div>
   );

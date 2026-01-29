@@ -7,27 +7,15 @@ import {
   formatUserId,
 } from '@/client-services';
 import { useSupervisor } from './useSupervisor';
-import { useIdentityStore, selectCurrentUser } from '@/stores';
+import {
+  useIdentityStore,
+  selectCurrentUser,
+  selectRemoteAuthState,
+  type RemoteAuthState,
+} from '@/stores';
 
-// =============================================================================
-// ZERO ID Auth Types (mirrors zos-identity/src/ipc.rs)
-// =============================================================================
-
-/** Remote authentication state */
-export interface RemoteAuthState {
-  /** Remote authentication server endpoint */
-  serverEndpoint: string;
-  /** OAuth2/OIDC access token */
-  accessToken: string;
-  /** When the access token expires (timestamp) */
-  tokenExpiresAt: number;
-  /** Refresh token (if available) */
-  refreshToken: string | null;
-  /** Granted OAuth scopes */
-  scopes: string[];
-  /** Session ID from ZID server */
-  sessionId: string;
-}
+// Re-export RemoteAuthState for backward compatibility
+export type { RemoteAuthState };
 
 /** Hook return type */
 export interface UseZeroIdAuthReturn {
@@ -45,8 +33,8 @@ export interface UseZeroIdAuthReturn {
   loginWithMachineKey: (zidEndpoint?: string) => Promise<void>;
   /** Enroll/register machine with ZID server */
   enrollMachine: (zidEndpoint?: string) => Promise<void>;
-  /** Logout from ZERO ID */
-  logout: () => Promise<void>;
+  /** Disconnect from ZERO ID (clears remote session, not local identity) */
+  disconnect: () => Promise<void>;
   /** Refresh the access token */
   refreshToken: () => Promise<void>;
   /** Get time remaining until token expires */
@@ -92,7 +80,11 @@ function formatTimeRemaining(expiresAt: number): string {
 // =============================================================================
 
 export function useZeroIdAuth(): UseZeroIdAuthReturn {
-  const [remoteAuthState, setRemoteAuthState] = useState<RemoteAuthState | null>(null);
+  // Use shared store for remoteAuthState so all consumers get updates
+  const remoteAuthState = useIdentityStore(selectRemoteAuthState);
+  const setRemoteAuthState = useIdentityStore((state) => state.setRemoteAuthState);
+
+  // Local state for loading/error (these are per-component)
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +116,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
 
         if (session && session.expires_at > Date.now()) {
           // Valid session found, restore state
+          // Note: machine_id may not be in older cached sessions (backward compat)
           setRemoteAuthState({
             serverEndpoint: session.zid_endpoint,
             accessToken: session.access_token,
@@ -131,6 +124,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
             refreshToken: session.refresh_token,
             scopes: ['read', 'write', 'sync'], // Default scopes
             sessionId: session.session_id,
+            machineId: session.machine_id ?? '',
           });
           console.log('[useZeroIdAuth] Restored session from VFS cache');
         } else if (session) {
@@ -197,10 +191,11 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         const authState: RemoteAuthState = {
           serverEndpoint: zidEndpoint,
           accessToken: tokens.access_token,
-          tokenExpiresAt: Date.now() + tokens.expires_in * 1000, // expires_in is in seconds
+          tokenExpiresAt: new Date(tokens.expires_at).getTime(),
           refreshToken: tokens.refresh_token,
           scopes: ['read', 'write', 'sync'],
           sessionId: tokens.session_id,
+          machineId: tokens.machine_id,
         };
 
         setRemoteAuthState(authState);
@@ -236,10 +231,11 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         const authState: RemoteAuthState = {
           serverEndpoint: zidEndpoint,
           accessToken: tokens.access_token,
-          tokenExpiresAt: Date.now() + tokens.expires_in * 1000,
+          tokenExpiresAt: new Date(tokens.expires_at).getTime(),
           refreshToken: tokens.refresh_token,
           scopes: ['read', 'write', 'sync'],
           sessionId: tokens.session_id,
+          machineId: tokens.machine_id,
         };
 
         setRemoteAuthState(authState);
@@ -255,23 +251,36 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     [currentUserId]
   );
 
-  const logout = useCallback(async () => {
+  const disconnect = useCallback(async () => {
     setIsAuthenticating(true);
     setError(null);
 
     try {
-      // TODO: Implement logout via IPC to invalidate session server-side
-      // For now, just clear local state
+      // Delete session from VFS via IPC (canonical approach)
+      if (clientRef.current && currentUserId) {
+        try {
+          await clientRef.current.zidLogout(currentUserId);
+          console.log('[useZeroIdAuth] Session deleted from VFS via IPC');
+        } catch (err) {
+          // Log but don't fail - session file might not exist
+          console.warn('[useZeroIdAuth] VFS session delete failed:', err);
+        }
+      }
+
+      // Reset initialized flag so session can be loaded on next connect
+      initializedRef.current = false;
+
+      // Clear React state (remote session only, not local identity)
       setRemoteAuthState(null);
-      console.log('[useZeroIdAuth] Logged out');
+      console.log('[useZeroIdAuth] Disconnected from ZERO ID');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Logout failed';
+      const errorMsg = err instanceof Error ? err.message : 'Disconnect failed';
       setError(errorMsg);
       throw err;
     } finally {
       setIsAuthenticating(false);
     }
-  }, []);
+  }, [currentUserId]);
 
   const refreshTokenFn = useCallback(async () => {
     if (!remoteAuthState?.refreshToken) {
@@ -315,7 +324,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     loginWithEmail,
     loginWithMachineKey,
     enrollMachine,
-    logout,
+    disconnect,
     refreshToken: refreshTokenFn,
     getTimeRemaining,
     isTokenExpired,

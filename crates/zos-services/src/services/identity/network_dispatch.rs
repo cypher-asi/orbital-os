@@ -292,6 +292,126 @@ impl IdentityService {
                     _ => Ok(()),
                 }
             }
+            // Combined Machine Key + ZID Enrollment flow
+            PendingNetworkOp::SubmitZidEnrollForCombined {
+                ctx,
+                user_id,
+                zid_endpoint,
+                machine_id,
+                identity_signing_public_key,
+                machine_signing_public_key,
+                machine_encryption_public_key,
+                machine_signing_sk,
+                machine_encryption_sk,
+                machine_key_record,
+            } => {
+                match network_handlers::handle_combined_enroll_result(
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint.clone(),
+                    machine_id,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueCombinedEnroll {
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        server_machine_id,
+                        cap_slots,
+                    } => session::continue_combined_enroll_after_identity_create(
+                        self,
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        machine_id,
+                        identity_signing_public_key,
+                        machine_signing_public_key,
+                        machine_encryption_public_key,
+                        machine_signing_sk,
+                        machine_encryption_sk,
+                        *machine_key_record,
+                        server_machine_id,
+                        cap_slots,
+                    ),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::RequestZidChallengeForCombined {
+                ctx,
+                user_id,
+                zid_endpoint,
+                machine_id,
+                identity_signing_public_key,
+                machine_signing_public_key,
+                machine_encryption_public_key,
+                machine_signing_sk,
+                machine_encryption_sk,
+                machine_key_record,
+            } => {
+                match network_handlers::handle_combined_challenge_result(
+                    ctx.client_pid,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueCombinedChallenge {
+                        client_pid: _,
+                        challenge_response,
+                        cap_slots,
+                    } => session::continue_combined_enroll_after_challenge(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        zid_endpoint,
+                        machine_id,
+                        identity_signing_public_key,
+                        machine_signing_public_key,
+                        machine_encryption_public_key,
+                        machine_signing_sk,
+                        machine_encryption_sk,
+                        *machine_key_record,
+                        challenge_response,
+                        cap_slots,
+                    ),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::SubmitZidLoginForCombined {
+                ctx,
+                user_id,
+                zid_endpoint,
+                machine_id: _,
+                identity_signing_public_key: _,
+                machine_signing_public_key: _,
+                machine_encryption_public_key: _,
+                machine_signing_sk: _,
+                machine_encryption_sk: _,
+                machine_key_record,
+            } => {
+                match network_handlers::handle_combined_login_result(
+                    ctx.client_pid,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueCombinedLogin {
+                        client_pid: _,
+                        login_response,
+                        cap_slots,
+                    } => session::continue_combined_enroll_after_login(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        zid_endpoint,
+                        *machine_key_record,
+                        login_response,
+                        cap_slots,
+                    ),
+                    _ => Ok(()),
+                }
+            }
         }
     }
 }

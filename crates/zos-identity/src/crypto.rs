@@ -28,10 +28,17 @@ pub use zid_crypto::{
     // Key derivation
     derive_identity_signing_keypair,
     derive_machine_keypair_with_scheme,
+    derive_machine_seed,
+    derive_machine_signing_seed,
+    derive_machine_encryption_seed,
     
     // Signing
     sign_message,
     verify_signature,
+    
+    // Challenge types
+    Challenge,
+    EntityType,
     
     // Canonical message builders
     canonicalize_identity_creation_message,

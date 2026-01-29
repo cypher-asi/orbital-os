@@ -24,6 +24,7 @@ import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
   onClose: () => void;
+  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
 /** Format a ZERO ID user key for display */
@@ -35,7 +36,7 @@ function formatUserKey(key: string): string {
   return key;
 }
 
-export function IdentityPanel({ onClose }: IdentityPanelProps) {
+export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Use Zustand store directly for better performance
@@ -43,7 +44,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const currentUser = useIdentityStore(selectCurrentUser);
   const currentSession = useIdentityStore(selectCurrentSession);
 
-  const { remoteAuthState } = useZeroIdAuth();
+  const { remoteAuthState, disconnect: disconnectZeroId } = useZeroIdAuth();
   const { launchOrFocusApp } = useWindowActions();
   const setPendingNavigation = useSettingsStore((state) => state.setPendingNavigation);
 
@@ -105,11 +106,13 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         case 'login-zero-id':
           if (isZeroIdConnected) {
-            // Show connected status in subpanel (existing behavior)
+            // Show connected status in subpanel
             subPanelLabel = 'ZERO ID';
-            subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
+            subPanelContent = (
+              <ZeroIdLoginPanel key="login-zero-id" onClose={() => setStack([])} />
+            );
           } else {
-            // Show centered login modal (NEW)
+            // Show centered login modal when not connected
             setShowLoginModal(true);
             return; // Don't open subpanel
           }
@@ -117,13 +120,19 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         case 'logout':
           try {
+            // Disconnect from ZERO ID if connected (remote session only)
+            if (isZeroIdConnected) {
+              await disconnectZeroId();
+              console.log('[identity-panel] ZERO ID disconnect successful');
+            }
+            // Logout from local identity
             await identityStore.logout();
-            console.log('[identity-panel] Logout successful');
+            console.log('[identity-panel] Local logout successful');
           } catch (error) {
             console.error('[identity-panel] Logout failed:', error);
           }
           onClose();
-          return; // Don't open subpanel
+          return;
 
         default:
           console.log('[identity-panel] Unhandled menu item:', id);
@@ -132,14 +141,13 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
       if (subPanelContent) {
         // Set the subpanel stack with root item for breadcrumb navigation
-        // Root item is a placeholder - navigating to it closes the subpanel
         setStack([
           { id: 'identity', label: 'Identity', content: null },
           { id, label: subPanelLabel, content: subPanelContent },
         ]);
       }
     },
-    [identityStore, onClose, isZeroIdConnected, openIdentitySettings]
+    [identityStore, onClose, isZeroIdConnected, disconnectZeroId, openIdentitySettings]
   );
 
   // Handle breadcrumb navigation within subpanel
@@ -156,16 +164,23 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   // Click outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
-        onClose();
+      const target = event.target as Node;
+      // Ignore clicks inside the panel
+      if (panelRef.current && panelRef.current.contains(target)) {
+        return;
       }
+      // Ignore clicks on the container (includes the toggle button)
+      if (containerRef?.current && containerRef.current.contains(target)) {
+        return;
+      }
+      onClose();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [onClose]);
+  }, [onClose, containerRef]);
 
   // Dynamic nav items based on ZERO ID connection state
   const navItems: MenuItem[] = useMemo(
@@ -179,7 +194,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
       { type: 'separator' },
       {
         id: 'login-zero-id',
-        label: isZeroIdConnected ? `Connected · ${formatUserKey(zeroIdUserKey || '')}` : 'Login',
+        label: isZeroIdConnected ? `Connected ${formatUserKey(zeroIdUserKey || '')}` : 'Login',
         icon: isZeroIdConnected ? (
           <div className={styles.connectedIndicator}>
             <User size={14} />
@@ -243,8 +258,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
             onNavigate={handleNavigate}
             className={styles.subpanel}
             background="none"
-            border="future"
-            style={{ background: 'transparent' }}
+            border="none"
           />
         </div>
       )}

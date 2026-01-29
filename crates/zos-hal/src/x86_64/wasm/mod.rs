@@ -87,15 +87,15 @@ impl WasmRuntime {
         config.consume_fuel(true);
         
         // Increase stack limits to handle large operations
-        // Default is 64KB value stack and 1024 call depth
-        // We increase both to support services with large data processing
         // StackLimits::new(initial_value_stack, maximum_value_stack, maximum_recursion_depth)
-        // With 16MB heap, we can afford larger stacks for processes that handle big data
+        // NOTE: Values appear to be in stack ENTRIES (not bytes). Each entry is ~8 bytes.
+        // Default is ~1024 initial, ~8192 max, 1024 recursion depth
+        // We use conservative increases to avoid OOM while preventing stack overflow
         config.set_stack_limits(
             wasmi::StackLimits::new(
-                128 * 1024,     // 128KB initial value stack
-                4 * 1024 * 1024, // 4MB maximum value stack (64x default)
-                32768,          // 32768 maximum recursion depth (32x default)
+                4096,    // ~32KB initial value stack (in entries)
+                262144,  // ~2MB maximum value stack (in entries, 262144 * 8 = 2MB)
+                8192,    // 8192 maximum recursion depth
             ).expect("Valid stack limits")
         );
         

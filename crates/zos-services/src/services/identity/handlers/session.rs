@@ -31,7 +31,7 @@ use super::super::utils::{
     machine_keypair_from_seeds, neural_key_from_bytes, sign_message, sign_with_machine_keypair,
     u128_to_uuid_bytes,
 };
-use super::super::pending::{PendingNetworkOp, PendingStorageOp, RequestContext};
+use super::super::pending::{PendingKeystoreOp, PendingNetworkOp, PendingStorageOp, RequestContext};
 use super::super::response;
 use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::NeuralKey;
@@ -72,12 +72,12 @@ pub fn handle_zid_login(service: &mut IdentityService, msg: &Message) -> Result<
         );
     }
 
-    // Get machine directory to find any existing machine key
-    let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);
+    // Get machine keys from keystore (Invariant 32: /keys/ paths use Keystore)
+    let machine_prefix = format!("/keys/{}/identity/machine/", request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_readdir(
-        &machine_dir,
-        PendingStorageOp::ReadMachineKeyForZidLogin {
+    service.start_keystore_list(
+        &machine_prefix,
+        PendingKeystoreOp::ListMachineKeysForZidLogin {
             ctx,
             user_id: request.user_id,
             zid_endpoint: request.zid_endpoint,
@@ -158,10 +158,9 @@ pub fn continue_zid_login_after_challenge(
     #[derive(serde::Deserialize)]
     struct ChallengeResponse {
         challenge: String,
-        challenge_id: String,
     }
 
-    let challenge: ChallengeResponse = match serde_json::from_slice(&challenge_response.body) {
+    let challenge_resp: ChallengeResponse = match serde_json::from_slice(&challenge_response.body) {
         Ok(c) => c,
         Err(_) => {
             return response::send_zid_login_error(
@@ -172,9 +171,23 @@ pub fn continue_zid_login_after_challenge(
         }
     };
 
-    let challenge_bytes = match base64_decode(&challenge.challenge) {
+    // The challenge field is base64-encoded JSON of the full Challenge struct
+    let challenge_json = match base64_decode(&challenge_resp.challenge) {
         Ok(b) => b,
         Err(_) => {
+            return response::send_zid_login_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidChallenge,
+            )
+        }
+    };
+
+    // Parse the Challenge struct from JSON
+    let challenge: zos_identity::crypto::Challenge = match serde_json::from_slice(&challenge_json) {
+        Ok(c) => c,
+        Err(e) => {
+            syscall::debug(&format!("Failed to parse challenge JSON: {}", e));
             return response::send_zid_login_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
@@ -206,8 +219,9 @@ pub fn continue_zid_login_after_challenge(
         }
     };
 
-    // Sign the challenge with the machine key
-    let signature = sign_with_machine_keypair(&challenge_bytes, &machine_keypair);
+    // Sign the CANONICAL challenge message (130 bytes), not the raw JSON
+    let canonical_message = zos_identity::crypto::canonicalize_challenge(&challenge);
+    let signature = sign_with_machine_keypair(&canonical_message, &machine_keypair);
     let signature_hex = bytes_to_hex(&signature);
     let machine_id_uuid = format_uuid(machine_key.machine_id);
     let login_body = format!(
@@ -255,7 +269,8 @@ pub fn continue_zid_login_after_login(
         access_token: tokens.access_token.clone(),
         refresh_token: tokens.refresh_token.clone(),
         session_id: tokens.session_id.clone(),
-        expires_at: now + (tokens.expires_in * 1000),
+        machine_id: tokens.machine_id.clone(),
+        expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
         created_at: now,
     };
 
@@ -310,12 +325,12 @@ pub fn handle_zid_enroll_machine(
         );
     }
 
-    // Get machine directory to find any existing machine key
-    let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);
+    // Get machine keys from keystore (Invariant 32: /keys/ paths use Keystore)
+    let machine_prefix = format!("/keys/{}/identity/machine/", request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_vfs_readdir(
-        &machine_dir,
-        PendingStorageOp::ReadMachineKeyForZidEnroll {
+    service.start_keystore_list(
+        &machine_prefix,
+        PendingKeystoreOp::ListMachineKeysForZidEnroll {
             ctx,
             user_id: request.user_id,
             zid_endpoint: request.zid_endpoint,
@@ -583,7 +598,6 @@ pub fn continue_zid_enroll_after_challenge(
     #[derive(serde::Deserialize)]
     struct ChallengeResponse {
         challenge: String,
-        challenge_id: String,
     }
 
     let challenge: ChallengeResponse = match serde_json::from_slice(&challenge_response.body) {
@@ -653,6 +667,376 @@ pub fn continue_zid_enroll_after_challenge(
             machine_signing_sk,
             machine_encryption_sk,
         },
+    )
+}
+
+// =============================================================================
+// Combined Machine Key + ZID Enrollment Flow
+// =============================================================================
+
+/// Continue combined enrollment after machine key is stored in keystore.
+///
+/// This function is called after WriteMachineKeyForEnroll succeeds.
+/// It initiates the ZID enrollment using the already-stored machine key.
+pub fn continue_combined_enroll_after_machine_write(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    machine_key_record: MachineKeyRecord,
+    identity_signing_public_key: [u8; 32],
+    identity_signing_sk: [u8; 32],
+    machine_signing_sk: [u8; 32],
+    machine_encryption_sk: [u8; 32],
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    let machine_id = machine_key_record.machine_id;
+    let now_ms = syscall::get_wallclock();
+    let now_secs = now_ms / 1000;
+
+    // Convert IDs to UUID bytes for zid-crypto
+    let identity_uuid_bytes = u128_to_uuid_bytes(user_id);
+    let identity_uuid = zos_identity::crypto::uuid_from_bytes(&identity_uuid_bytes);
+    let machine_uuid_bytes = u128_to_uuid_bytes(machine_id);
+
+    // Reconstruct identity keypair from the passed-through seed
+    // (The seed was derived from Neural Key in continue_create_machine_enroll_after_shards_read)
+    let identity_keypair = zos_identity::crypto::Ed25519KeyPair::from_seed(&identity_signing_sk)
+        .map_err(|e| AppError::Internal(format!("Identity keypair reconstruction failed: {:?}", e)))?;
+
+    // Reconstruct machine keypair from stored seeds
+    let machine_keypair = machine_keypair_from_seeds(&machine_signing_sk, &machine_encryption_sk)
+        .map_err(|e| AppError::Internal(format!("Machine key reconstruction failed: {:?}", e)))?;
+
+    // DEBUG: Log the public key being sent to server for enrollment
+    syscall::debug(&format!(
+        "IdentityService: DEBUG ENROLL - machine_signing_pubkey_to_server: {}",
+        bytes_to_hex(&machine_keypair.signing_public_key())
+    ));
+    syscall::debug(&format!(
+        "IdentityService: DEBUG ENROLL - machine_signing_sk_first8: {}",
+        bytes_to_hex(&machine_signing_sk[..8])
+    ));
+
+    // Build ZID machine key structure
+    let zid_machine_key = ZidMachineKey {
+        machine_id: format_uuid(machine_id),
+        signing_public_key: bytes_to_hex(&machine_keypair.signing_public_key()),
+        encryption_public_key: bytes_to_hex(&machine_keypair.encryption_public_key()),
+        capabilities: vec!["SIGN".into(), "ENCRYPT".into(), "VAULT_OPERATIONS".into()],
+        device_name: machine_key_record.machine_name.clone().unwrap_or_else(|| "Browser".into()),
+        device_platform: "web".into(),
+    };
+
+    // Create authorization signature
+    let message = canonicalize_identity_creation_message(
+        &identity_uuid,
+        &identity_signing_public_key,
+        &zos_identity::crypto::uuid_from_bytes(&machine_uuid_bytes),
+        &machine_keypair.signing_public_key(),
+        &machine_keypair.encryption_public_key(),
+        now_secs,
+    );
+    let signature = sign_message(&identity_keypair, &message);
+
+    // Build CreateIdentityRequest
+    let create_request = CreateIdentityRequest {
+        identity_id: format_uuid(user_id),
+        identity_signing_public_key: bytes_to_hex(&identity_signing_public_key),
+        authorization_signature: bytes_to_hex(&signature),
+        machine_key: zid_machine_key,
+        namespace_name: "personal".into(),
+        created_at: now_secs,
+    };
+
+    let enroll_body = match serde_json::to_vec(&create_request) {
+        Ok(b) => b,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::NetworkError(format!("Serialization failed: {}", e)),
+            );
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Combined flow - enrolling machine {:032x} with ZID",
+        machine_id
+    ));
+
+    let enroll_request = HttpRequest::post(format!("{}/v1/identity", zid_endpoint))
+        .with_json_body(enroll_body)
+        .with_timeout(10_000);
+
+    service.start_network_fetch(
+        &enroll_request,
+        PendingNetworkOp::SubmitZidEnrollForCombined {
+            ctx,
+            user_id,
+            zid_endpoint,
+            machine_id,
+            identity_signing_public_key,
+            machine_signing_public_key: machine_keypair.signing_public_key(),
+            machine_encryption_public_key: machine_keypair.encryption_public_key(),
+            machine_signing_sk,
+            machine_encryption_sk,
+            machine_key_record: Box::new(machine_key_record),
+        },
+    )
+}
+
+/// Continue combined flow after identity creation - chain to login.
+pub fn continue_combined_enroll_after_identity_create(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    machine_id: u128,
+    identity_signing_public_key: [u8; 32],
+    machine_signing_public_key: [u8; 32],
+    machine_encryption_public_key: [u8; 32],
+    machine_signing_sk: [u8; 32],
+    machine_encryption_sk: [u8; 32],
+    machine_key_record: MachineKeyRecord,
+    server_machine_id: String,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    syscall::debug(&format!(
+        "IdentityService: Combined flow - identity created, requesting challenge for machine {}",
+        server_machine_id
+    ));
+
+    let challenge_request = HttpRequest::get(format!(
+        "{}/v1/auth/challenge?machine_id={}",
+        zid_endpoint, server_machine_id
+    ))
+    .with_timeout(10_000);
+
+    service.start_network_fetch(
+        &challenge_request,
+        PendingNetworkOp::RequestZidChallengeForCombined {
+            ctx,
+            user_id,
+            zid_endpoint,
+            machine_id,
+            identity_signing_public_key,
+            machine_signing_public_key,
+            machine_encryption_public_key,
+            machine_signing_sk,
+            machine_encryption_sk,
+            machine_key_record: Box::new(machine_key_record),
+        },
+    )
+}
+
+/// Continue combined flow after challenge - sign and submit login.
+pub fn continue_combined_enroll_after_challenge(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    machine_id: u128,
+    identity_signing_public_key: [u8; 32],
+    machine_signing_public_key: [u8; 32],
+    machine_encryption_public_key: [u8; 32],
+    machine_signing_sk: [u8; 32],
+    machine_encryption_sk: [u8; 32],
+    machine_key_record: MachineKeyRecord,
+    challenge_response: zos_network::HttpSuccess,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    #[derive(serde::Deserialize)]
+    struct ChallengeResponseDto {
+        challenge: String,
+    }
+
+    let challenge_resp: ChallengeResponseDto = match serde_json::from_slice(&challenge_response.body) {
+        Ok(c) => c,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse challenge: {}", e));
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidChallenge,
+            );
+        }
+    };
+
+    // The challenge field is base64-encoded JSON of the full Challenge struct
+    let challenge_json = match base64_decode(&challenge_resp.challenge) {
+        Ok(b) => b,
+        Err(_) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidChallenge,
+            );
+        }
+    };
+
+    // Parse the Challenge struct from JSON
+    let challenge: zos_identity::crypto::Challenge = match serde_json::from_slice(&challenge_json) {
+        Ok(c) => c,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse challenge JSON: {}", e));
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidChallenge,
+            );
+        }
+    };
+
+    // Reconstruct machine keypair and sign the CANONICAL challenge message
+    let machine_keypair = match machine_keypair_from_seeds(&machine_signing_sk, &machine_encryption_sk) {
+        Ok(kp) => kp,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::NetworkError(format!("Keypair reconstruction failed: {:?}", e)),
+            );
+        }
+    };
+
+    // DEBUG: Log the public keys to verify they match
+    let reconstructed_pubkey = machine_keypair.signing_public_key();
+    syscall::debug(&format!(
+        "IdentityService: DEBUG - signing_pubkey_from_pending_op: {}",
+        bytes_to_hex(&machine_signing_public_key)
+    ));
+    syscall::debug(&format!(
+        "IdentityService: DEBUG - signing_pubkey_reconstructed: {}",
+        bytes_to_hex(&reconstructed_pubkey)
+    ));
+    syscall::debug(&format!(
+        "IdentityService: DEBUG - keys_match: {}",
+        machine_signing_public_key == reconstructed_pubkey
+    ));
+
+    // Sign the CANONICAL challenge message (130 bytes), not the raw JSON
+    let canonical_message = zos_identity::crypto::canonicalize_challenge(&challenge);
+    
+    // DEBUG: Log the canonical message for verification
+    syscall::debug(&format!(
+        "IdentityService: DEBUG - canonical_message_len: {}, first_16_bytes: {}",
+        canonical_message.len(),
+        bytes_to_hex(&canonical_message[..16])
+    ));
+    
+    let signature = sign_with_machine_keypair(&canonical_message, &machine_keypair);
+    let signature_hex = bytes_to_hex(&signature);
+    let machine_id_uuid = format_uuid(machine_id);
+
+    let login_body = format!(
+        r#"{{"challenge_id":"{}","machine_id":"{}","signature":"{}"}}"#,
+        challenge.challenge_id, machine_id_uuid, signature_hex
+    );
+
+    syscall::debug(&format!(
+        "IdentityService: Combined flow - submitting login for machine {}, signature_len: {}",
+        machine_id_uuid, signature_hex.len()
+    ));
+
+    let login_request = HttpRequest::post(format!("{}/v1/auth/login/machine", zid_endpoint))
+        .with_json_body(login_body.into_bytes())
+        .with_timeout(10_000);
+
+    service.start_network_fetch(
+        &login_request,
+        PendingNetworkOp::SubmitZidLoginForCombined {
+            ctx,
+            user_id,
+            zid_endpoint,
+            machine_id,
+            identity_signing_public_key,
+            machine_signing_public_key,
+            machine_encryption_public_key,
+            machine_signing_sk,
+            machine_encryption_sk,
+            machine_key_record: Box::new(machine_key_record),
+        },
+    )
+}
+
+/// Final step of combined flow - return both machine key and tokens.
+pub fn continue_combined_enroll_after_login(
+    _service: &mut IdentityService,
+    client_pid: u32,
+    _user_id: u128,
+    _zid_endpoint: String,
+    machine_key_record: MachineKeyRecord,
+    login_response: zos_network::HttpSuccess,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    // Parse tokens from login response
+    let tokens: ZidTokens = match serde_json::from_slice(&login_response.body) {
+        Ok(t) => t,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse login tokens: {}", e));
+            return response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::AuthenticationFailed,
+            );
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Combined flow complete - machine {:032x} enrolled with ZID",
+        machine_key_record.machine_id
+    ));
+
+    // Return both machine key and tokens
+    response::send_create_machine_key_and_enroll_success(
+        client_pid,
+        &cap_slots,
+        machine_key_record,
+        tokens,
+    )
+}
+
+// =============================================================================
+// ZID Logout Flow
+// =============================================================================
+
+pub fn handle_zid_logout(service: &mut IdentityService, msg: &Message) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
+    let request: zos_identity::ipc::ZidLogoutRequest = match serde_json::from_slice(&msg.data) {
+        Ok(r) => r,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse logout request: {}", e));
+            return response::send_zid_logout_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
+    };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("zid_logout", msg.from_pid, request.user_id);
+        return response::send_zid_logout_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::Unauthorized,
+        );
+    }
+
+    // Delete session file from VFS
+    let session_path = ZidSession::storage_path(request.user_id);
+    let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
+    service.start_vfs_delete(
+        &session_path,
+        PendingStorageOp::DeleteZidSession { ctx },
     )
 }
 
@@ -750,7 +1134,8 @@ pub fn continue_zid_enroll_after_login(
         access_token: tokens.access_token.clone(),
         refresh_token: tokens.refresh_token.clone(),
         session_id: tokens.session_id.clone(),
-        expires_at: now + tokens.expires_in * 1000,
+        machine_id: tokens.machine_id.clone(),
+        expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
         created_at: now,
     };
 

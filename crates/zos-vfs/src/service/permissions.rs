@@ -63,10 +63,12 @@ pub fn check_write(inode: &Inode, ctx: &PermissionContext) -> bool {
     // System processes (like IdentityService) can write to user directories
     // This allows system services to manage user data in paths like ~/.zos/identity/
     if ctx.process_class == ProcessClass::System || ctx.process_class == ProcessClass::Runtime {
-        // System processes can write to user home directories (/home/*)
-        // This handles both user-owned resources (owner_id set) and legacy data
-        // where owner_id may be None due to previous bugs
-        if inode.path.starts_with("/home/") || inode.owner_id.is_some() {
+        // System processes can write to:
+        // - The /home directory itself (to create user home directories)
+        // - Any path under /home/* (user home directories and contents)
+        // - Any user-owned resources (owner_id set)
+        // This handles both user-owned resources and legacy data where owner_id may be None
+        if inode.path == "/home" || inode.path.starts_with("/home/") || inode.owner_id.is_some() {
             return true;
         }
         // For system-owned resources (like /system/), check system_write flag
@@ -192,6 +194,23 @@ mod tests {
         );
 
         // Even without owner_id, system can write to /home/* paths
+        let system_ctx = PermissionContext::system();
+        assert!(check_write(&inode, &system_ctx));
+    }
+
+    #[test]
+    fn test_system_can_write_to_home_directory_itself() {
+        // System processes can write to /home directory itself
+        // (to create user home directories like /home/{user_id})
+        let inode = Inode::new_directory(
+            String::from("/home"),
+            String::from("/"),
+            String::from("home"),
+            None, // System-owned, no user owner
+            1000,
+        );
+
+        // System can write to /home to create user home dirs
         let system_ctx = PermissionContext::system();
         assert!(check_write(&inode, &system_ctx));
     }

@@ -707,6 +707,12 @@ pub mod identity_machine {
     pub const MSG_ROTATE_MACHINE_KEY: u32 = 0x7068;
     /// Rotate machine key response.
     pub const MSG_ROTATE_MACHINE_KEY_RESPONSE: u32 = 0x7069;
+    /// Create machine key AND enroll with ZID in one atomic operation.
+    /// This combines createMachineKey + enrollMachine to ensure the same
+    /// Neural Key-derived keypair is used for both local storage and ZID registration.
+    pub const MSG_CREATE_MACHINE_KEY_AND_ENROLL: u32 = 0x706A;
+    /// Create machine key and enroll response.
+    pub const MSG_CREATE_MACHINE_KEY_AND_ENROLL_RESPONSE: u32 = 0x706B;
 }
 
 /// Identity service messages - ZID Auth (0x7080-0x708F).
@@ -732,6 +738,12 @@ pub mod identity_zid {
     /// ZID enroll machine response.
     /// Payload: JSON-serialized ZidEnrollMachineResponse
     pub const MSG_ZID_ENROLL_MACHINE_RESPONSE: u32 = 0x7085;
+    /// ZID logout request (delete session from VFS).
+    /// Payload: JSON-serialized ZidLogoutRequest
+    pub const MSG_ZID_LOGOUT: u32 = 0x7086;
+    /// ZID logout response.
+    /// Payload: JSON-serialized ZidLogoutResponse
+    pub const MSG_ZID_LOGOUT_RESPONSE: u32 = 0x7087;
 }
 
 /// Identity service messages - Identity Preferences (0x7090-0x7099).

@@ -79,6 +79,27 @@ pub enum NetworkHandlerResult {
         login_response: HttpSuccess,
         cap_slots: Vec<u32>,
     },
+    // Combined Machine Key + ZID Enrollment variants
+    /// Continue combined flow after identity creation (chain to login)
+    ContinueCombinedEnroll {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        server_machine_id: String,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue combined flow after challenge received
+    ContinueCombinedChallenge {
+        client_pid: u32,
+        challenge_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue combined flow after login - final step
+    ContinueCombinedLogin {
+        client_pid: u32,
+        login_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
 }
 
 /// Handle RequestZidChallenge network result.
@@ -408,6 +429,179 @@ pub fn handle_zid_login_after_enroll_result(
                 client_pid,
                 &cap_slots,
                 ZidError::NetworkError(format!("Login request failed: {}", e.message())),
+            ))
+        }
+    }
+}
+
+// =============================================================================
+// Combined Machine Key + ZID Enrollment handlers
+// =============================================================================
+
+/// Handle SubmitZidEnrollForCombined network result.
+pub fn handle_combined_enroll_result(
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    _machine_id: u128,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            // Parse the identity creation response to get the server's machine_id
+            #[derive(serde::Deserialize)]
+            #[allow(dead_code)]
+            struct CreateIdentityResponse {
+                identity_id: String,
+                machine_id: String,
+                namespace_id: String,
+            }
+
+            match serde_json::from_slice::<CreateIdentityResponse>(&success.body) {
+                Ok(resp) => {
+                    syscall::debug(&format!(
+                        "IdentityService: Combined flow - identity created, machine_id={}",
+                        resp.machine_id
+                    ));
+                    NetworkHandlerResult::ContinueCombinedEnroll {
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        server_machine_id: resp.machine_id,
+                        cap_slots,
+                    }
+                }
+                Err(e) => {
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to parse identity creation response: {}",
+                        e
+                    ));
+                    NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                        client_pid,
+                        &cap_slots,
+                        ZidError::EnrollmentFailed(format!("Invalid identity creation response: {}", e)),
+                    ))
+                }
+            }
+        }
+        Ok(success) if success.status == 409 => {
+            syscall::debug("IdentityService: Combined flow - machine already enrolled");
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed("Machine already registered. Use Login instead.".into()),
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_enroll_error(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Combined enrollment failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Combined enrollment network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle RequestZidChallengeForCombined network result.
+pub fn handle_combined_challenge_result(
+    client_pid: u32,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Combined flow - challenge received");
+            NetworkHandlerResult::ContinueCombinedChallenge {
+                client_pid,
+                challenge_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Combined challenge failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed(format!("Challenge request failed: {:?}", error)),
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Combined challenge network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle SubmitZidLoginForCombined network result.
+pub fn handle_combined_login_result(
+    client_pid: u32,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Combined flow - login successful, tokens received");
+            NetworkHandlerResult::ContinueCombinedLogin {
+                client_pid,
+                login_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Combined flow - login authentication failed");
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::AuthenticationFailed,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Combined login failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed(format!("Login failed: {:?}", error)),
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Combined login network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_create_machine_key_and_enroll_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
             ))
         }
     }

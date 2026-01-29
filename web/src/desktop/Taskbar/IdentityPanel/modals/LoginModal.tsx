@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from 'react';
-import { PanelLogin, Button, Text, type LoginProvider } from '@cypher-asi/zui';
-import { Key, Shield, Github } from 'lucide-react';
+import { PanelLogin, Text, Button, type LoginProvider } from '@cypher-asi/zui';
+import { Key, Github } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useLinkedAccounts } from '../../../hooks/useLinkedAccounts';
 import styles from './LoginModal.module.css';
@@ -57,7 +57,6 @@ export function LoginModal({ onClose }: LoginModalProps) {
   const {
     loginWithEmail,
     loginWithMachineKey,
-    enrollMachine,
     isAuthenticating,
     error: authError,
   } = useZeroIdAuth();
@@ -69,7 +68,6 @@ export function LoginModal({ onClose }: LoginModalProps) {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState(false);
 
   // Handle email/password login
   const handleEmailPasswordLogin = async (emailValue: string, passwordValue: string) => {
@@ -106,70 +104,20 @@ export function LoginModal({ onClose }: LoginModalProps) {
     }
   }, [loginWithMachineKey, onClose]);
 
-  // Build login providers (Machine Key + OAuth from linked accounts)
+  // Build login providers (OAuth from linked accounts only)
   const loginProviders: LoginProvider[] = useMemo(() => {
-    const providers: LoginProvider[] = [];
-
-    // Always add Machine Key as first provider
-    providers.push({
-      id: 'machine-key',
-      icon: <Key size={20} />,
-      label: 'Login with Machine Key',
-      onClick: handleMachineKeyLogin,
-    });
-
-    // Add OAuth providers from linked accounts
     const oauthCredentials = linkedAccountsState.credentials.filter((c) => c.type === 'oauth');
-    const oauthProviders = oauthCredentials.map((cred) => ({
+    return oauthCredentials.map((cred) => ({
       id: cred.identifier,
       icon: getProviderIcon(cred.identifier),
       label: `Continue with ${capitalize(cred.identifier)}`,
       onClick: async () => {
         // TODO: Implement OAuth login flow
-        // For now, this is a placeholder
         console.log(`[LoginModal] OAuth login with ${cred.identifier} - not yet implemented`);
         setError(`OAuth login with ${capitalize(cred.identifier)} is not yet implemented`);
       },
     }));
-
-    providers.push(...oauthProviders);
-
-    return providers;
-  }, [linkedAccountsState.credentials, handleMachineKeyLogin]);
-
-  // Handle verify identity (enroll machine)
-  const handleVerifyIdentity = async () => {
-    if (isAnyLoading) return; // Prevent multiple clicks
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      await enrollMachine();
-      // Success - mark as verified
-      setIsVerified(true);
-      setError(null);
-      // Close modal after a brief delay to show verified state
-      setTimeout(() => {
-        onClose();
-      }, 1500);
-    } catch (err) {
-      console.error('[LoginModal] Identity verification failed:', err);
-
-      // Extract the error message
-      let errorMsg = 'Identity verification failed. Please try again.';
-      if (err instanceof Error) {
-        // Extract the actual error message after the error class name
-        const match = err.message.match(/: (.+)$/);
-        errorMsg = match ? match[1] : err.message;
-      }
-
-      setError(errorMsg);
-      setIsVerified(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [linkedAccountsState.credentials]);
 
   // Click outside to close
   useEffect(() => {
@@ -221,44 +169,15 @@ export function LoginModal({ onClose }: LoginModalProps) {
             loginProviders={loginProviders}
             error={displayError}
             bottomContent={
-              isVerified ? (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: 'var(--color-accent, #667eea)',
-                      boxShadow: '0 0 8px var(--color-accent, #667eea)',
-                      animation: 'pulse 2s ease-in-out infinite',
-                    }}
-                  />
-                  <Text variant="secondary" size="sm" align="center">
-                    Identity Verified
-                  </Text>
-                </div>
-              ) : (
-                <Text
-                  variant="secondary"
-                  size="sm"
-                  align="center"
-                  style={{
-                    cursor: isAnyLoading ? 'not-allowed' : 'pointer',
-                    textDecoration: 'underline',
-                    opacity: isAnyLoading ? 0.5 : 1,
-                  }}
-                  onClick={handleVerifyIdentity}
-                >
-                  {isAnyLoading ? 'Verifying...' : 'Verify Identity'}
-                </Text>
-              )
+              <Button
+                variant="ghost"
+                onClick={handleMachineKeyLogin}
+                disabled={isAnyLoading}
+                className={styles.machineKeyButton}
+              >
+                <Key size={16} />
+                Login with Machine Key
+              </Button>
             }
           />
         </div>

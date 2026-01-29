@@ -454,6 +454,52 @@ pub struct RotateMachineKeyResponse {
     pub result: Result<MachineKeyRecord, KeyError>,
 }
 
+/// Create machine key AND enroll with ZID in one atomic operation.
+///
+/// This combined endpoint solves the signature mismatch problem where
+/// separate createMachineKey + enrollMachine calls would generate different keypairs.
+/// With this combined flow:
+/// 1. Reconstructs Neural Key from shards + password
+/// 2. Derives machine keypair canonically
+/// 3. Stores machine key record with SK seeds
+/// 4. Enrolls with ZID using the same derived keypair
+/// 5. Returns both MachineKeyRecord and ZidTokens
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateMachineKeyAndEnrollRequest {
+    /// User ID
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// Optional human-readable machine name
+    pub machine_name: Option<String>,
+    /// Machine key capabilities
+    pub capabilities: MachineKeyCapabilities,
+    /// Key scheme to use (defaults to Classical)
+    #[serde(default)]
+    pub key_scheme: KeyScheme,
+    /// Single external Neural shard (from paper backup)
+    pub external_shard: NeuralShard,
+    /// Password to decrypt stored shards
+    pub password: String,
+    /// ZID API endpoint (e.g., "https://api.zero-id.io")
+    pub zid_endpoint: String,
+}
+
+/// Combined result of machine key creation and ZID enrollment.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MachineKeyAndTokens {
+    /// The created machine key record
+    pub machine_key: MachineKeyRecord,
+    /// ZID tokens from successful enrollment
+    pub tokens: ZidTokens,
+}
+
+/// Create machine key and enroll response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateMachineKeyAndEnrollResponse {
+    /// Result containing the machine key and tokens, or an error
+    pub result: Result<MachineKeyAndTokens, ZidError>,
+}
+
 // ============================================================================
 // ZID Auth Request/Response Types (0x7080-0x708F)
 // ============================================================================
@@ -490,8 +536,13 @@ pub struct ZidTokens {
     pub refresh_token: String,
     /// Unique session identifier
     pub session_id: String,
-    /// Access token lifetime in seconds
-    pub expires_in: u64,
+    /// Machine ID (UUID string)
+    pub machine_id: String,
+    /// When the access token expires (RFC3339 timestamp)
+    pub expires_at: String,
+    /// Optional warning message
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 /// Persisted ZID session (stored in VFS).
@@ -507,6 +558,9 @@ pub struct ZidSession {
     pub refresh_token: String,
     /// Session ID from ZID server
     pub session_id: String,
+    /// Machine ID used for authentication (UUID string)
+    #[serde(default)]
+    pub machine_id: String,
     /// When the access token expires (Unix timestamp ms)
     pub expires_at: u64,
     /// When this session was created (Unix timestamp ms)
@@ -614,6 +668,21 @@ pub struct ZidEnrollMachineRequest {
 pub struct ZidEnrollMachineResponse {
     /// Result containing tokens or error
     pub result: Result<ZidTokens, ZidError>,
+}
+
+/// ZID logout request (delete session from VFS).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidLogoutRequest {
+    /// User ID whose session should be cleared
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+}
+
+/// ZID logout response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidLogoutResponse {
+    /// Result of the operation
+    pub result: Result<(), ZidError>,
 }
 
 // ============================================================================

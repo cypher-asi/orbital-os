@@ -11,10 +11,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use zos_identity::error::{CredentialError, ZidError};
 use zos_identity::ipc::{
-    AttachEmailResponse, CreateMachineKeyResponse, GenerateNeuralKeyResponse,
-    GetCredentialsResponse, GetIdentityKeyResponse, GetMachineKeyResponse, ListMachineKeysResponse,
-    RecoverNeuralKeyResponse, RevokeMachineKeyResponse, RotateMachineKeyResponse,
-    UnlinkCredentialResponse, ZidEnrollMachineResponse, ZidLoginResponse, ZidTokens,
+    AttachEmailResponse, CreateMachineKeyAndEnrollResponse, CreateMachineKeyResponse,
+    GenerateNeuralKeyResponse, GetCredentialsResponse, GetIdentityKeyResponse,
+    GetMachineKeyResponse, ListMachineKeysResponse, MachineKeyAndTokens, RecoverNeuralKeyResponse,
+    RevokeMachineKeyResponse, RotateMachineKeyResponse, UnlinkCredentialResponse,
+    ZidEnrollMachineResponse, ZidLoginResponse, ZidTokens,
 };
 use zos_identity::keystore::{LinkedCredential, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
@@ -509,6 +510,35 @@ pub fn send_zid_enroll_error(
     send_zid_enroll_response(client_pid, cap_slots, Err(error))
 }
 
+/// Send ZID logout response (success or error).
+pub fn send_zid_logout_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<(), ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::ZidLogoutResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_zid::MSG_ZID_LOGOUT_RESPONSE,
+        &response,
+    )
+}
+
+/// Send ZID logout success response.
+pub fn send_zid_logout_success(client_pid: u32, cap_slots: &[u32]) -> Result<(), AppError> {
+    send_zid_logout_response(client_pid, cap_slots, Ok(()))
+}
+
+/// Send ZID logout error response.
+pub fn send_zid_logout_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_zid_logout_response(client_pid, cap_slots, Err(error))
+}
+
 // =============================================================================
 // Identity Preferences responses
 // =============================================================================
@@ -554,4 +584,46 @@ pub fn send_set_default_key_scheme_error(
         zos_process::identity_prefs::MSG_SET_DEFAULT_KEY_SCHEME_RESPONSE,
         &response,
     )
+}
+
+// =============================================================================
+// Combined Machine Key + ZID Enrollment responses
+// =============================================================================
+
+/// Send combined create machine key and enroll response (success or error).
+pub fn send_create_machine_key_and_enroll_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<MachineKeyAndTokens, ZidError>,
+) -> Result<(), AppError> {
+    let response = CreateMachineKeyAndEnrollResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_machine::MSG_CREATE_MACHINE_KEY_AND_ENROLL_RESPONSE,
+        &response,
+    )
+}
+
+/// Send combined create machine key and enroll success response.
+pub fn send_create_machine_key_and_enroll_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    machine_key: MachineKeyRecord,
+    tokens: ZidTokens,
+) -> Result<(), AppError> {
+    send_create_machine_key_and_enroll_response(
+        client_pid,
+        cap_slots,
+        Ok(MachineKeyAndTokens { machine_key, tokens }),
+    )
+}
+
+/// Send combined create machine key and enroll error response.
+pub fn send_create_machine_key_and_enroll_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_create_machine_key_and_enroll_response(client_pid, cap_slots, Err(error))
 }

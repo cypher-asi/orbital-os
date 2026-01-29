@@ -139,3 +139,11 @@
   min-width: 36px !important;
   padding: 0 !important;
 }
+
+.neuralKey svg {
+  transition: transform 0.2s ease-in-out;
+}
+
+.neuralKeyActive svg {
+  transform: rotate(-45deg);
+}

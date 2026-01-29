@@ -35,6 +35,7 @@ use super::super::response;
 use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::{
     combine_shards_verified, create_kdf_params, decrypt_shard, derive_identity_signing_keypair,
+    derive_machine_encryption_seed, derive_machine_seed, derive_machine_signing_seed,
     encrypt_shard, select_shards_to_encrypt, split_neural_key, validate_password,
     KeyScheme as ZidKeyScheme, MachineKeyPair, NeuralKey, ZidMachineKeyCapabilities,
     ZidNeuralShard,
@@ -43,9 +44,10 @@ use uuid::Uuid;
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
 use zos_identity::ipc::{
-    CreateMachineKeyRequest, GenerateNeuralKeyRequest, GetIdentityKeyRequest, GetMachineKeyRequest,
-    ListMachineKeysRequest, NeuralKeyGenerated, NeuralShard, PublicIdentifiers, RecoverNeuralKeyRequest,
-    RevokeMachineKeyRequest, RotateMachineKeyRequest,
+    CreateMachineKeyAndEnrollRequest, CreateMachineKeyRequest, GenerateNeuralKeyRequest,
+    GetIdentityKeyRequest, GetMachineKeyRequest, ListMachineKeysRequest, NeuralKeyGenerated,
+    NeuralShard, PublicIdentifiers, RecoverNeuralKeyRequest, RevokeMachineKeyRequest,
+    RotateMachineKeyRequest,
 };
 use zos_identity::keystore::{EncryptedShardStore, KeyScheme, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
@@ -79,48 +81,83 @@ pub fn continue_generate_after_directory_check(
         );
     }
 
-    // Directory doesn't exist, create it using VFS mkdir with create_parents
+    // Directory doesn't exist, create it step by step
+    // VFS does not support create_parents=true, so we create each directory one at a time
     syscall::debug(&format!(
         "IdentityService: Creating identity directory structure for user {:032x}",
         user_id
     ));
 
-    // Use VFS mkdir_all to create the entire path at once
-    let machine_dir = format!("/home/{}/.zos/identity/machine", user_id);
+    // Build the list of directories to create (in order)
+    let user_home = format!("/home/{:032x}", user_id);
+    let directories = vec![
+        user_home.clone(),
+        format!("{}/.zos", user_home),
+        format!("{}/.zos/identity", user_home),
+        format!("{}/.zos/identity/machine", user_home),
+    ];
+
+    // Start with the first directory
+    let first_dir = directories[0].clone();
+    let remaining_dirs: Vec<String> = directories[1..].to_vec();
+
     service.start_vfs_mkdir(
-        &machine_dir,
-        true, // create_parents = true
+        &first_dir,
+        false, // create_parents = false (not supported by VFS)
         PendingStorageOp::CreateIdentityDirectory {
             ctx,
             user_id,
-            directories: vec![], // No remaining dirs - mkdir_all creates them all
+            directories: remaining_dirs,
             password,
         },
     )
 }
 
 /// Continue creating directories after VFS mkdir completes.
-/// With VFS mkdir_all (create_parents=true), this is called once all directories are created.
+/// Creates directories one at a time since VFS does not support create_parents.
 pub fn continue_create_directories(
     service: &mut IdentityService,
     client_pid: u32,
     user_id: u128,
-    _directories: Vec<String>,
+    directories: Vec<String>,
     password: String,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
-    // directories is now empty after mkdir_all succeeds
-    // Check if key already exists (via Keystore)
-    let key_path = LocalKeyStore::storage_path(user_id);
-    syscall::debug(&format!(
-        "IdentityService: Directories created, checking if key exists at {}",
-        key_path
-    ));
     let ctx = RequestContext::new(client_pid, cap_slots);
-    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
-    service.start_keystore_exists(
-        &key_path,
-        PendingKeystoreOp::CheckKeyExists { ctx, user_id, password },
+
+    if directories.is_empty() {
+        // All directories created, proceed to check if key already exists (via Keystore)
+        let key_path = LocalKeyStore::storage_path(user_id);
+        syscall::debug(&format!(
+            "IdentityService: Directories created, checking if key exists at {}",
+            key_path
+        ));
+        // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+        return service.start_keystore_exists(
+            &key_path,
+            PendingKeystoreOp::CheckKeyExists { ctx, user_id, password },
+        );
+    }
+
+    // Create the next directory in the list
+    let next_dir = directories[0].clone();
+    let remaining_dirs: Vec<String> = directories[1..].to_vec();
+
+    syscall::debug(&format!(
+        "IdentityService: Creating directory {} ({} remaining)",
+        next_dir,
+        remaining_dirs.len()
+    ));
+
+    service.start_vfs_mkdir(
+        &next_dir,
+        false, // create_parents = false (not supported by VFS)
+        PendingStorageOp::CreateIdentityDirectory {
+            ctx,
+            user_id,
+            directories: remaining_dirs,
+            password,
+        },
     )
 }
 
@@ -1220,4 +1257,332 @@ pub fn handle_get_machine_key(
         &machine_path,
         PendingKeystoreOp::ReadSingleMachineKey { ctx },
     )
+}
+
+// =============================================================================
+// Combined Machine Key + ZID Enrollment Operations
+// =============================================================================
+
+/// Handle combined machine key creation and ZID enrollment.
+///
+/// This endpoint solves the signature mismatch problem by:
+/// 1. Reconstructing the Neural Key from shards + password
+/// 2. Deriving the machine keypair canonically
+/// 3. Storing the machine key with SK seeds
+/// 4. Enrolling with ZID using the SAME derived keypair
+///
+/// This ensures the keypair used for local storage matches the one registered with ZID.
+pub fn handle_create_machine_key_and_enroll(
+    service: &mut IdentityService,
+    msg: &Message,
+) -> Result<(), AppError> {
+    syscall::debug("IdentityService: Handling create machine key AND enroll request");
+
+    // Rule 1: Parse request - return InvalidRequest on parse failure
+    let request: CreateMachineKeyAndEnrollRequest = match serde_json::from_slice(&msg.data) {
+        Ok(r) => r,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
+            return response::send_create_machine_key_and_enroll_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                zos_identity::error::ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
+    };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("create_machine_key_and_enroll", msg.from_pid, request.user_id);
+        return response::send_create_machine_key_and_enroll_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            zos_identity::error::ZidError::Unauthorized,
+        );
+    }
+
+    // Read the LocalKeyStore to get the stored identity public key for verification
+    let key_path = LocalKeyStore::storage_path(request.user_id);
+    syscall::debug(&format!(
+        "IdentityService: CreateMachineKeyAndEnroll - reading identity from: {}",
+        key_path
+    ));
+    let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
+    // Invariant 32: /keys/ paths use Keystore IPC, not VFS
+    service.start_keystore_read(
+        &key_path,
+        PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, request },
+    )
+}
+
+/// Continue combined machine key + enroll after reading encrypted shards from keystore.
+///
+/// This function:
+/// 1. Decrypts the 2 stored shards using the password
+/// 2. Combines with the 1 external shard (total 3)
+/// 3. Reconstructs the Neural Key
+/// 4. Verifies against stored identity public key
+/// 5. Derives machine keypair (with SK seeds for enrollment signing)
+/// 6. Stores machine key, then chains to ZID enrollment
+pub fn continue_create_machine_enroll_after_shards_read(
+    service: &mut IdentityService,
+    client_pid: u32,
+    request: CreateMachineKeyAndEnrollRequest,
+    stored_identity_pubkey: [u8; 32],
+    encrypted_store: EncryptedShardStore,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    // Decrypt the 2 stored shards
+    let mut decrypted_shard_hexes = Vec::new();
+    for encrypted_shard in &encrypted_store.encrypted_shards {
+        match decrypt_shard(encrypted_shard, &request.password, &encrypted_store.kdf) {
+            Ok(hex) => decrypted_shard_hexes.push((encrypted_shard.index, hex)),
+            Err(e) => {
+                syscall::debug(&format!(
+                    "IdentityService: Failed to decrypt shard {}: {:?}",
+                    encrypted_shard.index, e
+                ));
+                return response::send_create_machine_key_and_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::AuthenticationFailed,
+                );
+            }
+        }
+    }
+
+    syscall::debug(&format!(
+        "IdentityService: Successfully decrypted {} stored shards for combined flow",
+        decrypted_shard_hexes.len()
+    ));
+
+    // Validate external shard index
+    if !encrypted_store
+        .external_shard_indices
+        .contains(&request.external_shard.index)
+    {
+        return response::send_create_machine_key_and_enroll_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            zos_identity::error::ZidError::InvalidRequest("External shard index not recognized".into()),
+        );
+    }
+
+    // Collect and validate shard indices
+    let mut shard_indices = Vec::new();
+    shard_indices.push(request.external_shard.index);
+    shard_indices.extend(encrypted_store.encrypted_shards.iter().map(|s| s.index));
+    shard_indices.sort_unstable();
+    shard_indices.dedup();
+    if shard_indices.len() != 3 {
+        return response::send_create_machine_key_and_enroll_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            zos_identity::error::ZidError::InvalidRequest("Shard indices must be unique (3 total)".into()),
+        );
+    }
+
+    // Convert all shards to zid-crypto format
+    let mut all_shards = Vec::new();
+
+    // Add external shard
+    match ZidNeuralShard::from_hex(&request.external_shard.hex) {
+        Ok(shard) => all_shards.push(shard),
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::InvalidRequest(format!("Invalid external shard: {:?}", e)),
+            );
+        }
+    }
+
+    // Add decrypted shards
+    for (_idx, hex) in decrypted_shard_hexes {
+        match ZidNeuralShard::from_hex(&hex) {
+            Ok(shard) => all_shards.push(shard),
+            Err(e) => {
+                return response::send_create_machine_key_and_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::InvalidRequest(format!("Invalid decrypted shard: {:?}", e)),
+                );
+            }
+        }
+    }
+
+    // Reconstruct Neural Key from shards WITH VERIFICATION against stored identity
+    let neural_key = match combine_shards_verified(&all_shards, request.user_id, &stored_identity_pubkey) {
+        Ok(key) => key,
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Neural Key verification failed in combined flow: {:?}",
+                e
+            ));
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::AuthenticationFailed,
+            );
+        }
+    };
+
+    syscall::debug("IdentityService: Neural Key reconstructed for combined machine key + enroll");
+
+    // Generate machine ID
+    let machine_id_bytes = match NeuralKey::generate() {
+        Ok(key) => {
+            let bytes = key.as_bytes();
+            [
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+            ]
+        }
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::NetworkError(format!("Machine ID generation failed: {:?}", e)),
+            );
+        }
+    };
+    let machine_id = u128::from_le_bytes(machine_id_bytes);
+
+    // Create UUIDs for derivation
+    let identity_id = Uuid::from_u128(request.user_id);
+    let machine_uuid = Uuid::from_u128(machine_id);
+
+    // Derive identity signing keypair (needed for ZID enrollment signature)
+    let (identity_signing_public_key, identity_keypair) =
+        match derive_identity_signing_keypair(&neural_key, &identity_id) {
+            Ok(keypair) => keypair,
+            Err(e) => {
+                return response::send_create_machine_key_and_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::NetworkError(format!("Identity key derivation failed: {:?}", e)),
+                );
+            }
+        };
+    
+    // Extract identity signing seed for ZID enrollment authorization signature
+    let identity_signing_sk = identity_keypair.seed_bytes();
+
+    // Convert capabilities and key scheme
+    let zid_capabilities = ZidMachineKeyCapabilities::FULL_DEVICE;
+    let zid_scheme = match request.key_scheme {
+        KeyScheme::Classical => ZidKeyScheme::Classical,
+        KeyScheme::PqHybrid => ZidKeyScheme::PqHybrid,
+    };
+
+    // Derive the seeds first so we can store them
+    // Step 1: Derive machine seed from Neural Key
+    let machine_seed = match derive_machine_seed(&neural_key, &identity_id, &machine_uuid, 1) {
+        Ok(seed) => seed,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::NetworkError(format!("Machine seed derivation failed: {:?}", e)),
+            );
+        }
+    };
+
+    // Step 2: Derive signing seed from machine seed
+    let machine_signing_sk = match derive_machine_signing_seed(&machine_seed, &machine_uuid) {
+        Ok(seed) => *seed,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::NetworkError(format!("Signing seed derivation failed: {:?}", e)),
+            );
+        }
+    };
+
+    // Step 3: Derive encryption seed from machine seed
+    let machine_encryption_sk = match derive_machine_encryption_seed(&machine_seed, &machine_uuid) {
+        Ok(seed) => *seed,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::NetworkError(format!("Encryption seed derivation failed: {:?}", e)),
+            );
+        }
+    };
+
+    // Step 4: Create machine keypair from the derived seeds
+    let machine_keypair = match MachineKeyPair::from_seeds_with_scheme(
+        &machine_signing_sk,
+        &machine_encryption_sk,
+        None, // No PQ signing seed in WASM
+        None, // No PQ encryption seed in WASM
+        zid_capabilities,
+        zid_scheme,
+    ) {
+        Ok(keypair) => keypair,
+        Err(e) => {
+            return response::send_create_machine_key_and_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                zos_identity::error::ZidError::NetworkError(format!("Machine keypair creation failed: {:?}", e)),
+            );
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Derived machine key {:032x} for combined flow",
+        machine_id
+    ));
+
+    // Extract public keys
+    let signing_key = machine_keypair.signing_public_key();
+    let encryption_key = machine_keypair.encryption_public_key();
+    let now = syscall::get_wallclock();
+
+    // Create machine key record WITH SK seeds (needed for ZID enrollment signing)
+    let record = MachineKeyRecord {
+        machine_id,
+        signing_public_key: signing_key,
+        encryption_public_key: encryption_key,
+        signing_sk: Some(machine_signing_sk),
+        encryption_sk: Some(machine_encryption_sk),
+        authorized_at: now,
+        authorized_by: request.user_id,
+        capabilities: request.capabilities,
+        machine_name: request.machine_name,
+        last_seen_at: now,
+        epoch: 1,
+        key_scheme: request.key_scheme,
+        pq_signing_public_key: None,
+        pq_encryption_public_key: None,
+    };
+
+    // Store machine key first, then chain to ZID enrollment
+    let machine_path = MachineKeyRecord::storage_path(request.user_id, machine_id);
+    match serde_json::to_vec(&record) {
+        Ok(json_bytes) => service.start_keystore_write(
+            &machine_path,
+            &json_bytes,
+            PendingKeystoreOp::WriteMachineKeyForEnroll {
+                ctx,
+                user_id: request.user_id,
+                record,
+                json_bytes: json_bytes.clone(),
+                zid_endpoint: request.zid_endpoint,
+                identity_signing_public_key,
+                identity_signing_sk,
+                machine_signing_sk,
+                machine_encryption_sk,
+            },
+        ),
+        Err(e) => response::send_create_machine_key_and_enroll_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            zos_identity::error::ZidError::NetworkError(format!("Serialization failed: {}", e)),
+        ),
+    }
 }

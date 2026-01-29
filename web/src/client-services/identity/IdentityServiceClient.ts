@@ -32,9 +32,12 @@ import {
   type UnlinkCredentialResponse,
   type ZidLoginResponse,
   type ZidEnrollMachineResponse,
+  type ZidLogoutResponse,
   type IdentityPreferences,
   type GetIdentityPreferencesResponse,
   type SetDefaultKeySchemeResponse,
+  type MachineKeyAndTokens,
+  type CreateMachineKeyAndEnrollResponse,
 } from './types';
 
 import {
@@ -366,6 +369,80 @@ export class IdentityServiceClient {
       zid_endpoint: zidEndpoint,
     });
     return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Create a machine key AND enroll with ZID in one atomic operation.
+   *
+   * This combined endpoint solves the signature mismatch problem where
+   * separate createMachineKey + enrollMachine calls would generate different keypairs.
+   *
+   * With this combined flow:
+   * 1. Reconstructs Neural Key from shards + password
+   * 2. Derives machine keypair canonically
+   * 3. Stores machine key record with SK seeds
+   * 4. Enrolls with ZID using the same derived keypair
+   * 5. Returns both MachineKeyRecord and ZidTokens
+   *
+   * @param userId - User ID (as bigint)
+   * @param machineName - Human-readable machine name
+   * @param capabilities - Machine capabilities
+   * @param keyScheme - Key scheme to use (defaults to 'classical')
+   * @param externalShard - One external Neural shard (from paper backup)
+   * @param password - Password to decrypt stored shards
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @returns Combined result with MachineKeyRecord and ZidTokens
+   * @throws {IdentityKeyRequiredError} If identity key doesn't exist
+   * @throws {ZidEnrollmentFailedError} If enrollment fails
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async createMachineKeyAndEnroll(
+    userId: bigint | string,
+    machineName: string,
+    capabilities: MachineKeyCapabilities,
+    keyScheme: KeyScheme | undefined,
+    externalShard: NeuralShard,
+    password: string,
+    zidEndpoint: string
+  ): Promise<MachineKeyAndTokens> {
+    if (!externalShard) {
+      throw new IdentityServiceError('An external Neural shard is required');
+    }
+    if (!password) {
+      throw new IdentityServiceError('Password is required');
+    }
+    if (!zidEndpoint) {
+      throw new IdentityServiceError('ZID endpoint is required');
+    }
+    const response = await this.request<CreateMachineKeyAndEnrollResponse>(
+      MSG.CREATE_MACHINE_KEY_AND_ENROLL,
+      {
+        user_id: formatUserIdForRust(userId),
+        machine_name: machineName,
+        capabilities,
+        key_scheme: keyScheme ?? 'classical',
+        external_shard: externalShard,
+        password,
+        zid_endpoint: zidEndpoint,
+      }
+    );
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Logout from ZERO-ID, deleting the session from VFS.
+   *
+   * This clears the stored session file so that:
+   * - Refreshing the page does NOT restore the session
+   * - A different user can log in
+   *
+   * @param userId - User ID whose session should be cleared
+   */
+  async zidLogout(userId: bigint | string): Promise<void> {
+    const response = await this.request<ZidLogoutResponse>(MSG.ZID_LOGOUT, {
+      user_id: formatUserIdForRust(userId),
+    });
+    this.unwrapResult(response.result);
   }
 
   // ===========================================================================

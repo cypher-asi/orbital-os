@@ -12,6 +12,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use zos_identity::ipc::CreateMachineKeyAndEnrollRequest;
 use zos_identity::ipc::CreateMachineKeyRequest;
 use zos_identity::ipc::{NeuralKeyGenerated, ZidTokens};
 use zos_identity::keystore::{CredentialType, MachineKeyRecord};
@@ -218,6 +219,10 @@ pub enum PendingStorageOp {
         tokens: ZidTokens,
         json_bytes: Vec<u8>,
     },
+    /// Delete ZID session from VFS (logout)
+    DeleteZidSession {
+        ctx: RequestContext,
+    },
 
     // =========================================================================
     // Identity Preferences operations
@@ -356,8 +361,20 @@ pub enum PendingKeystoreOp {
     // =========================================================================
     // ZID session operations (stored in keystore)
     // =========================================================================
+    /// List machine keys for ZID login
+    ListMachineKeysForZidLogin {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
     /// Read machine key for ZID login
     ReadMachineKeyForZidLogin {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
+    /// List machine keys for ZID enrollment
+    ListMachineKeysForZidEnroll {
         ctx: RequestContext,
         user_id: u128,
         zid_endpoint: String,
@@ -367,6 +384,39 @@ pub enum PendingKeystoreOp {
         ctx: RequestContext,
         user_id: u128,
         zid_endpoint: String,
+    },
+
+    // =========================================================================
+    // Combined Machine Key + ZID Enrollment operations
+    // =========================================================================
+    /// Read identity key for combined machine key creation + enrollment
+    ReadIdentityForMachineEnroll {
+        ctx: RequestContext,
+        request: CreateMachineKeyAndEnrollRequest,
+    },
+    /// Read encrypted shards for combined machine key creation + enrollment
+    ReadEncryptedShardsForMachineEnroll {
+        ctx: RequestContext,
+        request: CreateMachineKeyAndEnrollRequest,
+        /// Stored identity public key for verification
+        stored_identity_pubkey: [u8; 32],
+    },
+    /// Write machine key after derivation, before ZID enrollment
+    WriteMachineKeyForEnroll {
+        ctx: RequestContext,
+        user_id: u128,
+        record: MachineKeyRecord,
+        json_bytes: Vec<u8>,
+        /// ZID endpoint for enrollment after write succeeds
+        zid_endpoint: String,
+        /// Identity signing public key (for ZID enrollment)
+        identity_signing_public_key: [u8; 32],
+        /// Identity signing SK seed (for ZID enrollment authorization signature)
+        identity_signing_sk: [u8; 32],
+        /// Machine signing SK (for ZID enrollment signing)
+        machine_signing_sk: [u8; 32],
+        /// Machine encryption SK (for storage)
+        machine_encryption_sk: [u8; 32],
     },
 }
 
@@ -450,5 +500,55 @@ pub enum PendingNetworkOp {
         machine_signing_sk: [u8; 32],
         /// Machine encryption seed (for storage)
         machine_encryption_sk: [u8; 32],
+    },
+
+    // =========================================================================
+    // Combined Machine Key + ZID Enrollment operations
+    // =========================================================================
+    /// Submit enrollment to ZID server for combined flow (machine key already stored)
+    SubmitZidEnrollForCombined {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+        /// Machine ID already stored locally
+        machine_id: u128,
+        /// Identity signing public key
+        identity_signing_public_key: [u8; 32],
+        /// Machine signing public key
+        machine_signing_public_key: [u8; 32],
+        /// Machine encryption public key
+        machine_encryption_public_key: [u8; 32],
+        /// Machine signing SK (for signing challenge)
+        machine_signing_sk: [u8; 32],
+        /// Machine encryption SK
+        machine_encryption_sk: [u8; 32],
+        /// Stored machine key record (to return on success)
+        machine_key_record: Box<MachineKeyRecord>,
+    },
+    /// Request challenge after combined enrollment identity creation
+    RequestZidChallengeForCombined {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+        machine_id: u128,
+        identity_signing_public_key: [u8; 32],
+        machine_signing_public_key: [u8; 32],
+        machine_encryption_public_key: [u8; 32],
+        machine_signing_sk: [u8; 32],
+        machine_encryption_sk: [u8; 32],
+        machine_key_record: Box<MachineKeyRecord>,
+    },
+    /// Submit login after combined enrollment challenge
+    SubmitZidLoginForCombined {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+        machine_id: u128,
+        identity_signing_public_key: [u8; 32],
+        machine_signing_public_key: [u8; 32],
+        machine_encryption_public_key: [u8; 32],
+        machine_signing_sk: [u8; 32],
+        machine_encryption_sk: [u8; 32],
+        machine_key_record: Box<MachineKeyRecord>,
     },
 }

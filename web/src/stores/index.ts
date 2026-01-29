@@ -52,6 +52,7 @@ export {
   selectError as selectIdentityError,
   selectIsLoggedIn,
   selectUserById,
+  selectRemoteAuthState,
   formatUserId,
   getSessionTimeRemaining,
   isSessionExpired,
@@ -60,6 +61,7 @@ export {
   type UserId,
   type SessionId,
   type UserStatus,
+  type RemoteAuthState,
 } from './identityStore';
 
 // Permission store

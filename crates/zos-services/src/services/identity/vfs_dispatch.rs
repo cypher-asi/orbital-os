@@ -472,7 +472,8 @@ impl IdentityService {
             PendingStorageOp::WriteEmailCredential { ctx, .. } |
             PendingStorageOp::WriteZidSession { ctx, .. } |
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
-            PendingStorageOp::WritePreferences { ctx, .. } => {
+            PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a read response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
@@ -693,7 +694,8 @@ impl IdentityService {
             PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
             PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
-            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } => {
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a write response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
@@ -791,7 +793,8 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
-            PendingStorageOp::WritePreferences { ctx, .. } => {
+            PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive an exists response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
@@ -818,7 +821,10 @@ impl IdentityService {
                 directories,
                 password,
             } => {
-                if result.is_ok() {
+                // Treat "already exists" as success - we just need the directory to exist
+                let is_ok = result.is_ok() || result.as_ref().err().map_or(false, |e| e.contains("AlreadyExists"));
+                
+                if is_ok {
                     // Continue creating remaining directories
                     keys::continue_create_directories(
                         self,
@@ -829,7 +835,10 @@ impl IdentityService {
                         ctx.cap_slots,
                     )
                 } else {
-                    syscall::debug("IdentityService: Failed to create identity directory");
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to create identity directory: {:?}",
+                        result
+                    ));
                     response::send_neural_key_error(
                         ctx.client_pid,
                         &ctx.cap_slots,
@@ -864,7 +873,8 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
-            PendingStorageOp::WritePreferences { ctx, .. } => {
+            PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a mkdir response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
@@ -992,7 +1002,8 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
-            PendingStorageOp::WritePreferences { ctx, .. } => {
+            PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a readdir response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
@@ -1024,6 +1035,16 @@ impl IdentityService {
                         KeyError::MachineKeyNotFound,
                     )
                 }
+            }
+            PendingStorageOp::DeleteZidSession { ctx } => {
+                // Session delete - success even if file didn't exist (already logged out)
+                if result.is_ok() {
+                    syscall::debug("IdentityService: ZID session deleted successfully via VFS");
+                } else {
+                    // Log but don't fail - session file might not exist
+                    syscall::debug("IdentityService: ZID session delete - file may not exist, treating as success");
+                }
+                response::send_zid_logout_success(ctx.client_pid, &ctx.cap_slots)
             }
             // Rule 5: Explicitly enumerate all remaining pending operation types
             // These operations don't expect an unlink response - if we get here, it's a logic error

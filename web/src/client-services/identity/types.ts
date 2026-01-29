@@ -39,6 +39,8 @@ export const MSG = {
   REVOKE_MACHINE_KEY_RESPONSE: 0x7067,
   ROTATE_MACHINE_KEY: 0x7068,
   ROTATE_MACHINE_KEY_RESPONSE: 0x7069,
+  CREATE_MACHINE_KEY_AND_ENROLL: 0x706a,
+  CREATE_MACHINE_KEY_AND_ENROLL_RESPONSE: 0x706b,
   // ZID Auth operations
   ZID_LOGIN: 0x7080,
   ZID_LOGIN_RESPONSE: 0x7081,
@@ -46,6 +48,8 @@ export const MSG = {
   ZID_REFRESH_RESPONSE: 0x7083,
   ZID_ENROLL_MACHINE: 0x7084,
   ZID_ENROLL_MACHINE_RESPONSE: 0x7085,
+  ZID_LOGOUT: 0x7086,
+  ZID_LOGOUT_RESPONSE: 0x7087,
   // Identity Preferences
   GET_IDENTITY_PREFERENCES: 0x7090,
   GET_IDENTITY_PREFERENCES_RESPONSE: 0x7091,
@@ -202,8 +206,12 @@ export interface ZidTokens {
   refresh_token: string;
   /** Unique session identifier */
   session_id: string;
-  /** Access token lifetime in seconds */
-  expires_in: number;
+  /** Machine ID (UUID string) */
+  machine_id: string;
+  /** When the access token expires (RFC3339 timestamp) */
+  expires_at: string;
+  /** Optional warning message */
+  warning?: string;
 }
 
 /** Persisted ZID session (stored in VFS) */
@@ -216,6 +224,8 @@ export interface ZidSession {
   refresh_token: string;
   /** Session ID from ZID server */
   session_id: string;
+  /** Machine ID used for authentication (UUID string, optional for backward compat) */
+  machine_id?: string;
   /** When the access token expires (Unix timestamp ms) */
   expires_at: number;
   /** When this session was created (Unix timestamp ms) */
@@ -295,6 +305,23 @@ export interface ZidLoginResponse {
 
 export interface ZidEnrollMachineResponse {
   result: Result<ZidTokens>;
+}
+
+export interface ZidLogoutResponse {
+  result: Result<void>;
+}
+
+/** Combined result of machine key creation and ZID enrollment */
+export interface MachineKeyAndTokens {
+  /** The created machine key record */
+  machine_key: MachineKeyRecord;
+  /** ZID tokens from successful enrollment */
+  tokens: ZidTokens;
+}
+
+/** Create machine key and enroll response */
+export interface CreateMachineKeyAndEnrollResponse {
+  result: Result<MachineKeyAndTokens>;
 }
 
 // =============================================================================

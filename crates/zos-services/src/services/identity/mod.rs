@@ -201,6 +201,9 @@ impl ZeroApp for IdentityService {
             identity_machine::MSG_GET_MACHINE_KEY => {
                 handlers::keys::handle_get_machine_key(self, &msg)
             }
+            identity_machine::MSG_CREATE_MACHINE_KEY_AND_ENROLL => {
+                handlers::keys::handle_create_machine_key_and_enroll(self, &msg)
+            }
             identity_cred::MSG_ATTACH_EMAIL => {
                 handlers::credentials::handle_attach_email(self, &msg)
             }
@@ -214,6 +217,7 @@ impl ZeroApp for IdentityService {
             identity_zid::MSG_ZID_ENROLL_MACHINE => {
                 handlers::session::handle_zid_enroll_machine(self, &msg)
             }
+            identity_zid::MSG_ZID_LOGOUT => handlers::session::handle_zid_logout(self, &msg),
             identity_prefs::MSG_GET_IDENTITY_PREFERENCES => {
                 handlers::preferences::handle_get_preferences(self, &msg)
             }
