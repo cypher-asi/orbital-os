@@ -29,6 +29,8 @@ export interface RemoteAuthState {
   sessionId: string;
   /** Machine ID used for this session */
   machineId: string;
+  /** How the ZERO ID session was authenticated */
+  loginType?: LoginType;
 }
 
 // =============================================================================
@@ -43,6 +45,15 @@ export type SessionId = string;
 
 /** User status */
 export type UserStatus = 'Active' | 'Offline' | 'Suspended';
+
+/** Login type indicating how the session was authenticated */
+export type LoginType =
+  | 'machine_key'
+  | 'neural_key'
+  | 'email'
+  | 'oauth'
+  | 'webauthn'
+  | 'recovery';
 
 /** User information */
 export interface User {
@@ -60,6 +71,8 @@ export interface Session {
   createdAt: number;
   expiresAt: number;
   capabilities: string[];
+  /** How this session was authenticated */
+  loginType: LoginType;
 }
 
 // =============================================================================
@@ -85,7 +98,7 @@ interface IdentityStoreState {
   setRemoteAuthState: (state: RemoteAuthState | null) => void;
 
   // Async actions (will call supervisor when integrated)
-  login: (userId: UserId) => Promise<void>;
+  login: (userId: UserId, loginType?: LoginType) => Promise<void>;
   logout: () => Promise<void>;
   createUser: (displayName: string) => Promise<User>;
   switchUser: (userId: UserId) => Promise<void>;
@@ -110,6 +123,7 @@ const MOCK_SESSION: Session = {
   createdAt: Date.now() - 3600000,
   expiresAt: Date.now() + 82800000, // 23 hours from now
   capabilities: ['endpoint.read', 'endpoint.write', 'console.read', 'console.write'],
+  loginType: 'machine_key',
 };
 
 // =============================================================================
@@ -134,7 +148,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
         setError: (error) => set({ error }),
         setRemoteAuthState: (remoteAuthState) => set({ remoteAuthState }),
 
-        login: async (userId) => {
+        login: async (userId, loginType: LoginType = 'machine_key') => {
           set({ isLoading: true, error: null });
           try {
             // TODO: Call supervisor.identity_* methods when available
@@ -147,6 +161,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
               createdAt: Date.now(),
               expiresAt: Date.now() + 86400000, // 24 hours
               capabilities: ['endpoint.read', 'endpoint.write'],
+              loginType,
             };
 
             set({
@@ -217,7 +232,16 @@ export const useIdentityStore = create<IdentityStoreState>()(
         name: 'zero-identity-store',
         partialize: (state) => ({
           users: state.users,
-          // Don't persist session - should be re-authenticated
+          // Don't persist currentUser/currentSession - should be re-authenticated
+        }),
+        // Custom merge to ensure currentUser/currentSession always get defaults
+        // Prevents stale localStorage entries from overwriting with null
+        merge: (persisted, current) => ({
+          ...current,
+          ...(persisted as Partial<IdentityStoreState>),
+          // Always restore defaults for user/session if not in persisted data
+          currentUser: MOCK_USER,
+          currentSession: MOCK_SESSION,
         }),
       }
     )
@@ -280,4 +304,24 @@ export function getSessionTimeRemaining(session: Session): string {
 /** Check if a session is expired */
 export function isSessionExpired(session: Session): boolean {
   return Date.now() >= session.expiresAt;
+}
+
+/** Format login type for display */
+export function formatLoginType(loginType: LoginType): string {
+  switch (loginType) {
+    case 'machine_key':
+      return 'Machine Key';
+    case 'neural_key':
+      return 'Neural Key';
+    case 'email':
+      return 'Email';
+    case 'oauth':
+      return 'Third Party';
+    case 'webauthn':
+      return 'Passkey';
+    case 'recovery':
+      return 'Recovery';
+    default:
+      return loginType;
+  }
 }

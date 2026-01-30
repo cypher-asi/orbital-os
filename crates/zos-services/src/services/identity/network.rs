@@ -100,6 +100,23 @@ pub enum NetworkHandlerResult {
         login_response: HttpSuccess,
         cap_slots: Vec<u32>,
     },
+    /// Continue ZID token refresh after receiving new tokens
+    ContinueZidRefresh {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        login_type: zos_identity::ipc::LoginType,
+        refresh_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue ZID email login after receiving tokens
+    ContinueZidEmailLogin {
+        client_pid: u32,
+        user_id: u128,
+        zid_endpoint: String,
+        login_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
 }
 
 /// Handle RequestZidChallenge network result.
@@ -608,6 +625,126 @@ pub fn handle_combined_login_result(
 }
 
 // =============================================================================
+// ZID Token Refresh handler
+// =============================================================================
+
+/// Handle SubmitZidRefresh network result.
+pub fn handle_zid_refresh_result(
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    login_type: zos_identity::ipc::LoginType,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Token refresh successful");
+            NetworkHandlerResult::ContinueZidRefresh {
+                client_pid,
+                user_id,
+                zid_endpoint,
+                login_type,
+                refresh_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Refresh token expired or invalid");
+            NetworkHandlerResult::Done(response::send_zid_refresh_error(
+                client_pid,
+                &cap_slots,
+                ZidError::InvalidRefreshToken,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Token refresh failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_zid_refresh_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Token refresh network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_zid_refresh_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+// =============================================================================
+// ZID Email Login handler
+// =============================================================================
+
+/// Handle SubmitZidEmailLogin network result.
+pub fn handle_zid_email_login_result(
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Email login successful, tokens received");
+            NetworkHandlerResult::ContinueZidEmailLogin {
+                client_pid,
+                user_id,
+                zid_endpoint,
+                login_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Email login authentication failed");
+            NetworkHandlerResult::Done(response::send_zid_email_login_error(
+                client_pid,
+                &cap_slots,
+                ZidError::AuthenticationFailed,
+            ))
+        }
+        Ok(success) if success.status == 403 => {
+            // MFA required or account locked
+            syscall::debug("IdentityService: Email login forbidden - may require MFA");
+            let error = parse_zid_error_response(&success.body, success.status);
+            NetworkHandlerResult::Done(response::send_zid_email_login_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Email login failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_zid_email_login_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Email login network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_zid_email_login_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+// =============================================================================
 // Error parsing helpers
 // =============================================================================
 
@@ -652,28 +789,122 @@ pub fn parse_zid_error_response(body: &[u8], status: u16) -> ZidError {
 }
 
 /// Parse ZID credential error response.
+///
+/// Handles multiple ZID error formats:
+/// 1. Simple: `{"error": "email_already_registered", "message": "..."}`
+/// 2. Nested: `{"error": {"code": "EMAIL_ALREADY_REGISTERED", "message": "..."}}`
 pub fn parse_zid_credential_error(body: &[u8]) -> CredentialError {
-    #[derive(serde::Deserialize)]
-    struct ZidErrorResponse {
-        error: Option<String>,
-        message: Option<String>,
+    // Log the raw body for debugging
+    if let Ok(body_str) = core::str::from_utf8(body) {
+        syscall::debug(&format!(
+            "IdentityService: Parsing ZID credential error body: {}",
+            body_str
+        ));
     }
 
-    if let Ok(err_response) = serde_json::from_slice::<ZidErrorResponse>(body) {
-        if let Some(error_code) = err_response.error {
-            return match error_code.as_str() {
-                "email_already_registered" => CredentialError::AlreadyLinked,
-                "invalid_email_format" => CredentialError::InvalidFormat,
-                "password_too_weak" => CredentialError::StorageError(
-                    "Password must be 12+ chars with uppercase, lowercase, number, and symbol"
-                        .into(),
-                ),
-                _ => CredentialError::StorageError(err_response.message.unwrap_or(error_code)),
-            };
+    // Try to parse as a generic JSON value first
+    let json_value: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Failed to parse error body as JSON: {}",
+                e
+            ));
+            return CredentialError::StorageError("Invalid error response from ZID".into());
         }
+    };
+
+    // Extract the error field
+    let error_field = match json_value.get("error") {
+        Some(e) => e,
+        None => {
+            // No "error" field - check for direct message
+            if let Some(msg) = json_value.get("message").and_then(|m| m.as_str()) {
+                return map_credential_error_message(msg);
+            }
+            return CredentialError::StorageError("No error field in ZID response".into());
+        }
+    };
+
+    // Handle nested object: {"error": {"code": "...", "message": "..."}}
+    if let Some(obj) = error_field.as_object() {
+        let code = obj.get("code").and_then(|v| v.as_str()).unwrap_or("");
+        let message = obj
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
+
+        syscall::debug(&format!(
+            "IdentityService: ZID error code={}, message={}",
+            code, message
+        ));
+
+        return match code.to_uppercase().as_str() {
+            "EMAIL_ALREADY_REGISTERED" | "EMAIL_EXISTS" | "CONFLICT" => {
+                CredentialError::AlreadyLinked
+            }
+            "INVALID_EMAIL" | "INVALID_EMAIL_FORMAT" | "BAD_EMAIL" => {
+                CredentialError::InvalidFormat
+            }
+            "PASSWORD_TOO_WEAK" | "WEAK_PASSWORD" => CredentialError::StorageError(
+                "Password must be 12+ chars with uppercase, lowercase, number, and symbol".into(),
+            ),
+            "UNAUTHORIZED" | "AUTH_REQUIRED" => {
+                CredentialError::StorageError("ZID session expired, please login again".into())
+            }
+            _ => {
+                // Check message for common patterns
+                map_credential_error_message(message)
+            }
+        };
     }
 
-    CredentialError::StorageError("Unknown ZID error".into())
+    // Handle simple string: {"error": "email_already_registered"}
+    if let Some(error_code) = error_field.as_str() {
+        syscall::debug(&format!(
+            "IdentityService: ZID error string code={}",
+            error_code
+        ));
+
+        return match error_code.to_lowercase().as_str() {
+            "email_already_registered" | "email_exists" | "conflict" => {
+                CredentialError::AlreadyLinked
+            }
+            "invalid_email_format" | "invalid_email" | "bad_email" => CredentialError::InvalidFormat,
+            "password_too_weak" | "weak_password" => CredentialError::StorageError(
+                "Password must be 12+ chars with uppercase, lowercase, number, and symbol".into(),
+            ),
+            _ => {
+                // Check for message field
+                if let Some(msg) = json_value.get("message").and_then(|m| m.as_str()) {
+                    return map_credential_error_message(msg);
+                }
+                CredentialError::StorageError(error_code.into())
+            }
+        };
+    }
+
+    CredentialError::StorageError("Unknown ZID error format".into())
+}
+
+/// Map error message content to CredentialError
+fn map_credential_error_message(message: &str) -> CredentialError {
+    let lower = message.to_lowercase();
+    if lower.contains("already registered")
+        || lower.contains("already exists")
+        || lower.contains("already linked")
+        || lower.contains("email exists")
+    {
+        CredentialError::AlreadyLinked
+    } else if lower.contains("invalid email") || lower.contains("email format") {
+        CredentialError::InvalidFormat
+    } else if lower.contains("password") && (lower.contains("weak") || lower.contains("strong")) {
+        CredentialError::StorageError(
+            "Password must be 12+ chars with uppercase, lowercase, number, and symbol".into(),
+        )
+    } else {
+        CredentialError::StorageError(message.into())
+    }
 }
 
 /// Parse ZID enrollment error response.

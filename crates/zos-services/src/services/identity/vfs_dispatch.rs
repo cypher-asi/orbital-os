@@ -6,7 +6,7 @@
 use alloc::format;
 
 use super::handlers::{credentials, keys, session};
-use super::pending::{PendingStorageOp, RequestContext};
+use super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext};
 use super::{response, IdentityService};
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
@@ -515,10 +515,30 @@ impl IdentityService {
                     ctx.cap_slots,
                 )
             }
+            PendingStorageOp::ReadZidSessionForRefresh {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(data) => session::continue_zid_refresh_after_session_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_zid_refresh_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::InvalidRequest("No session found".into()),
+                ),
+            }
             // Rule 5: Explicitly enumerate all remaining pending operation types
             // These operations don't expect a read response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
             PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { ctx, .. } |
             PendingStorageOp::CheckKeyExists { ctx, .. } |
             PendingStorageOp::WriteKeyStore { ctx, .. } |
             PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
@@ -532,6 +552,13 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
             PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } |
+            PendingStorageOp::WriteRefreshedZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, .. } |
+            PendingStorageOp::CreateCredentialsDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a read response
                 // This indicates a state machine bug - report it clearly
@@ -643,16 +670,51 @@ impl IdentityService {
                     }
                 }
             }
-            PendingStorageOp::WriteEmailCredential { ctx, .. } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: Email credential stored successfully via VFS");
-                    response::send_attach_email_success(ctx.client_pid, &ctx.cap_slots)
-                } else {
-                    response::send_attach_email_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        CredentialError::StorageError("VFS write failed".into()),
-                    )
+            PendingStorageOp::WriteEmailCredential { ctx, user_id, json_bytes } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Email credential stored successfully via VFS");
+                        response::send_attach_email_success(ctx.client_pid, &ctx.cap_slots)
+                    }
+                    Err(e) => {
+                        // VFS write failed - likely directory doesn't exist for existing users
+                        // Try to create the credentials directory on-demand
+                        syscall::debug(&format!(
+                            "IdentityService: WriteEmailCredential failed ({}), creating credentials directory on-demand",
+                            e
+                        ));
+                        // IMPORTANT: Use {} format (decimal) to match canonical user home path format
+                        // Use create_parents=true to create all parent directories if they don't exist
+                        let cred_dir = alloc::format!("/home/{}/.zos/credentials", user_id);
+                        self.start_vfs_mkdir(
+                            &cred_dir,
+                            true, // create_parents = true - creates /home/{user}/.zos if needed
+                            PendingStorageOp::CreateCredentialsDirectory {
+                                ctx,
+                                user_id,
+                                json_bytes,
+                            },
+                        )
+                    }
+                }
+            }
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Email credential stored successfully via VFS (after directory creation)");
+                        response::send_attach_email_success(ctx.client_pid, &ctx.cap_slots)
+                    }
+                    Err(e) => {
+                        syscall::debug(&format!(
+                            "IdentityService: WriteEmailCredentialRetry still failed: {}",
+                            e
+                        ));
+                        response::send_attach_email_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            CredentialError::StorageError(alloc::format!("VFS write failed: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteUnlinkedCredential { ctx, .. } => {
@@ -734,7 +796,7 @@ impl IdentityService {
                     }
                 }
             }
-            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } => {
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, user_id, json_bytes } => {
                 match result {
                     Ok(()) => {
                         syscall::debug("IdentityService: Default machine key preference stored successfully via VFS");
@@ -742,9 +804,36 @@ impl IdentityService {
                         response::send_set_default_machine_key_response(ctx.client_pid, &ctx.cap_slots, resp)
                     }
                     Err(e) => {
+                        // On failure (likely NotFound for parent directory), create directory and retry
+                        syscall::debug(&format!(
+                            "IdentityService: WritePreferencesForDefaultMachine failed ({}), creating identity directory on-demand",
+                            e
+                        ));
+                        // Use create_parents=true to create all parent directories if they don't exist
+                        let identity_dir = format!("/home/{}/.zos/identity", user_id);
+                        self.start_vfs_mkdir(
+                            &identity_dir,
+                            true, // create_parents = true - creates /home/{user}/.zos if needed
+                            PendingStorageOp::CreateIdentityDirForPreferences {
+                                ctx,
+                                user_id,
+                                json_bytes,
+                            },
+                        )
+                    }
+                }
+            }
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Default machine key preference stored successfully via VFS (after directory creation)");
+                        let resp = zos_identity::ipc::SetDefaultMachineKeyResponse { result: Ok(()) };
+                        response::send_set_default_machine_key_response(ctx.client_pid, &ctx.cap_slots, resp)
+                    }
+                    Err(e) => {
                         // Rule 9: Include operation and result type in error message
                         syscall::debug(&format!(
-                            "IdentityService: WritePreferencesForDefaultMachine failed - op=set_default_machine_key, error={}",
+                            "IdentityService: WritePreferencesForDefaultMachineRetry still failed - op=set_default_machine_key, error={}",
                             e
                         ));
                         response::send_set_default_machine_key_error(
@@ -752,6 +841,44 @@ impl IdentityService {
                             &ctx.cap_slots,
                             KeyError::StorageError(format!("VFS write failed for default machine key: {}", e)),
                         )
+                    }
+                }
+            }
+            PendingStorageOp::WriteRefreshedZidSession { ctx, tokens, .. } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Refreshed ZID session stored successfully via VFS");
+                        response::send_zid_refresh_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteRefreshedZidSession failed - op=zid_refresh, error={}",
+                            e
+                        ));
+                        // Still return success with tokens since refresh succeeded,
+                        // only session persistence failed (acceptable partial failure per Rule 0)
+                        syscall::debug("IdentityService: Session write failed but refresh succeeded - returning tokens anyway");
+                        response::send_zid_refresh_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
+                }
+            }
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, tokens, .. } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: ZID email login session stored successfully via VFS");
+                        response::send_zid_email_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteZidEmailLoginSession failed - op=zid_email_login, error={}",
+                            e
+                        ));
+                        // Still return success with tokens since email login succeeded,
+                        // only session persistence failed (acceptable partial failure per Rule 0)
+                        syscall::debug("IdentityService: Session write failed but email login succeeded - returning tokens anyway");
+                        response::send_zid_email_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
                     }
                 }
             }
@@ -777,6 +904,11 @@ impl IdentityService {
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
             PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { ctx, .. } |
+            PendingStorageOp::CreateCredentialsDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { ctx, .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a write response
                 // This indicates a state machine bug - report it clearly
@@ -877,8 +1009,17 @@ impl IdentityService {
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
             PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
             PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } |
+            PendingStorageOp::WriteRefreshedZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, .. } |
+            PendingStorageOp::CreateCredentialsDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { ctx, .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { ctx, .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive an exists response
                 // This indicates a state machine bug - report it clearly
@@ -931,6 +1072,123 @@ impl IdentityService {
                     )
                 }
             }
+            // New efficient path: create_parents=true creates all directories in one VFS call
+            PendingStorageOp::CreateIdentityDirectoryComplete {
+                ctx,
+                user_id,
+                password,
+            } => {
+                // Treat "already exists" as success - we just need the directory to exist
+                let is_ok = result.is_ok() || result.as_ref().err().map_or(false, |e| e.contains("AlreadyExists"));
+                
+                if is_ok {
+                    syscall::debug(&format!(
+                        "IdentityService: Identity directory structure created for user {}",
+                        user_id
+                    ));
+                    // Proceed to check if key already exists (via Keystore)
+                    let key_path = LocalKeyStore::storage_path(user_id);
+                    self.start_keystore_exists(
+                        &key_path,
+                        PendingKeystoreOp::CheckKeyExists { ctx, user_id, password },
+                    )
+                } else {
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to create identity directory: {:?}",
+                        result
+                    ));
+                    response::send_neural_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("Failed to create identity directory".into()),
+                    )
+                }
+            }
+            // Create VFS directory for derived user_id after neural key generation
+            PendingStorageOp::CreateDerivedUserDirectory {
+                ctx,
+                derived_user_id,
+                result: key_result,
+            } => {
+                // Treat "already exists" as success - we just need the directory to exist
+                let is_ok = result.is_ok() || result.as_ref().err().map_or(false, |e| e.contains("AlreadyExists"));
+                
+                if is_ok {
+                    syscall::debug(&format!(
+                        "IdentityService: VFS directory created for derived user {}, sending success response",
+                        derived_user_id
+                    ));
+                    // Now we can send the success response
+                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                } else {
+                    // Directory creation failed - log but still return success for neural key
+                    // since the keys are already stored in keystore. The VFS directory will
+                    // be created on-demand when needed (e.g., first preferences write).
+                    syscall::debug(&format!(
+                        "IdentityService: Warning - VFS directory creation failed for derived user {}: {:?}. Keys are stored, continuing.",
+                        derived_user_id, result
+                    ));
+                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                }
+            }
+            // On-demand credentials directory creation for existing users
+            PendingStorageOp::CreateCredentialsDirectory { ctx, user_id, json_bytes } => {
+                // Treat "already exists" as success - we just need the directory to exist
+                let is_ok = result.is_ok() || result.as_ref().err().map_or(false, |e| e.contains("AlreadyExists"));
+                
+                if is_ok {
+                    syscall::debug("IdentityService: Credentials directory created, retrying write");
+                    let cred_path = zos_identity::keystore::CredentialStore::storage_path(user_id);
+                    self.start_vfs_write(
+                        &cred_path,
+                        &json_bytes,
+                        PendingStorageOp::WriteEmailCredentialRetry {
+                            ctx,
+                            user_id,
+                            json_bytes: json_bytes.clone(),
+                        },
+                    )
+                } else {
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to create credentials directory: {:?}",
+                        result
+                    ));
+                    response::send_attach_email_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        CredentialError::StorageError("Failed to create credentials directory".into()),
+                    )
+                }
+            }
+            // On-demand identity directory creation for preferences write
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, user_id, json_bytes } => {
+                // Treat "already exists" as success - we just need the directory to exist
+                let is_ok = result.is_ok() || result.as_ref().err().map_or(false, |e| e.contains("AlreadyExists"));
+                
+                if is_ok {
+                    syscall::debug("IdentityService: Identity directory created, retrying preferences write");
+                    let prefs_path = zos_identity::ipc::IdentityPreferences::storage_path(user_id);
+                    self.start_vfs_write(
+                        &prefs_path,
+                        &json_bytes,
+                        PendingStorageOp::WritePreferencesForDefaultMachineRetry {
+                            ctx,
+                            user_id,
+                            json_bytes: json_bytes.clone(),
+                        },
+                    )
+                } else {
+                    syscall::debug(&format!(
+                        "IdentityService: Failed to create identity directory: {:?}",
+                        result
+                    ));
+                    response::send_set_default_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("Failed to create identity directory".into()),
+                    )
+                }
+            }
             // Rule 5: Explicitly enumerate all remaining pending operation types
             // These operations don't expect a mkdir response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
@@ -952,6 +1210,7 @@ impl IdentityService {
             PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
             PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
             PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } |
             PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
             PendingStorageOp::WriteZidSession { ctx, .. } |
             PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
@@ -960,8 +1219,12 @@ impl IdentityService {
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
             PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
             PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } |
+            PendingStorageOp::WriteRefreshedZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a mkdir response
                 // This indicates a state machine bug - report it clearly
@@ -1069,6 +1332,7 @@ impl IdentityService {
             // These operations don't expect a readdir response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
             PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { ctx, .. } |
             PendingStorageOp::CheckKeyExists { ctx, .. } |
             PendingStorageOp::WriteKeyStore { ctx, .. } |
             PendingStorageOp::GetIdentityKey { ctx } |
@@ -1092,8 +1356,16 @@ impl IdentityService {
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
             PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
             PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } |
+            PendingStorageOp::WriteRefreshedZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, .. } |
+            PendingStorageOp::CreateCredentialsDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { ctx, .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a readdir response
                 // This indicates a state machine bug - report it clearly
@@ -1141,6 +1413,8 @@ impl IdentityService {
             // These operations don't expect an unlink response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
             PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { ctx, .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { ctx, .. } |
             PendingStorageOp::CheckKeyExists { ctx, .. } |
             PendingStorageOp::WriteKeyStore { ctx, .. } |
             PendingStorageOp::GetIdentityKey { ctx } |
@@ -1166,8 +1440,15 @@ impl IdentityService {
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
             PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
-            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } => {
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { ctx, .. } |
+            PendingStorageOp::WriteRefreshedZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { ctx, .. } |
+            PendingStorageOp::CreateCredentialsDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { ctx, .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { ctx, .. } => {
                 // Rule 5: These operations should NOT receive an unlink response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(

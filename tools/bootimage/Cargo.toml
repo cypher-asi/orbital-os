@@ -1,0 +1,11 @@
+[package]
+name = "bootimage"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bootimage"
+path = "src/main.rs"
+
+[dependencies]
+bootloader = "0.11"

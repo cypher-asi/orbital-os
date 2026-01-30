@@ -57,6 +57,9 @@ export const MSG = {
   SET_DEFAULT_KEY_SCHEME_RESPONSE: 0x7093,
   SET_DEFAULT_MACHINE_KEY: 0x7094,
   SET_DEFAULT_MACHINE_KEY_RESPONSE: 0x7095,
+  // ZID Email Login
+  ZID_LOGIN_EMAIL: 0x7088,
+  ZID_LOGIN_EMAIL_RESPONSE: 0x7089,
 } as const;
 
 // =============================================================================
@@ -78,6 +81,8 @@ export interface PublicIdentifiers {
 
 /** Result of successful Neural Key generation */
 export interface NeuralKeyGenerated {
+  /** The derived user ID (hex string from identity signing public key) */
+  user_id: string;
   public_identifiers: PublicIdentifiers;
   /**
    * External Shamir shards (3 of 5) for paper backup.
@@ -200,6 +205,15 @@ export interface LinkedCredential {
   is_primary: boolean;
 }
 
+/** Login type indicating how the session was authenticated */
+export type ZidLoginType =
+  | 'machine_key'
+  | 'neural_key'
+  | 'email'
+  | 'oauth'
+  | 'web_authn'
+  | 'recovery';
+
 /** Tokens returned from successful ZID authentication */
 export interface ZidTokens {
   /** JWT access token for API calls */
@@ -212,6 +226,8 @@ export interface ZidTokens {
   machine_id: string;
   /** When the access token expires (RFC3339 timestamp) */
   expires_at: string;
+  /** How this session was authenticated */
+  login_type?: ZidLoginType;
   /** Optional warning message */
   warning?: string;
 }
@@ -228,6 +244,8 @@ export interface ZidSession {
   session_id: string;
   /** Machine ID used for authentication (UUID string, optional for backward compat) */
   machine_id?: string;
+  /** How this session was authenticated (optional for backward compat) */
+  login_type?: ZidLoginType;
   /** When the access token expires (Unix timestamp ms) */
   expires_at: number;
   /** When this session was created (Unix timestamp ms) */
@@ -311,6 +329,15 @@ export interface ZidEnrollMachineResponse {
 
 export interface ZidLogoutResponse {
   result: Result<void>;
+}
+
+export interface ZidRefreshResponse {
+  result: Result<ZidTokens>;
+}
+
+/** ZID email login response */
+export interface ZidEmailLoginResponse {
+  result: Result<ZidTokens>;
 }
 
 /** Combined result of machine key creation and ZID enrollment */

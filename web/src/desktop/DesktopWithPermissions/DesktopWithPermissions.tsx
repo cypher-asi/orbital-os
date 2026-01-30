@@ -16,6 +16,7 @@ import { DesktopInner } from '../DesktopInner';
 import { usePointerHandlers } from '../Desktop/hooks/usePointerHandlers';
 import { useBackgroundMenu } from '../Desktop/hooks/useBackgroundMenu';
 import { useDesktopPrefsStore } from '@/stores/desktopPrefsStore';
+import { withSupervisorGuard } from '../main';
 import type { WorkspaceInfo } from '@/stores/types';
 import type { DesktopProps, SelectionBox, DesktopBackgroundType } from '../Desktop/types';
 import styles from '../Desktop/Desktop.module.css';
@@ -121,32 +122,35 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
     if (!initialized || !supervisor || !desktop) return;
 
     const checkOrphanedWindows = (): void => {
-      try {
-        // Get all windows with process IDs
-        const windows = JSON.parse(desktop.get_windows_json()) as Array<{
-          id: number;
-          processId?: number;
-        }>;
+      // Use supervisor guard to prevent "recursive use of an object" errors
+      withSupervisorGuard(() => {
+        try {
+          // Get all windows with process IDs
+          const windows = JSON.parse(desktop.get_windows_json()) as Array<{
+            id: number;
+            processId?: number;
+          }>;
 
-        // Get current processes
-        const processes = JSON.parse(supervisor.get_process_list_json()) as Array<{
-          pid: number;
-        }>;
-        const processPids = new Set(processes.map((p) => p.pid));
+          // Get current processes
+          const processes = JSON.parse(supervisor.get_process_list_json()) as Array<{
+            pid: number;
+          }>;
+          const processPids = new Set(processes.map((p) => p.pid));
 
-        // Check each window with a processId
-        for (const win of windows) {
-          if (win.processId != null && !processPids.has(win.processId)) {
-            // Process died - close the orphaned window
-            console.log(
-              `[Desktop] Process ${win.processId} died, closing orphaned window ${win.id}`
-            );
-            desktop.close_window(BigInt(win.id));
+          // Check each window with a processId
+          for (const win of windows) {
+            if (win.processId != null && !processPids.has(win.processId)) {
+              // Process died - close the orphaned window
+              console.log(
+                `[Desktop] Process ${win.processId} died, closing orphaned window ${win.id}`
+              );
+              desktop.close_window(BigInt(win.id));
+            }
           }
+        } catch {
+          // Ignore errors during orphan check or if guard skipped
         }
-      } catch {
-        // Ignore errors during orphan check
-      }
+      });
     };
 
     // Check every second

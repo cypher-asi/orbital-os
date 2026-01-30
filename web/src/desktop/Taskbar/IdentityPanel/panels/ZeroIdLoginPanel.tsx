@@ -11,12 +11,39 @@ import {
   Check,
   LogOut,
   RefreshCw,
+  Cpu,
+  Brain,
+  Mail,
+  Globe,
+  RotateCcw,
+  UserCheck,
 } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useMachineKeys } from '../../../hooks/useMachineKeys';
 import { usePanelDrillOptional } from '../context';
+import { formatLoginType, type LoginType } from '@/stores';
 import styles from './ZeroIdLoginPanel.module.css';
+
+/** Get the appropriate icon for a login type */
+function getLoginTypeIcon(loginType: LoginType, size = 12) {
+  switch (loginType) {
+    case 'machine_key':
+      return <Cpu size={size} />;
+    case 'neural_key':
+      return <Brain size={size} />;
+    case 'email':
+      return <Mail size={size} />;
+    case 'oauth':
+      return <Globe size={size} />;
+    case 'webauthn':
+      return <Fingerprint size={size} />;
+    case 'recovery':
+      return <RotateCcw size={size} />;
+    default:
+      return <Key size={size} />;
+  }
+}
 
 interface ZeroIdLoginPanelProps {
   /** Callback to close the subpanel (e.g., after disconnect) - optional fallback */
@@ -142,6 +169,23 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
               >
                 {isCopied('session') ? <Check size={12} /> : <Copy size={12} />}
               </Button>
+            </div>
+          </div>
+
+          <div className={styles.infoItem}>
+            <div className={styles.infoLabel}>
+              <UserCheck size={12} />
+              <span>Auth Type</span>
+            </div>
+            <div className={styles.infoValueWithBadge}>
+              {remoteAuthState.loginType ? (
+                <>
+                  {getLoginTypeIcon(remoteAuthState.loginType)}
+                  <span>{formatLoginType(remoteAuthState.loginType)}</span>
+                </>
+              ) : (
+                <span className={styles.textMuted}>Unknown</span>
+              )}
             </div>
           </div>
 

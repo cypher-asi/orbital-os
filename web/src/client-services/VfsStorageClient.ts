@@ -88,6 +88,8 @@ declare global {
     };
     /** ZosKeystore - key storage HAL for cryptographic keys (lazy init by KeyService) */
     ZosKeystore?: {
+      // Database handle (set after init() completes)
+      db: IDBDatabase | null;
       // Supervisor initialization
       initSupervisor(supervisor: unknown): void;
       // Async key operations (HAL callbacks)

@@ -120,6 +120,8 @@ export interface PublicIdentifiers {
  * Result of successful Neural Key generation (UI format).
  */
 export interface NeuralKeyGenerated {
+  /** The derived user ID (hex string from identity signing public key) */
+  userId: string;
   /** Public identifiers (stored server-side) */
   publicIdentifiers: PublicIdentifiers;
   /** Shamir shards (3-of-5) - returned to UI for backup, NOT stored */

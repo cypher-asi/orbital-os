@@ -744,6 +744,12 @@ pub mod identity_zid {
     /// ZID logout response.
     /// Payload: JSON-serialized ZidLogoutResponse
     pub const MSG_ZID_LOGOUT_RESPONSE: u32 = 0x7087;
+    /// ZID login with email/password request.
+    /// Payload: JSON-serialized ZidEmailLoginRequest
+    pub const MSG_ZID_LOGIN_EMAIL: u32 = 0x7088;
+    /// ZID login with email/password response.
+    /// Payload: JSON-serialized ZidEmailLoginResponse (uses ZidTokens on success)
+    pub const MSG_ZID_LOGIN_EMAIL_RESPONSE: u32 = 0x7089;
 }
 
 /// Identity service messages - Identity Preferences (0x7090-0x7099).

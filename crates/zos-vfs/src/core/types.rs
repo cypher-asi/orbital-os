@@ -5,6 +5,48 @@
 use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
+/// Serde helper for Option<u128> as hex string
+///
+/// Large u128 values can cause issues with JSON serialization/deserialization
+/// when represented as decimal numbers. This helper serializes them as hex strings.
+mod option_u128_hex {
+    use alloc::format;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<u128>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_str(&format!("{:032x}", v)),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u128>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<&str> = Option::deserialize(deserializer)?;
+        match opt {
+            Some(s) => {
+                // Handle both hex strings and legacy decimal numbers
+                if s.chars().all(|c| c.is_ascii_hexdigit()) && s.len() <= 32 {
+                    u128::from_str_radix(s, 16)
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    // Try parsing as decimal for backwards compatibility
+                    s.parse::<u128>()
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 /// A unique user identifier (UUID as 128-bit value).
 pub type UserId = u128;
 
@@ -24,6 +66,8 @@ pub struct Inode {
     pub inode_type: InodeType,
 
     /// Owner user ID (None = system owned)
+    /// Serialized as hex string to avoid issues with large u128 values in JSON
+    #[serde(with = "option_u128_hex")]
     pub owner_id: Option<UserId>,
 
     /// Access permissions

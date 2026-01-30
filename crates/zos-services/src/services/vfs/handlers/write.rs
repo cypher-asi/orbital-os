@@ -29,8 +29,9 @@ use zos_vfs::Inode;
 use zos_vfs::{parent_path, VfsError};
 
 use super::super::{
-    content_key, derive_permission_context, inode_key, result_type_name, validate_path,
-    ClientContext, MkdirStage, PendingOp, VfsService, WriteFileStage, MAX_CONTENT_SIZE,
+    build_parent_paths, content_key, derive_permission_context, inode_key, result_type_name,
+    validate_path, ClientContext, MkdirStage, PendingOp, VfsService, WriteFileStage,
+    MAX_CONTENT_SIZE,
 };
 
 impl VfsService {
@@ -161,14 +162,6 @@ impl VfsService {
             }
         };
 
-        // Rule 8: Reject create_parents flag (not implemented)
-        if request.create_parents {
-            return self.send_mkdir_error_via_debug(
-                msg.from_pid,
-                VfsError::NotSupported("create_parents not implemented".into()),
-            );
-        }
-
         // Validate path
         if let Err(reason) = validate_path(&request.path) {
             return self.send_mkdir_error_via_debug(
@@ -177,7 +170,10 @@ impl VfsService {
             );
         }
 
-        syscall::debug(&format!("VfsService: mkdir {}", request.path));
+        syscall::debug(&format!(
+            "VfsService: mkdir {} (create_parents={})",
+            request.path, request.create_parents
+        ));
 
         // Derive permission context from caller (for parent directory check)
         let perm_ctx = derive_permission_context(msg.from_pid, &request.path);
@@ -191,6 +187,7 @@ impl VfsService {
                 path: request.path,
                 perm_ctx,
                 stage: MkdirStage::CheckingExists,
+                create_parents: request.create_parents,
             },
         )
     }
@@ -660,27 +657,36 @@ impl VfsService {
     /// Handle mkdir operation result (state machine)
     ///
     /// This handler implements the mkdir state machine:
-    /// 1. CheckingExists: Verify path doesn't already exist
+    /// 1. CheckingExists: Verify path doesn't already exist (or exists for create_parents)
     /// 2. CheckingParent: Verify parent exists, is directory, check permissions
     /// 3. WritingInode: Write the directory inode
+    /// 4. CreatingParents: For create_parents=true, iterate through parent paths
     pub fn handle_mkdir_op_result(
         &mut self,
         client_ctx: &ClientContext,
         path: &str,
         perm_ctx: &PermissionContext,
         stage: MkdirStage,
+        create_parents: bool,
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
         match stage {
             MkdirStage::CheckingExists => {
-                self.handle_mkdir_checking_exists(client_ctx, path, perm_ctx, result_type, data)
+                self.handle_mkdir_checking_exists(client_ctx, path, perm_ctx, create_parents, result_type, data)
             }
             MkdirStage::CheckingParent => {
-                self.handle_mkdir_checking_parent(client_ctx, path, perm_ctx, result_type, data)
+                self.handle_mkdir_checking_parent(client_ctx, path, perm_ctx, create_parents, result_type, data)
             }
             MkdirStage::WritingInode => {
                 self.handle_mkdir_writing_inode(client_ctx, path, result_type)
+            }
+            MkdirStage::CreatingParents { paths, index, writing } => {
+                if writing {
+                    self.handle_mkdir_creating_parents_write_done(client_ctx, path, perm_ctx, paths, index, result_type)
+                } else {
+                    self.handle_mkdir_creating_parents(client_ctx, path, perm_ctx, paths, index, result_type)
+                }
             }
         }
     }
@@ -691,6 +697,7 @@ impl VfsService {
         client_ctx: &ClientContext,
         path: &str,
         perm_ctx: &PermissionContext,
+        create_parents: bool,
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
@@ -699,12 +706,21 @@ impl VfsService {
             storage_result::EXISTS_OK => {
                 let exists = !data.is_empty() && data[0] == 1;
                 if exists {
+                    // For create_parents=true (mkdir -p behavior), existing directory is success
+                    if create_parents {
+                        syscall::debug(&format!(
+                            "VfsService: mkdir {} already exists (create_parents=true, returning success)",
+                            path
+                        ));
+                        let response = MkdirResponse { result: Ok(()) };
+                        return self.send_response(client_ctx, vfs_msg::MSG_VFS_MKDIR_RESPONSE, &response);
+                    }
                     return self.send_mkdir_error(client_ctx, VfsError::AlreadyExists);
                 }
-                // Path doesn't exist - proceed to check parent
+                // Path doesn't exist - proceed
             }
             storage_result::NOT_FOUND => {
-                // Key not found = doesn't exist, proceed to check parent
+                // Key not found = doesn't exist, proceed
             }
             _ => {
                 // Unexpected result type - fail closed
@@ -725,19 +741,50 @@ impl VfsService {
             }
         }
 
-        // Get parent path and check it exists with proper permissions
-        // Rule 4: Never skip permission check, even for root
-        let parent = parent_path(path);
+        // For create_parents=true, build the list of all paths to create
+        if create_parents {
+            // Build list of paths from root to target
+            // e.g., "/home/1/.zos/identity" -> ["/home", "/home/1", "/home/1/.zos", "/home/1/.zos/identity"]
+            let paths = build_parent_paths(path);
+            
+            if paths.is_empty() {
+                // Only root path, just create the directory
+                return self.create_directory_inode(client_ctx, path, perm_ctx, false);
+            }
+            
+            syscall::debug(&format!(
+                "VfsService: mkdir {} with create_parents=true, creating {} directories",
+                path,
+                paths.len()
+            ));
+            
+            // Start by checking if the first path exists
+            let first_path = paths[0].clone();
+            self.start_storage_exists(
+                &inode_key(&first_path),
+                PendingOp::MkdirOp {
+                    ctx: client_ctx.clone(),
+                    path: path.to_string(),
+                    perm_ctx: perm_ctx.clone(),
+                    stage: MkdirStage::CreatingParents { paths, index: 0, writing: false },
+                    create_parents: true,
+                },
+            )
+        } else {
+            // Normal mkdir - check parent exists
+            let parent = parent_path(path);
 
-        self.start_storage_read(
-            &inode_key(&parent),
-            PendingOp::MkdirOp {
-                ctx: client_ctx.clone(),
-                path: path.to_string(),
-                perm_ctx: perm_ctx.clone(),
-                stage: MkdirStage::CheckingParent,
-            },
-        )
+            self.start_storage_read(
+                &inode_key(&parent),
+                PendingOp::MkdirOp {
+                    ctx: client_ctx.clone(),
+                    path: path.to_string(),
+                    perm_ctx: perm_ctx.clone(),
+                    stage: MkdirStage::CheckingParent,
+                    create_parents: false,
+                },
+            )
+        }
     }
 
     /// Stage 2: Check parent directory exists, is a directory, and we have permission
@@ -746,6 +793,7 @@ impl VfsService {
         client_ctx: &ClientContext,
         path: &str,
         perm_ctx: &PermissionContext,
+        create_parents: bool,
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
@@ -818,7 +866,7 @@ impl VfsService {
         }
 
         // Permission granted - create the directory inode
-        self.create_directory_inode(client_ctx, path, perm_ctx)
+        self.create_directory_inode(client_ctx, path, perm_ctx, create_parents)
     }
 
     /// Helper: Create and write a directory inode
@@ -827,6 +875,7 @@ impl VfsService {
         client_ctx: &ClientContext,
         path: &str,
         perm_ctx: &PermissionContext,
+        create_parents: bool,
     ) -> Result<(), AppError> {
         let name = path.rsplit('/').next().unwrap_or(path).to_string();
         let parent = parent_path(path);
@@ -855,8 +904,154 @@ impl VfsService {
                 path: path.to_string(),
                 perm_ctx: perm_ctx.clone(),
                 stage: MkdirStage::WritingInode,
+                create_parents,
             },
         )
+    }
+
+    /// Handle CreatingParents stage - recursively check/create parent directories
+    fn handle_mkdir_creating_parents(
+        &mut self,
+        client_ctx: &ClientContext,
+        target_path: &str,
+        perm_ctx: &PermissionContext,
+        paths: Vec<String>,
+        index: usize,
+        result_type: u8,
+    ) -> Result<(), AppError> {
+        let current_path = &paths[index];
+        
+        // Check the result of the exists check
+        let exists = match result_type {
+            storage_result::EXISTS_OK => true,
+            storage_result::NOT_FOUND => false,
+            _ => {
+                syscall::debug(&format!(
+                    "VfsService: mkdir {} parent check failed for {}: unexpected result {} ({})",
+                    target_path,
+                    current_path,
+                    result_type,
+                    result_type_name(result_type)
+                ));
+                return self.send_mkdir_error(
+                    client_ctx,
+                    VfsError::StorageError(format!(
+                        "Parent check failed: unexpected result type {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    )),
+                );
+            }
+        };
+
+        if exists {
+            // Directory exists, move to next path
+            self.mkdir_creating_parents_next(client_ctx, target_path, perm_ctx, paths, index)
+        } else {
+            // Directory doesn't exist, create it
+            syscall::debug(&format!(
+                "VfsService: creating parent directory {} (index {}/{})",
+                current_path,
+                index + 1,
+                paths.len()
+            ));
+            
+            // Create the directory inode
+            let name = current_path.rsplit('/').next().unwrap_or(current_path).to_string();
+            let parent = parent_path(current_path);
+            let now = syscall::get_wallclock();
+            let owner_id = perm_ctx.user_id;
+
+            let inode = Inode::new_directory(current_path.to_string(), parent, name, owner_id, now);
+
+            let inode_json = match serde_json::to_vec(&inode) {
+                Ok(j) => j,
+                Err(e) => {
+                    return self.send_mkdir_error(
+                        client_ctx,
+                        VfsError::StorageError(format!("Failed to serialize inode: {}", e)),
+                    );
+                }
+            };
+
+            // Write the inode, then continue with CreatingParents stage
+            self.start_storage_write(
+                &inode_key(current_path),
+                &inode_json,
+                PendingOp::MkdirOp {
+                    ctx: client_ctx.clone(),
+                    path: target_path.to_string(),
+                    perm_ctx: perm_ctx.clone(),
+                    stage: MkdirStage::CreatingParents { paths, index, writing: true },
+                    create_parents: true,
+                },
+            )
+        }
+    }
+
+    /// Continue to the next path in the CreatingParents chain
+    fn mkdir_creating_parents_next(
+        &mut self,
+        client_ctx: &ClientContext,
+        target_path: &str,
+        perm_ctx: &PermissionContext,
+        paths: Vec<String>,
+        current_index: usize,
+    ) -> Result<(), AppError> {
+        let next_index = current_index + 1;
+        
+        if next_index >= paths.len() {
+            // All parent directories created/verified, create the target
+            syscall::debug(&format!(
+                "VfsService: all parents ready, creating target directory {}",
+                target_path
+            ));
+            return self.create_directory_inode(client_ctx, target_path, perm_ctx, true);
+        }
+        
+        // Check next path
+        let next_path = &paths[next_index];
+        self.start_storage_exists(
+            &inode_key(next_path),
+            PendingOp::MkdirOp {
+                ctx: client_ctx.clone(),
+                path: target_path.to_string(),
+                perm_ctx: perm_ctx.clone(),
+                stage: MkdirStage::CreatingParents { paths, index: next_index, writing: false },
+                create_parents: true,
+            },
+        )
+    }
+
+    /// Handle write completion during CreatingParents stage
+    fn handle_mkdir_creating_parents_write_done(
+        &mut self,
+        client_ctx: &ClientContext,
+        target_path: &str,
+        perm_ctx: &PermissionContext,
+        paths: Vec<String>,
+        index: usize,
+        result_type: u8,
+    ) -> Result<(), AppError> {
+        if result_type != storage_result::WRITE_OK {
+            syscall::debug(&format!(
+                "VfsService: mkdir {} parent directory write failed: {} ({})",
+                target_path,
+                result_type,
+                result_type_name(result_type)
+            ));
+            return self.send_mkdir_error(
+                client_ctx,
+                VfsError::StorageError(format!(
+                    "Parent directory write failed: {} ({})",
+                    result_type,
+                    result_type_name(result_type)
+                )),
+            );
+        }
+        
+        // Move to next path
+        self.mkdir_creating_parents_next(client_ctx, target_path, perm_ctx, paths, index)
     }
 
     /// Stage 3: Inode write completed - send response

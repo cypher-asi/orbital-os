@@ -56,11 +56,13 @@ export {
   formatUserId,
   getSessionTimeRemaining,
   isSessionExpired,
+  formatLoginType,
   type User,
   type Session,
   type UserId,
   type SessionId,
   type UserStatus,
+  type LoginType,
   type RemoteAuthState,
 } from './identityStore';
 

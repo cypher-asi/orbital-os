@@ -91,7 +91,6 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
           className={styles.panel}
           variant="glass"
           border="future"
-          headerVariant="secondary"
         />
       </PanelDrillProvider>
 

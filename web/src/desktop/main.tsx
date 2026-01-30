@@ -37,6 +37,34 @@ const cleanupState: CleanupState = {
   cleaned: false,
 };
 
+// Global flag to prevent concurrent supervisor WASM access
+// wasm-bindgen's RefCell-based interior mutability throws "recursive use of an object"
+// if multiple JS calls access the supervisor WASM simultaneously
+let supervisorBusy = false;
+
+/**
+ * Execute a supervisor method safely, preventing concurrent access.
+ * Returns undefined if the supervisor is busy (another call in progress).
+ */
+export function withSupervisorGuard<T>(fn: () => T): T | undefined {
+  if (supervisorBusy) {
+    return undefined;
+  }
+  supervisorBusy = true;
+  try {
+    return fn();
+  } finally {
+    supervisorBusy = false;
+  }
+}
+
+/**
+ * Check if it's safe to call supervisor methods.
+ */
+export function isSupervisorBusy(): boolean {
+  return supervisorBusy;
+}
+
 // Cleanup for page unload - only terminates workers, does NOT free WASM memory
 // (browser handles memory cleanup on unload, and .free() causes closure errors)
 function performUnloadCleanup() {
@@ -349,14 +377,28 @@ function App() {
         //
         // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
         // See crates/zos-supervisor/src/supervisor/ipc.rs for details.
+        //
+        // IMPORTANT: Uses supervisorBusy guard to prevent "recursive use of an object"
+        // errors from wasm-bindgen's RefCell when other components try to access
+        // the supervisor while poll_syscalls is running.
         cleanupState.pollIntervalId = setInterval(() => {
-          supervisor.poll_syscalls();
-          supervisor.process_worker_messages();
+          withSupervisorGuard(() => {
+            supervisor.poll_syscalls();
+            supervisor.process_worker_messages();
+          });
         }, 10);
 
         // Sync Axiom log periodically
         cleanupState.axiomIntervalId = setInterval(async () => {
-          await supervisor.sync_axiom_log();
+          // Only sync if supervisor isn't busy with other operations
+          if (!supervisorBusy) {
+            supervisorBusy = true;
+            try {
+              await supervisor.sync_axiom_log();
+            } finally {
+              supervisorBusy = false;
+            }
+          }
         }, 2000);
 
         // Context menu handler (stored locally, not needed in global cleanup)
@@ -419,12 +461,18 @@ function App() {
 }
 
 // Start the React app
-const root = document.getElementById('root');
-if (!root) {
+const container = document.getElementById('root');
+if (!container) {
   throw new Error('Root element not found');
 }
 
-createRoot(root).render(
+// HMR-safe: reuse existing root if present to avoid "already passed to createRoot()" warning
+const existingRoot = (container as unknown as { __reactRoot?: ReturnType<typeof createRoot> })
+  .__reactRoot;
+const root = existingRoot ?? createRoot(container);
+(container as unknown as { __reactRoot: ReturnType<typeof createRoot> }).__reactRoot = root;
+
+root.render(
   <StrictMode>
     <App />
   </StrictMode>

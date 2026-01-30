@@ -2,11 +2,11 @@
  * DateTime Component
  *
  * Displays the current time and date in the taskbar.
- * Uses HAL wallclock via supervisor for time, and settings store for format preferences.
+ * Uses Date.now() for time (to avoid concurrent WASM access issues),
+ * and settings store for format preferences.
  */
 
 import { useState, useEffect } from 'react';
-import { useSupervisor } from '../../hooks/useSupervisor';
 import {
   useSettingsStore,
   selectTimeFormat24h,
@@ -20,39 +20,32 @@ import styles from './DateTime.module.css';
  * DateTime component for the taskbar.
  *
  * Architecture:
- * - Time source: HAL wallclock via supervisor.get_wallclock_ms()
+ * - Time source: Date.now() (avoids concurrent WASM borrow issues with supervisor)
  * - Format settings: settingsStore (synced with time_service)
  * - Updates every second
+ *
+ * Note: We intentionally use Date.now() instead of supervisor.get_wallclock_ms()
+ * because calling into WASM from a setInterval can cause "recursive use of an object"
+ * errors when it overlaps with the main poll_syscalls() interval. For UI display
+ * purposes, Date.now() is sufficient.
  */
 export function DateTime() {
-  const supervisor = useSupervisor();
   const timeFormat24h = useSettingsStore(selectTimeFormat24h);
   const timezone = useSettingsStore(selectTimezone);
 
-  // Current time state - initialize with Date.now() as fallback
+  // Current time state - use Date.now() directly
   const [time, setTime] = useState<number>(() => Date.now());
 
-  // Update time every second
+  // Update time every second using Date.now() (no WASM calls)
   useEffect(() => {
-    // Helper to get time from supervisor or fallback to Date.now()
-    const getTime = (): number => {
-      // Check if supervisor and get_wallclock_ms are available
-      if (supervisor && typeof supervisor.get_wallclock_ms === 'function') {
-        return supervisor.get_wallclock_ms();
-      }
-      // Fallback to JS Date when supervisor or method not available
-      return Date.now();
-    };
-
-    // Get initial time
-    setTime(getTime());
+    setTime(Date.now());
 
     const interval = setInterval(() => {
-      setTime(getTime());
+      setTime(Date.now());
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [supervisor]);
+  }, []);
 
   // Format time and date using settings
   const formattedTime = formatTime(time, timezone, timeFormat24h);

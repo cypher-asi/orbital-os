@@ -218,6 +218,10 @@ impl ZeroApp for IdentityService {
                 handlers::session::handle_zid_enroll_machine(self, &msg)
             }
             identity_zid::MSG_ZID_LOGOUT => handlers::session::handle_zid_logout(self, &msg),
+            identity_zid::MSG_ZID_REFRESH => handlers::session::handle_zid_refresh(self, &msg),
+            identity_zid::MSG_ZID_LOGIN_EMAIL => {
+                handlers::session::handle_zid_login_email(self, &msg)
+            }
             identity_prefs::MSG_GET_IDENTITY_PREFERENCES => {
                 handlers::preferences::handle_get_preferences(self, &msg)
             }

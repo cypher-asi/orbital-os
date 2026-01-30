@@ -14,7 +14,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::handlers::{keys, session};
-use super::pending::{PendingKeystoreOp, RequestContext};
+use super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext};
 use super::{response, IdentityService};
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
@@ -300,10 +300,12 @@ impl IdentityService {
                     match serde_json::from_slice::<LocalKeyStore>(&data) {
                         Ok(key_store) => {
                             // Chain to read encrypted shards
+                            // Use request.user_id for the path (derived_user_id used for storage)
+                            // but key_store.user_id for verification (original user_id used for derivation)
                             let shards_path = EncryptedShardStore::storage_path(request.user_id);
                             syscall::debug(&format!(
-                                "IdentityService: Identity read for combined flow, reading encrypted shards from {}",
-                                shards_path
+                                "IdentityService: Identity read for combined flow, reading encrypted shards from {} (derivation_user_id={:032x})",
+                                shards_path, key_store.user_id
                             ));
                             self.start_keystore_read(
                                 &shards_path,
@@ -311,6 +313,7 @@ impl IdentityService {
                                     ctx,
                                     request,
                                     stored_identity_pubkey: key_store.identity_signing_public_key,
+                                    derivation_user_id: key_store.user_id,
                                 },
                             )
                         }
@@ -340,6 +343,7 @@ impl IdentityService {
                 ctx,
                 request,
                 stored_identity_pubkey,
+                derivation_user_id,
             } => match result {
                 Ok(data) if !data.is_empty() => {
                     match serde_json::from_slice::<EncryptedShardStore>(&data) {
@@ -348,6 +352,7 @@ impl IdentityService {
                             ctx.client_pid,
                             request,
                             stored_identity_pubkey,
+                            derivation_user_id,
                             encrypted_store,
                             ctx.cap_slots,
                         ),
@@ -543,8 +548,23 @@ impl IdentityService {
                 ..
             } => match result {
                 Ok(()) => {
-                    syscall::debug("IdentityService: Encrypted shards stored successfully via Keystore");
-                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                    // Keystore writes complete. Now create the VFS directory for the derived user_id.
+                    // This is needed because the original directory was created with the temporary
+                    // user_id, but preferences and other VFS operations use the derived user_id.
+                    syscall::debug(&format!(
+                        "IdentityService: Encrypted shards stored, creating VFS directory for derived user {}",
+                        user_id
+                    ));
+                    let identity_dir = alloc::format!("/home/{}/.zos/identity", user_id);
+                    self.start_vfs_mkdir(
+                        &identity_dir,
+                        true, // create_parents = true
+                        PendingStorageOp::CreateDerivedUserDirectory {
+                            ctx,
+                            derived_user_id: user_id,
+                            result: key_result,
+                        },
+                    )
                 }
                 Err(e) => {
                     syscall::debug(&format!(

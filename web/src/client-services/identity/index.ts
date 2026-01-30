@@ -21,6 +21,7 @@ export {
   type LocalKeyStore,
   type CredentialType,
   type LinkedCredential,
+  type ZidLoginType,
   type ZidTokens,
   type ZidSession,
   type MachineKeyAndTokens,

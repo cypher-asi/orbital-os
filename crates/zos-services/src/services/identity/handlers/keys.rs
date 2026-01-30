@@ -26,13 +26,14 @@
 //! - Processing requests without authorization check
 
 use alloc::format;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use super::super::utils::bytes_to_hex;
 use super::super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext};
 use super::super::response;
 use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
+use sha2::{Sha256, Digest};
+use zos_identity::types::UserId;
 use zos_identity::crypto::{
     combine_shards_verified, create_kdf_params, decrypt_shard, derive_identity_signing_keypair,
     derive_machine_encryption_seed, derive_machine_seed, derive_machine_signing_seed,
@@ -51,6 +52,25 @@ use zos_identity::ipc::{
 };
 use zos_identity::keystore::{EncryptedShardStore, KeyScheme, LocalKeyStore, MachineKeyRecord};
 use zos_identity::KeyError;
+
+// =============================================================================
+// User ID Derivation
+// =============================================================================
+
+/// Derive a user ID from the identity signing public key.
+///
+/// Takes the first 128 bits (16 bytes) of SHA-256 hash of the public key.
+/// This creates a deterministic, unique user ID from the cryptographic identity.
+fn derive_user_id_from_pubkey(identity_signing_public_key: &[u8; 32]) -> UserId {
+    let mut hasher = Sha256::new();
+    hasher.update(identity_signing_public_key);
+    let hash = hasher.finalize();
+    
+    // Take first 16 bytes (128 bits) as user ID
+    let mut id_bytes = [0u8; 16];
+    id_bytes.copy_from_slice(&hash[..16]);
+    u128::from_be_bytes(id_bytes)
+}
 
 // =============================================================================
 // Neural Key Operations
@@ -81,33 +101,22 @@ pub fn continue_generate_after_directory_check(
         );
     }
 
-    // Directory doesn't exist, create it step by step
-    // VFS does not support create_parents=true, so we create each directory one at a time
+    // Directory doesn't exist, create it with create_parents=true
+    // This creates the entire directory structure in a single VFS operation
     syscall::debug(&format!(
-        "IdentityService: Creating identity directory structure for user {:032x}",
+        "IdentityService: Creating identity directory structure for user {}",
         user_id
     ));
 
-    // Build the list of directories to create (in order)
-    let user_home = format!("/home/{:032x}", user_id);
-    let directories = vec![
-        user_home.clone(),
-        format!("{}/.zos", user_home),
-        format!("{}/.zos/identity", user_home),
-        format!("{}/.zos/identity/machine", user_home),
-    ];
-
-    // Start with the first directory
-    let first_dir = directories[0].clone();
-    let remaining_dirs: Vec<String> = directories[1..].to_vec();
+    // Create the deepest directory path - VFS will create all parents
+    let identity_dir = format!("/home/{}/.zos/identity", user_id);
 
     service.start_vfs_mkdir(
-        &first_dir,
-        false, // create_parents = false (not supported by VFS)
-        PendingStorageOp::CreateIdentityDirectory {
+        &identity_dir,
+        true, // create_parents = true - creates all parent directories
+        PendingStorageOp::CreateIdentityDirectoryComplete {
             ctx,
             user_id,
-            directories: remaining_dirs,
             password,
         },
     )
@@ -357,7 +366,19 @@ pub fn continue_generate_after_exists_check(
 
     let created_at = syscall::get_wallclock();
 
-    // Create encrypted shard store
+    // Derive the canonical user ID from the identity signing public key
+    // This creates a deterministic identity based on the cryptographic key.
+    // The storage path uses derived_user_id so frontend can find keys after updating user ID.
+    // But the key_store.user_id keeps the ORIGINAL user_id because it was used for key derivation
+    // and verification needs to use the same user_id for re-derivation.
+    let derived_user_id = derive_user_id_from_pubkey(&identity_signing);
+    syscall::debug(&format!(
+        "IdentityService: Derived user_id {:032x} from identity signing key (original: {:032x})",
+        derived_user_id, user_id
+    ));
+
+    // Create encrypted shard store - use ORIGINAL user_id because that's what was used
+    // for identity signing key derivation and will be needed for verification
     let encrypted_shard_store = EncryptedShardStore {
         user_id,
         encrypted_shards,
@@ -372,6 +393,8 @@ pub fn continue_generate_after_exists_check(
         machine_encryption_pub_key: format!("0x{}", bytes_to_hex(&machine_encryption)),
     };
 
+    // Create key store - use ORIGINAL user_id because it was used for identity key derivation
+    // and verification requires the same user_id to re-derive and verify the pubkey
     let key_store = LocalKeyStore::new(
         user_id,
         identity_signing,
@@ -382,6 +405,7 @@ pub fn continue_generate_after_exists_check(
 
     // Result contains only the 3 external shards
     let result = NeuralKeyGenerated {
+        user_id: derived_user_id,
         public_identifiers,
         shards: external_shards,
         created_at,
@@ -410,14 +434,15 @@ pub fn continue_generate_after_exists_check(
         }
     };
 
-    let key_path = LocalKeyStore::storage_path(user_id);
+    // Store under the DERIVED user_id so subsequent operations can find it
+    let key_path = LocalKeyStore::storage_path(derived_user_id);
     // Invariant 32: /keys/ paths use Keystore IPC, not VFS
     service.start_keystore_write(
         &key_path,
         &key_json,
         PendingKeystoreOp::WriteKeyStore {
             ctx,
-            user_id,
+            user_id: derived_user_id,
             result,
             json_bytes: key_json.clone(),
             encrypted_shards_json,
@@ -593,7 +618,16 @@ pub fn continue_recover_after_identity_read(
         machine_encryption,
         created_at,
     );
+
+    // Derive the real user ID from the identity signing public key
+    let derived_user_id = derive_user_id_from_pubkey(&identity_signing);
+    syscall::debug(&format!(
+        "IdentityService: Recovered key - derived user_id {:032x}",
+        derived_user_id
+    ));
+
     let result = NeuralKeyGenerated {
+        user_id: derived_user_id,
         public_identifiers,
         shards: new_shards,
         created_at,
@@ -1324,11 +1358,17 @@ pub fn handle_create_machine_key_and_enroll(
 /// 4. Verifies against stored identity public key
 /// 5. Derives machine keypair (with SK seeds for enrollment signing)
 /// 6. Stores machine key, then chains to ZID enrollment
+///
+/// # Arguments
+/// * `derivation_user_id` - The user_id that was used to derive the identity signing keypair.
+///   This may differ from `request.user_id` if the user_id was derived from the pubkey.
+///   Verification must use this value to re-derive and compare the pubkey.
 pub fn continue_create_machine_enroll_after_shards_read(
     service: &mut IdentityService,
     client_pid: u32,
     request: CreateMachineKeyAndEnrollRequest,
     stored_identity_pubkey: [u8; 32],
+    derivation_user_id: u128,
     encrypted_store: EncryptedShardStore,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
@@ -1414,12 +1454,14 @@ pub fn continue_create_machine_enroll_after_shards_read(
     }
 
     // Reconstruct Neural Key from shards WITH VERIFICATION against stored identity
-    let neural_key = match combine_shards_verified(&all_shards, request.user_id, &stored_identity_pubkey) {
+    // IMPORTANT: Use derivation_user_id (from key_store.user_id), not request.user_id,
+    // because the identity pubkey was derived using derivation_user_id
+    let neural_key = match combine_shards_verified(&all_shards, derivation_user_id, &stored_identity_pubkey) {
         Ok(key) => key,
         Err(e) => {
             syscall::debug(&format!(
-                "IdentityService: Neural Key verification failed in combined flow: {:?}",
-                e
+                "IdentityService: Neural Key verification failed in combined flow: {:?} (derivation_user_id={:032x})",
+                e, derivation_user_id
             ));
             return response::send_create_machine_key_and_enroll_error(
                 ctx.client_pid,

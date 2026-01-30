@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSupervisor } from '@desktop/hooks/useSupervisor';
+import { withSupervisorGuard } from '@desktop/main';
 import { Drawer, GroupCollapsible, Button, Text, Label } from '@cypher-asi/zui';
 import styles from './TerminalApp.module.css';
 
@@ -100,15 +101,19 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     if (!supervisor) return;
 
     const update = () => {
-      try {
-        const procs = JSON.parse(supervisor.get_process_list_json());
-        setProcesses(procs);
+      // Use supervisor guard to prevent "recursive use of an object" errors
+      // when this overlaps with the main poll_syscalls interval
+      withSupervisorGuard(() => {
+        try {
+          const procs = JSON.parse(supervisor.get_process_list_json());
+          setProcesses(procs);
 
-        const stats = JSON.parse(supervisor.get_axiom_stats_json());
-        setAxiomStats(stats);
-      } catch {
-        // Ignore parse errors
-      }
+          const stats = JSON.parse(supervisor.get_axiom_stats_json());
+          setAxiomStats(stats);
+        } catch {
+          // Ignore parse errors or guard returning undefined
+        }
+      });
     };
 
     update();

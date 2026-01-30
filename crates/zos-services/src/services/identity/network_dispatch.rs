@@ -412,6 +412,73 @@ impl IdentityService {
                     _ => Ok(()),
                 }
             }
+            // ZID Token Refresh
+            PendingNetworkOp::SubmitZidRefresh {
+                ctx,
+                user_id,
+                zid_endpoint,
+                session_id: _,
+                login_type,
+            } => {
+                match network_handlers::handle_zid_refresh_result(
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint.clone(),
+                    login_type,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueZidRefresh {
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        login_type,
+                        refresh_response,
+                        cap_slots,
+                    } => session::continue_zid_refresh_after_network(
+                        self,
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        login_type,
+                        refresh_response,
+                        cap_slots,
+                    ),
+                    _ => Ok(()),
+                }
+            }
+            // ZID Email Login
+            PendingNetworkOp::SubmitZidEmailLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => {
+                match network_handlers::handle_zid_email_login_result(
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint.clone(),
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueZidEmailLogin {
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        login_response,
+                        cap_slots,
+                    } => session::continue_zid_email_login_after_network(
+                        self,
+                        client_pid,
+                        user_id,
+                        zid_endpoint,
+                        login_response,
+                        cap_slots,
+                    ),
+                    _ => Ok(()),
+                }
+            }
         }
     }
 }

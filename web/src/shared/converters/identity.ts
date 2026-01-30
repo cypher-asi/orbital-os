@@ -196,6 +196,7 @@ export function convertNeuralKeyGenerated(
   service: ServiceNeuralKeyGenerated
 ): UINeuralKeyGenerated {
   return {
+    userId: service.user_id,
     publicIdentifiers: {
       identitySigningPubKey: service.public_identifiers.identity_signing_pub_key,
       machineSigningPubKey: service.public_identifiers.machine_signing_pub_key,

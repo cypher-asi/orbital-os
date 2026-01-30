@@ -477,6 +477,39 @@ pub fn send_zid_login_error(
     send_zid_login_response(client_pid, cap_slots, Err(error))
 }
 
+/// Send ZID email login response (success or error).
+pub fn send_zid_email_login_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<ZidTokens, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::ZidEmailLoginResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_zid::MSG_ZID_LOGIN_EMAIL_RESPONSE,
+        &response,
+    )
+}
+
+/// Send ZID email login success response.
+pub fn send_zid_email_login_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    tokens: ZidTokens,
+) -> Result<(), AppError> {
+    send_zid_email_login_response(client_pid, cap_slots, Ok(tokens))
+}
+
+/// Send ZID email login error response.
+pub fn send_zid_email_login_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_zid_email_login_response(client_pid, cap_slots, Err(error))
+}
+
 /// Send ZID enrollment response (success or error).
 pub fn send_zid_enroll_response(
     client_pid: u32,
@@ -537,6 +570,39 @@ pub fn send_zid_logout_error(
     error: ZidError,
 ) -> Result<(), AppError> {
     send_zid_logout_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send ZID token refresh response (success or error).
+pub fn send_zid_refresh_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<ZidTokens, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::ZidRefreshResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_zid::MSG_ZID_REFRESH_RESPONSE,
+        &response,
+    )
+}
+
+/// Send ZID token refresh success response.
+pub fn send_zid_refresh_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    tokens: ZidTokens,
+) -> Result<(), AppError> {
+    send_zid_refresh_response(client_pid, cap_slots, Ok(tokens))
+}
+
+/// Send ZID token refresh error response.
+pub fn send_zid_refresh_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_zid_refresh_response(client_pid, cap_slots, Err(error))
 }
 
 // =============================================================================

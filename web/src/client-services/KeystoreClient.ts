@@ -40,10 +40,16 @@
  */
 export class KeystoreClient {
   /**
-   * Check if ZosKeystore is available.
+   * Check if ZosKeystore is available AND initialized with populated caches.
+   * Returns false if ZosKeystore exists but init() hasn't completed yet.
    */
   static isAvailable(): boolean {
-    return typeof window !== 'undefined' && window.ZosKeystore !== undefined;
+    if (typeof window === 'undefined' || window.ZosKeystore === undefined) {
+      return false;
+    }
+    // Also check if the database has been initialized (db is set after init())
+    // This prevents reads before populateCaches() has run
+    return window.ZosKeystore.db !== undefined && window.ZosKeystore.db !== null;
   }
 
   /**

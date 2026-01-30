@@ -273,6 +273,9 @@ pub struct GenerateNeuralKeyRequest {
 /// Result of successful Neural Key generation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralKeyGenerated {
+    /// The derived user ID (first 128 bits of SHA-256 of identity signing public key)
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
     /// Public identifiers (stored server-side)
     pub public_identifiers: PublicIdentifiers,
     /// External Shamir shards (3 of 5) - returned to UI for backup, NOT stored
@@ -527,6 +530,25 @@ pub struct ZidLoginResponse {
     pub result: Result<ZidTokens, ZidError>,
 }
 
+/// Login type indicating how the session was authenticated.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginType {
+    /// Authenticated via machine key challenge-response
+    #[default]
+    MachineKey,
+    /// Authenticated via neural key
+    NeuralKey,
+    /// Authenticated via email/password
+    Email,
+    /// Authenticated via OAuth provider
+    OAuth,
+    /// Authenticated via WebAuthn/passkey
+    WebAuthn,
+    /// Authenticated via recovery flow
+    Recovery,
+}
+
 /// Tokens returned from successful ZID authentication.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZidTokens {
@@ -540,6 +562,9 @@ pub struct ZidTokens {
     pub machine_id: String,
     /// When the access token expires (RFC3339 timestamp)
     pub expires_at: String,
+    /// How this session was authenticated
+    #[serde(default)]
+    pub login_type: LoginType,
     /// Optional warning message
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
@@ -561,6 +586,9 @@ pub struct ZidSession {
     /// Machine ID used for authentication (UUID string)
     #[serde(default)]
     pub machine_id: String,
+    /// How this session was authenticated
+    #[serde(default)]
+    pub login_type: LoginType,
     /// When the access token expires (Unix timestamp ms)
     pub expires_at: u64,
     /// When this session was created (Unix timestamp ms)
@@ -708,6 +736,48 @@ pub struct ZidLogoutRequest {
 pub struct ZidLogoutResponse {
     /// Result of the operation
     pub result: Result<(), ZidError>,
+}
+
+/// ZID login with email/password request.
+///
+/// Authenticates with ZERO-ID server using email and password credentials.
+/// This is an alternative to machine key challenge-response authentication.
+///
+/// # Safety Invariants (per zos-service.md Rule 0)
+///
+/// ## Success Conditions
+/// - ZID returns valid tokens
+/// - Session stored in VFS
+/// - Tokens returned to caller
+///
+/// ## Acceptable Partial Failure
+/// - Session write fails after ZID success (tokens still returned)
+///
+/// ## Forbidden States
+/// - Returning success without ZID verification
+/// - Processing without authorization check
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidEmailLoginRequest {
+    /// User ID whose session should be created
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// Email address for authentication
+    pub email: String,
+    /// Password for authentication
+    pub password: String,
+    /// ZID API endpoint (e.g., "https://api.zero-id.io")
+    pub zid_endpoint: String,
+    /// Optional machine ID to associate with this session
+    pub machine_id: Option<String>,
+    /// Optional MFA code if MFA is enabled
+    pub mfa_code: Option<String>,
+}
+
+/// ZID login with email/password response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidEmailLoginResponse {
+    /// Result containing tokens or error
+    pub result: Result<ZidTokens, ZidError>,
 }
 
 // ============================================================================

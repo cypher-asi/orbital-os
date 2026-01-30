@@ -306,12 +306,18 @@ pub fn continue_zid_login_after_login(
     };
 
     let now = syscall::get_wallclock();
+    
+    // Set login_type for machine key authentication
+    let mut tokens = tokens;
+    tokens.login_type = zos_identity::ipc::LoginType::MachineKey;
+    
     let session = ZidSession {
         zid_endpoint: zid_endpoint.clone(),
         access_token: tokens.access_token.clone(),
         refresh_token: tokens.refresh_token.clone(),
         session_id: tokens.session_id.clone(),
         machine_id: tokens.machine_id.clone(),
+        login_type: tokens.login_type,
         expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
         created_at: now,
     };
@@ -1185,6 +1191,10 @@ pub fn continue_zid_enroll_after_login(
         syscall::debug("Machine key write request sent via VFS");
     }
 
+    // Set login_type for machine key enrollment
+    let mut tokens = tokens;
+    tokens.login_type = zos_identity::ipc::LoginType::MachineKey;
+
     // Store ZID session
     let session = ZidSession {
         zid_endpoint: zid_endpoint.clone(),
@@ -1192,6 +1202,7 @@ pub fn continue_zid_enroll_after_login(
         refresh_token: tokens.refresh_token.clone(),
         session_id: tokens.session_id.clone(),
         machine_id: tokens.machine_id.clone(),
+        login_type: tokens.login_type,
         expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
         created_at: now,
     };
@@ -1207,6 +1218,352 @@ pub fn continue_zid_enroll_after_login(
         &session_path,
         &session_json,
         PendingStorageOp::WriteZidEnrollSession {
+            ctx,
+            user_id,
+            tokens,
+            json_bytes: session_json.clone(),
+        },
+    )
+}
+
+// =============================================================================
+// ZID Email Login Flow
+// =============================================================================
+
+/// Handle ZID email login request.
+///
+/// This authenticates with ZID server using email and password:
+/// 1. Parse and validate request
+/// 2. POST to {zid_endpoint}/v1/auth/login/email with email/password
+/// 3. Store session on success
+/// 4. Return tokens
+pub fn handle_zid_login_email(
+    service: &mut IdentityService,
+    msg: &Message,
+) -> Result<(), AppError> {
+    syscall::debug("IdentityService: Handling ZID email login request");
+
+    // Rule 1: Parse request - return InvalidRequest on parse failure
+    let request: zos_identity::ipc::ZidEmailLoginRequest = match serde_json::from_slice(&msg.data) {
+        Ok(r) => r,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse email login request: {}", e));
+            return response::send_zid_email_login_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
+    };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("zid_login_email", msg.from_pid, request.user_id);
+        return response::send_zid_email_login_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::Unauthorized,
+        );
+    }
+
+    // Validate email format
+    if !request.email.contains('@') || request.email.len() < 5 {
+        return response::send_zid_email_login_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::InvalidRequest("Invalid email format".into()),
+        );
+    }
+
+    // Validate password length
+    if request.password.len() < 8 {
+        return response::send_zid_email_login_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::InvalidRequest("Password must be at least 8 characters".into()),
+        );
+    }
+
+    // Build request body for ZID email login
+    let mut body = format!(
+        r#"{{"email":"{}","password":"{}""#,
+        request.email, request.password
+    );
+
+    // Add optional machine_id if provided
+    if let Some(ref machine_id) = request.machine_id {
+        body.push_str(&format!(r#","machine_id":"{}""#, machine_id));
+    }
+
+    // Add optional mfa_code if provided
+    if let Some(ref mfa_code) = request.mfa_code {
+        body.push_str(&format!(r#","mfa_code":"{}""#, mfa_code));
+    }
+
+    body.push('}');
+
+    syscall::debug(&format!(
+        "IdentityService: Submitting email login to {}/v1/auth/login/email",
+        request.zid_endpoint
+    ));
+
+    let http_request = HttpRequest::post(format!("{}/v1/auth/login/email", request.zid_endpoint))
+        .with_json_body(body.into_bytes())
+        .with_timeout(15_000);
+
+    let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
+    service.start_network_fetch(
+        &http_request,
+        PendingNetworkOp::SubmitZidEmailLogin {
+            ctx,
+            user_id: request.user_id,
+            zid_endpoint: request.zid_endpoint,
+        },
+    )
+}
+
+/// Continue ZID email login after receiving tokens from server.
+pub fn continue_zid_email_login_after_network(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    login_response: zos_network::HttpSuccess,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    // Parse tokens from response
+    let tokens: ZidTokens = match serde_json::from_slice(&login_response.body) {
+        Ok(t) => t,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse email login response: {}", e));
+            return response::send_zid_email_login_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::AuthenticationFailed,
+            );
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Email login successful, session_id={}",
+        tokens.session_id
+    ));
+
+    // Set login_type for email authentication
+    let mut tokens = tokens;
+    tokens.login_type = zos_identity::ipc::LoginType::Email;
+
+    // Build session to store
+    let now = syscall::get_wallclock();
+    let session = ZidSession {
+        zid_endpoint: zid_endpoint.clone(),
+        access_token: tokens.access_token.clone(),
+        refresh_token: tokens.refresh_token.clone(),
+        session_id: tokens.session_id.clone(),
+        machine_id: tokens.machine_id.clone(),
+        login_type: tokens.login_type,
+        expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
+        created_at: now,
+    };
+
+    let session_path = ZidSession::storage_path(user_id);
+    match serde_json::to_vec(&session) {
+        Ok(json_bytes) => service.start_vfs_write(
+            &session_path,
+            &json_bytes,
+            PendingStorageOp::WriteZidEmailLoginSession {
+                ctx,
+                user_id,
+                tokens,
+                json_bytes: json_bytes.clone(),
+            },
+        ),
+        Err(e) => {
+            // Even if serialization fails, return tokens since auth succeeded
+            syscall::debug(&format!(
+                "IdentityService: Session serialization failed but returning tokens: {}",
+                e
+            ));
+            response::send_zid_email_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
+        }
+    }
+}
+
+// =============================================================================
+// ZID Token Refresh Flow
+// =============================================================================
+
+/// Handle ZID token refresh request.
+///
+/// Flow:
+/// 1. Parse request (user_id, zid_endpoint)
+/// 2. Authorization check
+/// 3. Read stored ZID session from VFS (to get refresh_token)
+/// 4. POST to {zid_endpoint}/v1/auth/session/refresh
+/// 5. Update stored session with new tokens
+/// 6. Return ZidRefreshResponse with new tokens
+pub fn handle_zid_refresh(service: &mut IdentityService, msg: &Message) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
+    let request: zos_identity::ipc::ZidRefreshRequest = match serde_json::from_slice(&msg.data) {
+        Ok(r) => r,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse refresh request: {}", e));
+            return response::send_zid_refresh_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
+    };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("zid_refresh", msg.from_pid, request.user_id);
+        return response::send_zid_refresh_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::Unauthorized,
+        );
+    }
+
+    // Read stored ZID session to get refresh_token
+    let session_path = ZidSession::storage_path(request.user_id);
+    let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
+    service.start_vfs_read(
+        &session_path,
+        PendingStorageOp::ReadZidSessionForRefresh {
+            ctx,
+            user_id: request.user_id,
+            zid_endpoint: request.zid_endpoint,
+        },
+    )
+}
+
+/// Continue ZID refresh after reading stored session.
+pub fn continue_zid_refresh_after_session_read(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    data: &[u8],
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    // Parse stored session to get refresh_token
+    let session: ZidSession = match serde_json::from_slice(data) {
+        Ok(s) => s,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse stored session: {}", e));
+            return response::send_zid_refresh_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidRequest("No valid session found".into()),
+            );
+        }
+    };
+
+    if session.refresh_token.is_empty() {
+        return response::send_zid_refresh_error(
+            ctx.client_pid,
+            &ctx.cap_slots,
+            ZidError::InvalidRequest("No refresh token in session".into()),
+        );
+    }
+
+    // Build refresh request body (ZID requires refresh_token, session_id, machine_id)
+    let refresh_body = format!(
+        r#"{{"refresh_token":"{}","session_id":"{}","machine_id":"{}"}}"#,
+        session.refresh_token, session.session_id, session.machine_id
+    );
+
+    syscall::debug(&format!(
+        "IdentityService: Submitting token refresh for session {} machine {}",
+        session.session_id, session.machine_id
+    ));
+
+    let refresh_request = zos_network::HttpRequest::post(format!(
+        "{}/v1/auth/refresh",
+        zid_endpoint
+    ))
+    .with_json_body(refresh_body.into_bytes())
+    .with_timeout(10_000);
+
+    service.start_network_fetch(
+        &refresh_request,
+        PendingNetworkOp::SubmitZidRefresh {
+            ctx,
+            user_id,
+            zid_endpoint,
+            session_id: session.session_id,
+            login_type: session.login_type,
+        },
+    )
+}
+
+/// Continue ZID refresh after receiving new tokens from server.
+pub fn continue_zid_refresh_after_network(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    login_type: zos_identity::ipc::LoginType,
+    refresh_response: zos_network::HttpSuccess,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+
+    // Parse new tokens from response
+    let tokens: ZidTokens = match serde_json::from_slice(&refresh_response.body) {
+        Ok(t) => t,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse refresh response: {}", e));
+            return response::send_zid_refresh_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::NetworkError(format!("Invalid refresh response: {}", e)),
+            );
+        }
+    };
+
+    syscall::debug(&format!(
+        "IdentityService: Token refresh successful, new expiry: {}",
+        tokens.expires_at
+    ));
+
+    // Preserve login_type from original session
+    let mut tokens = tokens;
+    tokens.login_type = login_type;
+
+    // Build updated session
+    let now = syscall::get_wallclock();
+    let session = ZidSession {
+        zid_endpoint: zid_endpoint.clone(),
+        access_token: tokens.access_token.clone(),
+        refresh_token: tokens.refresh_token.clone(),
+        session_id: tokens.session_id.clone(),
+        machine_id: tokens.machine_id.clone(),
+        login_type: tokens.login_type,
+        expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
+        created_at: now,
+    };
+
+    let session_json = match serde_json::to_vec(&session) {
+        Ok(b) => b,
+        Err(_) => {
+            // Still return success with tokens even if serialization fails
+            return response::send_zid_refresh_success(ctx.client_pid, &ctx.cap_slots, tokens);
+        }
+    };
+
+    // Store updated session via VFS
+    let session_path = ZidSession::storage_path(user_id);
+    service.start_vfs_write(
+        &session_path,
+        &session_json,
+        PendingStorageOp::WriteRefreshedZidSession {
             ctx,
             user_id,
             tokens,

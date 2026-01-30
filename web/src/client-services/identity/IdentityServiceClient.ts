@@ -33,6 +33,8 @@ import {
   type ZidLoginResponse,
   type ZidEnrollMachineResponse,
   type ZidLogoutResponse,
+  type ZidRefreshResponse,
+  type ZidEmailLoginResponse,
   type IdentityPreferences,
   type GetIdentityPreferencesResponse,
   type SetDefaultKeySchemeResponse,
@@ -446,6 +448,68 @@ export class IdentityServiceClient {
       user_id: formatUserIdForRust(userId),
     });
     this.unwrapResult(response.result);
+  }
+
+  /**
+   * Refresh the ZID access token using the stored refresh token.
+   *
+   * This calls the ZID server's refresh endpoint to get new tokens:
+   * 1. Identity service reads stored session from VFS (to get refresh_token)
+   * 2. POSTs to /v1/auth/session/refresh with refresh_token
+   * 3. Updates stored session with new tokens
+   * 4. Returns new tokens
+   *
+   * Use this when:
+   * - Access token is about to expire (recommended: 5 min before expiry)
+   * - Access token has expired (may fail if refresh token also expired)
+   *
+   * @param userId - User ID whose session should be refreshed
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @returns ZidTokens containing new access and refresh tokens
+   * @throws {ZidInvalidRefreshTokenError} If refresh token is expired/invalid
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async refreshToken(userId: bigint | string, zidEndpoint: string): Promise<ZidTokens> {
+    const response = await this.request<ZidRefreshResponse>(MSG.ZID_REFRESH, {
+      user_id: formatUserIdForRust(userId),
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Login to ZERO-ID using email and password.
+   *
+   * This is an alternative to machine key challenge-response authentication.
+   * Uses email/password credentials to authenticate directly with ZID server.
+   *
+   * @param userId - User ID to associate with this session
+   * @param email - Email address for authentication
+   * @param password - Password for authentication
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @param machineId - Optional machine ID to associate with this session
+   * @param mfaCode - Optional MFA code if MFA is enabled on the account
+   * @returns ZidTokens containing access and refresh tokens
+   * @throws {ZidAuthenticationFailedError} If email/password is invalid
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async loginWithEmail(
+    userId: bigint | string,
+    email: string,
+    password: string,
+    zidEndpoint: string,
+    machineId?: string,
+    mfaCode?: string
+  ): Promise<ZidTokens> {
+    const response = await this.request<ZidEmailLoginResponse>(MSG.ZID_LOGIN_EMAIL, {
+      user_id: formatUserIdForRust(userId),
+      email,
+      password,
+      zid_endpoint: zidEndpoint,
+      machine_id: machineId ?? null,
+      mfa_code: mfaCode ?? null,
+    });
+    return this.unwrapResult(response.result);
   }
 
   // ===========================================================================

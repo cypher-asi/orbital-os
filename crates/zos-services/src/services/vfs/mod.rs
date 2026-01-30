@@ -249,15 +249,22 @@ pub enum PendingOp {
     },
     /// Mkdir operation - tracks the state machine for directory creation
     ///
-    /// Stages:
+    /// Stages (create_parents=false):
     /// 1. Check if path already exists
     /// 2. Check parent exists and is directory, check write permission
     /// 3. Write inode
+    ///
+    /// Stages (create_parents=true):
+    /// 1. Check if target path already exists (if yes, success)
+    /// 2. CreatingParents stage - iterate through each parent path
+    /// 3. Write inode for target
     MkdirOp {
         ctx: ClientContext,
         path: String,
         perm_ctx: PermissionContext,
         stage: MkdirStage,
+        /// Whether to create parent directories if they don't exist
+        create_parents: bool,
     },
     /// Readdir operation - tracks the state machine for directory listing
     ///
@@ -315,6 +322,16 @@ pub enum MkdirStage {
     CheckingParent,
     /// Writing inode
     WritingInode,
+    /// Creating parent directories recursively (for create_parents=true)
+    /// Contains list of paths to create and current index
+    CreatingParents {
+        /// All directory paths from root to target (e.g., ["/home", "/home/1", "/home/1/.zos"])
+        paths: Vec<String>,
+        /// Current index in paths we're processing
+        index: usize,
+        /// Whether we're currently writing an inode (vs checking existence)
+        writing: bool,
+    },
 }
 
 /// Stages for the Readdir operation state machine.
@@ -439,6 +456,29 @@ pub fn validate_path(path: &str) -> Result<(), &'static str> {
     }
 
     Ok(())
+}
+
+/// Build list of parent paths from root to the given path.
+///
+/// Example: "/home/1/.zos/identity" returns:
+/// ["/home", "/home/1", "/home/1/.zos", "/home/1/.zos/identity"]
+///
+/// Returns empty vec for "/" root path.
+pub fn build_parent_paths(path: &str) -> Vec<String> {
+    if path == "/" || path.is_empty() {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    let mut current = String::new();
+
+    for component in path.split('/').filter(|s| !s.is_empty()) {
+        current.push('/');
+        current.push_str(component);
+        result.push(current.clone());
+    }
+
+    result
 }
 
 // =============================================================================
@@ -747,7 +787,8 @@ impl VfsService {
                 path,
                 perm_ctx,
                 stage,
-            } => self.handle_mkdir_op_result(&client_ctx, &path, &perm_ctx, stage, result_type, data),
+                create_parents,
+            } => self.handle_mkdir_op_result(&client_ctx, &path, &perm_ctx, stage, create_parents, result_type, data),
             PendingOp::ReaddirOp {
                 ctx: client_ctx,
                 path,

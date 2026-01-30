@@ -56,13 +56,31 @@ pub enum PendingStorageOp {
         /// Password for encrypting shards (passed through the async flow)
         password: String,
     },
-    /// Create identity directory structure
+    /// Create identity directory structure (legacy - one directory at a time)
     CreateIdentityDirectory {
         ctx: RequestContext,
         user_id: u128,
         directories: Vec<String>,
         /// Password for encrypting shards (passed through the async flow)
         password: String,
+    },
+    /// Create identity directory structure complete (uses create_parents=true)
+    CreateIdentityDirectoryComplete {
+        ctx: RequestContext,
+        user_id: u128,
+        /// Password for encrypting shards (passed through the async flow)
+        password: String,
+    },
+    /// Create VFS directory for derived user_id after neural key generation
+    /// This is needed because the directory was originally created with the
+    /// temporary user_id, but we need it at the derived user_id path for
+    /// preferences and other VFS operations.
+    CreateDerivedUserDirectory {
+        ctx: RequestContext,
+        /// The derived user_id (deterministic identity based on crypto key)
+        derived_user_id: u128,
+        /// The neural key generation result to return after directory creation
+        result: NeuralKeyGenerated,
     },
     /// Check if identity key exists (for generate)
     CheckKeyExists {
@@ -189,6 +207,18 @@ pub enum PendingStorageOp {
         user_id: u128,
         json_bytes: Vec<u8>,
     },
+    /// Create credentials directory for existing users (on-demand)
+    CreateCredentialsDirectory {
+        ctx: RequestContext,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+    },
+    /// Retry writing email credential after directory creation
+    WriteEmailCredentialRetry {
+        ctx: RequestContext,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+    },
 
     // =========================================================================
     // ZID session operations
@@ -223,6 +253,13 @@ pub enum PendingStorageOp {
     DeleteZidSession {
         ctx: RequestContext,
     },
+    /// Write ZID session after email login (VFS handles inodes internally)
+    WriteZidEmailLoginSession {
+        ctx: RequestContext,
+        user_id: u128,
+        tokens: ZidTokens,
+        json_bytes: Vec<u8>,
+    },
 
     // =========================================================================
     // Identity Preferences operations
@@ -256,11 +293,40 @@ pub enum PendingStorageOp {
         user_id: u128,
         json_bytes: Vec<u8>,
     },
+    /// Create identity directory for preferences write (on-demand when directory doesn't exist)
+    CreateIdentityDirForPreferences {
+        ctx: RequestContext,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+    },
+    /// Retry writing preferences after directory creation
+    WritePreferencesForDefaultMachineRetry {
+        ctx: RequestContext,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+    },
     /// Read preferences before ZID login to get default_machine_id
     ReadPreferencesForZidLogin {
         ctx: RequestContext,
         user_id: u128,
         zid_endpoint: String,
+    },
+
+    // =========================================================================
+    // ZID Token Refresh operations
+    // =========================================================================
+    /// Read ZID session for token refresh (to get refresh_token)
+    ReadZidSessionForRefresh {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
+    /// Write refreshed ZID session (with new tokens)
+    WriteRefreshedZidSession {
+        ctx: RequestContext,
+        user_id: u128,
+        tokens: ZidTokens,
+        json_bytes: Vec<u8>,
     },
 }
 
@@ -418,6 +484,9 @@ pub enum PendingKeystoreOp {
         request: CreateMachineKeyAndEnrollRequest,
         /// Stored identity public key for verification
         stored_identity_pubkey: [u8; 32],
+        /// User ID used for identity key derivation (may differ from request.user_id)
+        /// Required for verification to re-derive the same pubkey
+        derivation_user_id: u128,
     },
     /// Write machine key after derivation, before ZID enrollment
     WriteMachineKeyForEnroll {
@@ -568,5 +637,29 @@ pub enum PendingNetworkOp {
         machine_signing_sk: [u8; 32],
         machine_encryption_sk: [u8; 32],
         machine_key_record: Box<MachineKeyRecord>,
+    },
+
+    // =========================================================================
+    // ZID Token Refresh operations
+    // =========================================================================
+    /// Submit token refresh request to ZID server
+    SubmitZidRefresh {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+        /// Session ID from the stored session
+        session_id: String,
+        /// Login type from the original session (to preserve through refresh)
+        login_type: zos_identity::ipc::LoginType,
+    },
+
+    // =========================================================================
+    // ZID Email Login operations
+    // =========================================================================
+    /// Submit email/password login to ZID server
+    SubmitZidEmailLogin {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
     },
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   useIdentityStore,
@@ -463,6 +463,9 @@ export function useMachineKeys(): UseMachineKeysReturn {
   const defaultMachineId = useSettingsStore((s) => s.defaultMachineId);
   const isLoadingPreferences = useSettingsStore((s) => s.isLoadingPreferences);
 
+  // Track if we're already trying to set default to prevent concurrent requests
+  const isSettingDefaultRef = useRef(false);
+
   // Auto-set default machine key if machines exist but no default is set
   // This ensures the UI always shows a default when machines are available
   useEffect(() => {
@@ -477,15 +480,26 @@ export function useMachineKeys(): UseMachineKeysReturn {
       return;
     }
 
+    // Prevent concurrent requests - check if we're already setting
+    if (isSettingDefaultRef.current) {
+      console.log('[useMachineKeys] Already setting default machine key, skipping');
+      return;
+    }
+
     // Prefer current device as default, otherwise use first machine
     const defaultMachine = state.machines.find((m) => m.isCurrentDevice) || state.machines[0];
     if (defaultMachine) {
       console.log(
         `[useMachineKeys] No default machine set, auto-setting: ${defaultMachine.machineId}`
       );
-      useSettingsStore.getState().setDefaultMachineKey(userId, defaultMachine.machineId).catch((err) => {
-        console.warn('[useMachineKeys] Failed to auto-set default machine key:', err);
-      });
+      isSettingDefaultRef.current = true;
+      useSettingsStore.getState().setDefaultMachineKey(userId, defaultMachine.machineId)
+        .catch((err) => {
+          console.warn('[useMachineKeys] Failed to auto-set default machine key:', err);
+        })
+        .finally(() => {
+          isSettingDefaultRef.current = false;
+        });
     }
   }, [state.machines, userId, defaultMachineId, isLoadingPreferences]);
 

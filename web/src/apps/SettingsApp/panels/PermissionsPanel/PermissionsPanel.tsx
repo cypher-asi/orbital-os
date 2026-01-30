@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { GroupCollapsible, Menu, type MenuItem, Label, type PanelDrillItem } from '@cypher-asi/zui';
 import { useSupervisor } from '@desktop/hooks/useSupervisor';
+import { withSupervisorGuard } from '@desktop/main';
 import type { CapabilityInfo, ObjectType, AppManifest } from '@/types/permissions';
 import { usePanelDrillOptional } from '../../context';
 import { ProcessCapabilitiesPanel } from '../ProcessCapabilitiesPanel';
@@ -112,39 +113,42 @@ export function PermissionsPanel({ onDrillDown }: PermissionsPanelProps) {
     }
 
     const fetchProcesses = () => {
-      try {
-        // Check if the method exists
-        if (typeof supervisor.get_processes_with_capabilities_json !== 'function') {
-          console.error(
-            '[PermissionsPanel] get_processes_with_capabilities_json is not a function - WASM may need rebuild'
-          );
-          // Fall back to get_process_list_json if available
-          if (typeof supervisor.get_process_list_json === 'function') {
-            const json = supervisor.get_process_list_json();
-            const data = JSON.parse(json);
-            const converted: ProcessWithCapabilities[] = data.map((p: unknown) => {
-              const proc = p as { pid: number; name: string; state: string };
-              return {
-                pid: proc.pid,
-                name: proc.name,
-                state: proc.state,
-                capabilities: [],
-              };
-            });
-            const filtered = converted.filter((p) => p.name !== 'idle' && p.state !== 'Zombie');
-            setProcesses(filtered);
+      // Use supervisor guard to prevent "recursive use of an object" errors
+      withSupervisorGuard(() => {
+        try {
+          // Check if the method exists
+          if (typeof supervisor.get_processes_with_capabilities_json !== 'function') {
+            console.error(
+              '[PermissionsPanel] get_processes_with_capabilities_json is not a function - WASM may need rebuild'
+            );
+            // Fall back to get_process_list_json if available
+            if (typeof supervisor.get_process_list_json === 'function') {
+              const json = supervisor.get_process_list_json();
+              const data = JSON.parse(json);
+              const converted: ProcessWithCapabilities[] = data.map((p: unknown) => {
+                const proc = p as { pid: number; name: string; state: string };
+                return {
+                  pid: proc.pid,
+                  name: proc.name,
+                  state: proc.state,
+                  capabilities: [],
+                };
+              });
+              const filtered = converted.filter((p) => p.name !== 'idle' && p.state !== 'Zombie');
+              setProcesses(filtered);
+            }
+            return;
           }
-          return;
-        }
 
-        const json = supervisor.get_processes_with_capabilities_json();
-        const data: ProcessWithCapabilities[] = JSON.parse(json);
-        // Filter out system processes we don't want to show (like idle)
-        const filtered = data.filter((p) => p.name !== 'idle' && p.state !== 'Zombie');
-        setProcesses(filtered);
-      } catch (e) {
-        console.error('[PermissionsPanel] Failed to fetch processes:', e);
-      }
+          const json = supervisor.get_processes_with_capabilities_json();
+          const data: ProcessWithCapabilities[] = JSON.parse(json);
+          // Filter out system processes we don't want to show (like idle)
+          const filtered = data.filter((p) => p.name !== 'idle' && p.state !== 'Zombie');
+          setProcesses(filtered);
+        } catch (e) {
+          console.error('[PermissionsPanel] Failed to fetch processes:', e);
+        }
+      });
     };
 
     // Initial fetch

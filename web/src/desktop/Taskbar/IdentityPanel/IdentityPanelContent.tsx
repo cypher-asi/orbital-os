@@ -1,12 +1,28 @@
 import { useCallback, type ReactNode } from 'react';
 import { Menu, type MenuItem, Avatar, type PanelDrillItem } from '@cypher-asi/zui';
-import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link } from 'lucide-react';
+import {
+  Info,
+  Layers,
+  User,
+  Lock,
+  LogOut,
+  Clock,
+  Brain,
+  Cpu,
+  Link,
+  Mail,
+  Globe,
+  Fingerprint,
+  RotateCcw,
+  Key,
+} from 'lucide-react';
 import {
   useIdentityStore,
   selectCurrentUser,
   selectCurrentSession,
   formatUserId,
   getSessionTimeRemaining,
+  formatLoginType,
   useSettingsStore,
 } from '@/stores';
 import { useZeroIdAuth } from '../../hooks/useZeroIdAuth';
@@ -14,6 +30,28 @@ import { useWindowActions } from '../../hooks/useWindows';
 import { usePanelDrillOptional } from './context';
 import { ZeroIdLoginPanel } from './panels/ZeroIdLoginPanel';
 import styles from './IdentityPanel.module.css';
+
+import type { LoginType } from '@/stores';
+
+/** Get the appropriate icon for a login type */
+function getLoginTypeIcon(loginType: LoginType, size = 10) {
+  switch (loginType) {
+    case 'machine_key':
+      return <Cpu size={size} />;
+    case 'neural_key':
+      return <Brain size={size} />;
+    case 'email':
+      return <Mail size={size} />;
+    case 'oauth':
+      return <Globe size={size} />;
+    case 'webauthn':
+      return <Fingerprint size={size} />;
+    case 'recovery':
+      return <RotateCcw size={size} />;
+    default:
+      return <Key size={size} />;
+  }
+}
 
 interface IdentityPanelContentProps {
   onClose: () => void;
@@ -50,6 +88,7 @@ export function IdentityPanelContent({
   const displayName = currentUser?.displayName ?? 'Not logged in';
   const displayUid = currentUser ? formatUserId(currentUser.id) : '---';
   const sessionInfo = currentSession ? getSessionTimeRemaining(currentSession) : 'No session';
+  const loginTypeLabel = currentSession ? formatLoginType(currentSession.loginType) : null;
 
   // Check if logged into ZERO ID
   const isZeroIdConnected = !!remoteAuthState;
@@ -97,7 +136,7 @@ export function IdentityPanelContent({
         case 'login-zero-id':
           if (isZeroIdConnected) {
             // Show connected status in subpanel using PanelDrill
-            subPanelLabel = 'ZERO ID';
+            subPanelLabel = 'Session';
             subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
           } else {
             // Show centered login modal when not connected
@@ -183,9 +222,14 @@ export function IdentityPanelContent({
           <span className={styles.userName}>{displayName}</span>
           <span className={styles.userUid}>{displayUid}</span>
           {currentSession && (
-            <span className={styles.sessionInfo}>
-              <Clock size={10} /> {sessionInfo}
-            </span>
+            <>
+              <span className={styles.sessionInfo}>
+                {getLoginTypeIcon(currentSession.loginType)} {loginTypeLabel}
+              </span>
+              <span className={styles.sessionInfo}>
+                <Clock size={10} /> {sessionInfo}
+              </span>
+            </>
           )}
         </div>
       </div>

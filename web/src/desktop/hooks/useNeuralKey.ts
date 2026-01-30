@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useIdentityStore, selectCurrentUser } from '@/stores';
+import { useIdentityStore, selectCurrentUser, type User } from '@/stores';
 import { useIdentityServiceClient } from './useIdentityServiceClient';
 import {
   type LocalKeyStore as ServiceLocalKeyStore,
@@ -60,8 +60,8 @@ const INITIAL_STATE: NeuralKeyState = {
 };
 
 // How long to wait before showing "no key" message (ms)
-// This gives the VFS cache time to populate on initial load
-const INITIAL_LOAD_SETTLE_DELAY = 500;
+// Reduced from 500ms since keystore cache should be ready immediately
+const INITIAL_LOAD_SETTLE_DELAY = 100;
 
 // =============================================================================
 // Hook Implementation
@@ -69,6 +69,7 @@ const INITIAL_LOAD_SETTLE_DELAY = 500;
 
 export function useNeuralKey(): UseNeuralKeyReturn {
   const currentUser = useIdentityStore(selectCurrentUser);
+  const setCurrentUser = useIdentityStore((state) => state.setCurrentUser);
   const { userId, getClientOrThrow, getUserIdOrThrow } = useIdentityServiceClient();
   const [state, setState] = useState<NeuralKeyState>(INITIAL_STATE);
 
@@ -85,6 +86,16 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       console.log(`[useNeuralKey] Generating Neural Key for user ${userIdVal}`);
       const serviceResult = await client.generateNeuralKey(userIdVal, password);
       const result = convertNeuralKeyGenerated(serviceResult);
+
+      // Update identity store with the derived user ID from the neural key
+      if (result.userId && currentUser) {
+        console.log(`[useNeuralKey] Updating user ID from ${currentUser.id} to ${result.userId}`);
+        const updatedUser: User = {
+          ...currentUser,
+          id: result.userId,
+        };
+        setCurrentUser(updatedUser);
+      }
 
       setState((prev) => ({
         ...prev,
@@ -106,7 +117,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       }));
       throw err;
     }
-  }, [getClientOrThrow, getUserIdOrThrow]);
+  }, [getClientOrThrow, getUserIdOrThrow, currentUser, setCurrentUser]);
 
   const recoverNeuralKey = useCallback(
     async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
@@ -124,6 +135,16 @@ export function useNeuralKey(): UseNeuralKeyReturn {
         const serviceShards = convertShardsForService(shards);
         const serviceResult = await client.recoverNeuralKey(userIdVal, serviceShards);
         const result = convertNeuralKeyGenerated(serviceResult);
+
+        // Update identity store with the derived user ID from the neural key
+        if (result.userId && currentUser) {
+          console.log(`[useNeuralKey] Updating user ID from ${currentUser.id} to ${result.userId}`);
+          const updatedUser: User = {
+            ...currentUser,
+            id: result.userId,
+          };
+          setCurrentUser(updatedUser);
+        }
 
         setState((prev) => ({
           ...prev,
@@ -146,7 +167,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
         throw err;
       }
     },
-    [getClientOrThrow, getUserIdOrThrow]
+    [getClientOrThrow, getUserIdOrThrow, currentUser, setCurrentUser]
   );
 
   const confirmShardsSaved = useCallback(() => {
@@ -167,88 +188,70 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     // This follows the canonical pattern: React reads from keystore cache, services write via async syscalls
     const keyPath = getIdentityKeystorePath(userId);
 
-    console.log(`[useNeuralKey] Refreshing Neural Key state from keystore cache: ${keyPath}`);
+    // Only log on first load to reduce noise
+    if (!hasCompletedInitialLoadRef.current) {
+      console.log(`[useNeuralKey] Refreshing Neural Key state from keystore cache: ${keyPath}`);
+    }
 
-    // Check keystore availability
+    // Check keystore availability - if not ready on initial load, wait briefly
     if (!KeystoreClient.isAvailable()) {
-      console.warn('[useNeuralKey] Keystore not available yet');
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        isInitializing: false,
-        error: 'Keystore cache not ready',
-      }));
-      return;
+      if (!hasCompletedInitialLoadRef.current) {
+        // On initial load, wait briefly for keystore to become available
+        await new Promise((resolve) => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
+        if (!KeystoreClient.isAvailable()) {
+          console.warn('[useNeuralKey] Keystore not available');
+          hasCompletedInitialLoadRef.current = true;
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            isInitializing: false,
+            error: 'Keystore cache not ready',
+          }));
+          return;
+        }
+      } else {
+        // Not initial load and keystore not available - don't wait
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: 'Keystore cache not ready',
+        }));
+        return;
+      }
     }
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    // Helper to read key store and update state
-    const readAndUpdateState = (): boolean => {
-      try {
-        // Read key store directly from keystore cache (synchronous)
-        const keyStore = KeystoreClient.readJsonSync<ServiceLocalKeyStore>(keyPath);
+    try {
+      // Read key store directly from keystore cache (synchronous)
+      const keyStore = KeystoreClient.readJsonSync<ServiceLocalKeyStore>(keyPath);
 
-        // Log received data for debugging
+      // Log received data for debugging (only on first load)
+      if (!hasCompletedInitialLoadRef.current) {
         console.log('[useNeuralKey] Read keyStore from keystore cache:', {
           hasKey: !!keyStore,
           userId: keyStore?.user_id,
-          hasCreatedAt: keyStore?.created_at !== undefined,
-          createdAt: keyStore?.created_at,
-          epoch: keyStore?.epoch,
-          cacheStats: KeystoreClient.getCacheStats(),
         });
+      }
 
-        if (keyStore) {
-          // Validate response structure - warn if expected fields are missing
-          if (keyStore.created_at === undefined) {
-            console.warn('[useNeuralKey] LocalKeyStore missing created_at - may be old format');
-          }
-
-          setState((prev) => ({
-            ...prev,
-            hasNeuralKey: true,
-            publicIdentifiers: {
-              identitySigningPubKey: '0x' + bytesToHex(keyStore.identity_signing_public_key),
-              machineSigningPubKey: '0x' + bytesToHex(keyStore.machine_signing_public_key),
-              machineEncryptionPubKey: '0x' + bytesToHex(keyStore.machine_encryption_public_key),
-            },
-            // Set createdAt from keyStore.created_at, or null for backward compatibility
-            createdAt: keyStore.created_at ?? null,
-            isLoading: false,
-            isInitializing: false,
-          }));
-          return true; // Key found
-        }
-        return false; // No key found
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to refresh Neural Key state';
-        console.error('[useNeuralKey] refresh error:', errorMsg);
+      if (keyStore) {
         setState((prev) => ({
           ...prev,
+          hasNeuralKey: true,
+          publicIdentifiers: {
+            identitySigningPubKey: '0x' + bytesToHex(keyStore.identity_signing_public_key),
+            machineSigningPubKey: '0x' + bytesToHex(keyStore.machine_signing_public_key),
+            machineEncryptionPubKey: '0x' + bytesToHex(keyStore.machine_encryption_public_key),
+          },
+          createdAt: keyStore.created_at ?? null,
           isLoading: false,
           isInitializing: false,
-          error: errorMsg,
         }));
-        return true; // Return true to stop retry (error case)
-      }
-    };
-
-    // First attempt to read key
-    const foundKey = readAndUpdateState();
-
-    if (!foundKey && !hasCompletedInitialLoadRef.current) {
-      // On initial load, wait and retry before showing "no key" message
-      // This gives the keystore cache time to populate
-      console.log('[useNeuralKey] No key found on initial load, waiting before retry...');
-      await new Promise((resolve) => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
-
-      // Retry reading
-      const foundKeyOnRetry = readAndUpdateState();
-
-      if (!foundKeyOnRetry) {
-        // Still no key after waiting - now we can show "no key" message
-        console.log('[useNeuralKey] No key store found at', keyPath, '(after settle delay)');
+      } else {
+        // No key found
+        if (!hasCompletedInitialLoadRef.current) {
+          console.log('[useNeuralKey] No key store found at', keyPath);
+        }
         setState((prev) => ({
           ...prev,
           hasNeuralKey: false,
@@ -258,23 +261,17 @@ export function useNeuralKey(): UseNeuralKeyReturn {
           isInitializing: false,
         }));
       }
-      // Note: if key was found on retry, readAndUpdateState already set isInitializing: false
-
-      hasCompletedInitialLoadRef.current = true;
-    } else if (!foundKey) {
-      // Not initial load, immediately show "no key" message
-      console.log('[useNeuralKey] No key store found at', keyPath);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to refresh Neural Key state';
+      console.error('[useNeuralKey] refresh error:', errorMsg);
       setState((prev) => ({
         ...prev,
-        hasNeuralKey: false,
-        publicIdentifiers: null,
-        createdAt: null,
         isLoading: false,
+        isInitializing: false,
+        error: errorMsg,
       }));
     }
-    // Note: if key was found on first attempt, readAndUpdateState already set isInitializing: false
 
-    // Mark initial load as complete
     hasCompletedInitialLoadRef.current = true;
   }, [userId]);
 
