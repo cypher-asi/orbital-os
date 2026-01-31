@@ -5,6 +5,8 @@ import {
   type ZidSession,
   VfsStorageClient,
   formatUserId,
+  ZidInvalidRefreshTokenError,
+  ServiceNotFoundError,
 } from '@/client-services';
 import { useSupervisor } from './useSupervisor';
 import {
@@ -106,6 +108,15 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   // Track refresh attempts to implement backoff on failure
   const lastRefreshAttemptRef = useRef<number>(0);
   const refreshFailCountRef = useRef<number>(0);
+  
+  // Track last successful refresh to prevent rapid successive refreshes
+  // This is critical for token rotation: we must wait for VFS to persist the new token
+  const lastSuccessfulRefreshRef = useRef<number>(0);
+  const MIN_REFRESH_COOLDOWN_MS = 5000; // Minimum 5 seconds between refreshes
+
+  // Track the last refresh token used to prevent duplicate refresh with same token
+  // This catches race conditions where the same token is sent multiple times
+  const lastUsedRefreshTokenRef = useRef<string | null>(null);
 
   // Create client instance when supervisor is available
   const clientRef = useRef<IdentityServiceClient | null>(null);
@@ -125,8 +136,9 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         const sessionPath = getZidSessionPath(currentUserId);
         const session = VfsStorageClient.readJsonSync<ZidSession>(sessionPath);
 
-        if (session && session.expires_at > Date.now()) {
-          // Valid session found, restore state
+        // Load session if it has a refresh_token - even if expired, we can refresh it
+        if (session && session.refresh_token) {
+          const isExpired = session.expires_at <= Date.now();
           // Note: machine_id and login_type may not be in older cached sessions (backward compat)
           setRemoteAuthState({
             serverEndpoint: session.zid_endpoint,
@@ -138,9 +150,13 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
             machineId: session.machine_id ?? '',
             loginType: session.login_type as RemoteAuthState['loginType'],
           });
-          console.log('[useZeroIdAuth] Restored session from VFS cache');
+          if (isExpired) {
+            console.log('[useZeroIdAuth] Loaded expired session from VFS cache, will auto-refresh');
+          } else {
+            console.log('[useZeroIdAuth] Restored valid session from VFS cache');
+          }
         } else if (session) {
-          console.log('[useZeroIdAuth] Found expired session in VFS cache');
+          console.log('[useZeroIdAuth] Found session without refresh_token in VFS cache');
         }
       } catch (err) {
         console.warn('[useZeroIdAuth] Failed to load session from VFS:', err);
@@ -177,12 +193,42 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         }
 
         // Call identity service to perform email login
-        const tokens: ZidTokens = await clientRef.current.loginWithEmail(
-          currentUserId,
-          email,
-          password,
-          zidEndpoint
-        );
+        // Retry up to 3 times with delay if service is not found (startup timing)
+        let tokens: ZidTokens | null = null;
+        let lastError: Error | null = null;
+        const maxRetries = 3;
+        const retryDelayMs = 1000;
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            tokens = await clientRef.current.loginWithEmail(
+              currentUserId,
+              email,
+              password,
+              zidEndpoint
+            );
+            break; // Success - exit retry loop
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error('Unknown error');
+            
+            // Only retry for ServiceNotFoundError (startup timing)
+            if (err instanceof ServiceNotFoundError) {
+              if (attempt < maxRetries - 1) {
+                console.log(`[useZeroIdAuth] Identity service not ready, retrying in ${retryDelayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                continue;
+              }
+              // Last attempt failed - provide helpful error message
+              throw new Error('Identity service is still starting up. Please wait a few seconds and try again.');
+            }
+            // For other errors, don't retry
+            throw err;
+          }
+        }
+
+        if (!tokens) {
+          throw lastError || new Error('Email authentication failed');
+        }
 
         // Convert tokens to RemoteAuthState
         // login_type comes from the service (or falls back to 'email' for this flow)
@@ -224,10 +270,40 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         }
 
         // Call identity service to perform machine key login
-        const tokens: ZidTokens = await clientRef.current.loginWithMachineKey(
-          currentUserId,
-          zidEndpoint
-        );
+        // Retry up to 3 times with delay if service is not found (startup timing)
+        let tokens: ZidTokens | null = null;
+        let lastError: Error | null = null;
+        const maxRetries = 3;
+        const retryDelayMs = 1000;
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            tokens = await clientRef.current.loginWithMachineKey(
+              currentUserId,
+              zidEndpoint
+            );
+            break; // Success - exit retry loop
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error('Unknown error');
+            
+            // Only retry for ServiceNotFoundError (startup timing)
+            if (err instanceof ServiceNotFoundError) {
+              if (attempt < maxRetries - 1) {
+                console.log(`[useZeroIdAuth] Identity service not ready, retrying in ${retryDelayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                continue;
+              }
+              // Last attempt failed - provide helpful error message
+              throw new Error('Identity service is still starting up. Please wait a few seconds and try again.');
+            }
+            // For other errors, don't retry
+            throw err;
+          }
+        }
+
+        if (!tokens) {
+          throw lastError || new Error('Machine key authentication failed');
+        }
 
         // Convert tokens to RemoteAuthState
         // login_type comes from the service (or falls back to 'machine_key' for this flow)
@@ -269,7 +345,37 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         }
 
         // Call identity service to enroll machine with ZID server
-        const tokens: ZidTokens = await clientRef.current.enrollMachine(currentUserId, zidEndpoint);
+        // Retry up to 3 times with delay if service is not found (startup timing)
+        let tokens: ZidTokens | null = null;
+        let lastError: Error | null = null;
+        const maxRetries = 3;
+        const retryDelayMs = 1000;
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            tokens = await clientRef.current.enrollMachine(currentUserId, zidEndpoint);
+            break; // Success - exit retry loop
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error('Unknown error');
+            
+            // Only retry for ServiceNotFoundError (startup timing)
+            if (err instanceof ServiceNotFoundError) {
+              if (attempt < maxRetries - 1) {
+                console.log(`[useZeroIdAuth] Identity service not ready, retrying in ${retryDelayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                continue;
+              }
+              // Last attempt failed - provide helpful error message
+              throw new Error('Identity service is still starting up. Please wait a few seconds and try again.');
+            }
+            // For other errors, don't retry
+            throw err;
+          }
+        }
+
+        if (!tokens) {
+          throw lastError || new Error('Machine enrollment failed');
+        }
 
         // Convert tokens to RemoteAuthState (enrollment also logs you in)
         // login_type comes from the service (or falls back to 'machine_key' for enrollment)
@@ -329,7 +435,12 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   }, [currentUserId]);
 
   const refreshTokenFn = useCallback(async () => {
-    if (!remoteAuthState?.refreshToken) {
+    // Get latest state directly from store to avoid stale closure issues
+    // This ensures we always use the most recent refresh token from React state,
+    // which is passed directly to the backend to prevent VFS race conditions.
+    const latestState = useIdentityStore.getState().remoteAuthState;
+    
+    if (!latestState?.refreshToken) {
       throw new Error('No refresh token available');
     }
     if (!clientRef.current || !currentUserId) {
@@ -343,37 +454,88 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
       return globalRefreshPromise;
     }
 
+    // Detect if we're trying to use the same refresh token that was already consumed
+    // This catches edge cases where state hasn't been updated yet with the new token
+    const currentRefreshToken = latestState.refreshToken;
+    if (currentRefreshToken === lastUsedRefreshTokenRef.current) {
+      console.warn(
+        '[useZeroIdAuth] Blocking duplicate refresh with same token - token already consumed, ' +
+        'waiting for new token'
+      );
+      // Return resolved promise to avoid throwing, the auto-refresh will retry later
+      return Promise.resolve();
+    }
+
     setIsAuthenticating(true);
     setError(null);
     lastRefreshAttemptRef.current = Date.now();
     globalRefreshInProgress = true;
 
+    // Mark this token as being used BEFORE making the request
+    // This prevents race conditions if another refresh attempt comes in
+    lastUsedRefreshTokenRef.current = currentRefreshToken;
+
     const doRefresh = async () => {
       try {
+        // Pass refresh token directly from React state to prevent race conditions
+        // where VFS might not have the latest token yet
         const tokens = await clientRef.current!.refreshToken(
           currentUserId!,
-          remoteAuthState.serverEndpoint
+          latestState.serverEndpoint,
+          currentRefreshToken
         );
 
-        // Update state with new tokens (login_type is preserved from original session by service)
-        setRemoteAuthState({
-          ...remoteAuthState,
+        // Update state with new tokens using functional update to ensure we have latest state
+        // This prevents race conditions where the closure captures stale remoteAuthState
+        const currentState = useIdentityStore.getState().remoteAuthState;
+        const newState: RemoteAuthState = {
+          serverEndpoint: currentState?.serverEndpoint ?? latestState.serverEndpoint,
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
           tokenExpiresAt: new Date(tokens.expires_at).getTime(),
+          scopes: currentState?.scopes ?? latestState.scopes,
           sessionId: tokens.session_id,
           machineId: tokens.machine_id,
-          loginType: (tokens.login_type as RemoteAuthState['loginType']) ?? remoteAuthState.loginType,
-        });
+          loginType: (tokens.login_type as RemoteAuthState['loginType']) ?? currentState?.loginType ?? latestState.loginType,
+        };
+        setRemoteAuthState(newState);
 
-        // Reset fail count on success
+        // Reset fail count and record successful refresh time
         refreshFailCountRef.current = 0;
-        console.log('[useZeroIdAuth] Token refresh successful');
+        lastSuccessfulRefreshRef.current = Date.now();
+        // Note: We intentionally do NOT update lastUsedRefreshTokenRef here.
+        // It should remain set to the OLD token that was just consumed.
+        // This allows future refreshes with the NEW token (tokens.refresh_token)
+        // while still blocking any stale attempts to use the old consumed token.
+        console.log('[useZeroIdAuth] Token refresh successful, new refresh_token stored in state');
       } catch (err) {
-        // Increment fail count for backoff
-        refreshFailCountRef.current += 1;
         const errorMsg = err instanceof Error ? err.message : 'Token refresh failed';
+        
+        // ServiceNotFoundError means identity service isn't ready yet - don't count as failure
+        // This is a startup timing issue, not a real refresh problem
+        if (err instanceof ServiceNotFoundError) {
+          console.log('[useZeroIdAuth] Identity service not ready, will retry later');
+          // Don't set error or increment fail count - just clear the used token ref
+          // so the next attempt with same token is allowed
+          lastUsedRefreshTokenRef.current = null;
+          throw err;
+        }
+
+        // Increment fail count for backoff (only for real failures)
+        refreshFailCountRef.current += 1;
         setError(errorMsg);
+
+        // Auto-clear session on InvalidRefreshToken to force re-authentication
+        // This handles token reuse detection, expired tokens, and revoked tokens
+        if (err instanceof ZidInvalidRefreshTokenError) {
+          console.warn(
+            '[useZeroIdAuth] Refresh token invalid/reused/revoked - clearing session to force re-auth'
+          );
+          setRemoteAuthState(null);
+          // Clear the tracked token since session is being cleared
+          lastUsedRefreshTokenRef.current = null;
+        }
+
         throw err;
       } finally {
         setIsAuthenticating(false);
@@ -384,7 +546,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
 
     globalRefreshPromise = doRefresh();
     return globalRefreshPromise;
-  }, [remoteAuthState, currentUserId, setRemoteAuthState]);
+  }, [currentUserId, setRemoteAuthState]);
 
   // Auto-refresh tokens 5 minutes before expiry
   useEffect(() => {
@@ -392,10 +554,16 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
       return;
     }
 
+    // Don't auto-refresh if client is not available (service not started yet)
+    if (!clientRef.current) {
+      console.log('[useZeroIdAuth] Skipping auto-refresh, client not available yet');
+      return;
+    }
+
     // Don't auto-refresh while another operation is in progress
     // This prevents concurrent VFS operations that can cause state machine errors
     if (isAuthenticating) {
-      console.log('[useZeroIdAuth] Skipping auto-refresh, operation in progress');
+      console.log('[useZeroIdAuth] Skipping auto-refresh scheduling, operation in progress');
       return;
     }
 
@@ -403,8 +571,27 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     const refreshBuffer = 5 * 60 * 1000; // 5 minutes
     const refreshIn = expiresIn - refreshBuffer;
 
+    // Check if we're in cooldown after a recent successful refresh
+    const timeSinceLastSuccess = Date.now() - lastSuccessfulRefreshRef.current;
+    const inCooldown = timeSinceLastSuccess < MIN_REFRESH_COOLDOWN_MS && lastSuccessfulRefreshRef.current > 0;
+
     if (refreshIn <= 0) {
-      // Token expired or about to expire - check for backoff before retrying
+      // Token expired or about to expire
+      
+      // If in cooldown, schedule refresh after cooldown ends instead of refreshing immediately
+      if (inCooldown) {
+        const cooldownRemaining = MIN_REFRESH_COOLDOWN_MS - timeSinceLastSuccess;
+        console.log(`[useZeroIdAuth] Token needs refresh but in cooldown, scheduling in ${Math.round(cooldownRemaining / 1000)}s`);
+        const cooldownTimer = setTimeout(() => {
+          console.log('[useZeroIdAuth] Cooldown ended, refreshing token');
+          refreshTokenFn().catch((err) => {
+            console.error('[useZeroIdAuth] Post-cooldown refresh failed:', err);
+          });
+        }, cooldownRemaining);
+        return () => clearTimeout(cooldownTimer);
+      }
+
+      // Check for backoff after failed attempts
       const timeSinceLastAttempt = Date.now() - lastRefreshAttemptRef.current;
       // Exponential backoff: 30s, 60s, 120s, 240s, max 5 min
       const backoffMs = Math.min(
@@ -436,6 +623,8 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
       return;
     }
 
+    // Token not expired yet - schedule refresh for later
+    // If in cooldown, we still schedule normally since cooldown will be over by then
     console.log(`[useZeroIdAuth] Scheduling token refresh in ${Math.round(refreshIn / 1000 / 60)} minutes`);
     const timerId = setTimeout(() => {
       console.log('[useZeroIdAuth] Auto-refreshing token');
@@ -445,7 +634,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     }, refreshIn);
 
     return () => clearTimeout(timerId);
-  }, [remoteAuthState?.tokenExpiresAt, remoteAuthState?.refreshToken, refreshTokenFn, isAuthenticating]);
+  }, [remoteAuthState?.tokenExpiresAt, remoteAuthState?.refreshToken, refreshTokenFn, isAuthenticating, supervisor]);
 
   const getTimeRemaining = useCallback((): string => {
     if (!remoteAuthState) {

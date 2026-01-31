@@ -14,17 +14,45 @@
 //!
 //! | Binary | Heap Size | Rationale |
 //! |--------|-----------|-----------|
-//! | init | 1MB | Service registry, message handling |
+//! | init | 4MB | Service registry, loading large binaries |
 //! | idle | 64KB | Minimal - does nothing |
 //! | pingpong | 1MB | Latency measurement with vectors |
 //! | sender | 1MB | Message burst handling |
 //! | receiver | 1MB | Message counting |
 //! | memhog | 16MB | Memory stress testing |
+//!
+//! # Important: Heap Base
+//!
+//! The allocator uses the `__heap_base` linker symbol to determine where to start
+//! allocating. This symbol is provided by wasm-ld and correctly accounts for the
+//! data section and stack. Using a hardcoded value like 0x10000 can cause the
+//! allocator to return addresses that overlap with static data, leading to corruption.
 
 #![no_std]
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+// Import the __heap_base symbol from wasm-ld
+// This tells us where the data section ends and the heap can begin
+#[cfg(target_arch = "wasm32")]
+extern "C" {
+    static __heap_base: u8;
+}
+
+/// Get the heap base address from the linker symbol.
+/// Falls back to 0x10000 on non-WASM targets.
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn heap_base() -> usize {
+    unsafe { &__heap_base as *const u8 as usize }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn heap_base() -> usize {
+    0x10000 // Fallback for non-WASM (not actually used)
+}
 
 /// Initialize the global allocator with the specified heap size in bytes.
 ///
@@ -47,8 +75,8 @@ macro_rules! init {
 
 /// Bump allocator with configurable heap size.
 ///
-/// The heap starts at 0x10000 (64KB offset) to avoid conflicts with
-/// WASM linear memory's initial pages used by the runtime.
+/// The heap starts at `__heap_base` (determined by the linker) to properly
+/// avoid conflicts with the WASM data section and stack.
 ///
 /// This is a simple "bump pointer" allocator that:
 /// - Allocates by incrementing a pointer
@@ -59,9 +87,6 @@ pub struct BumpAllocator<const SIZE: usize> {
 }
 
 impl<const SIZE: usize> BumpAllocator<SIZE> {
-    /// Heap start address (64KB offset to avoid WASM runtime conflicts)
-    const HEAP_START: usize = 0x10000;
-
     /// Create a new bump allocator.
     pub const fn new() -> Self {
         Self {
@@ -77,11 +102,12 @@ unsafe impl<const SIZE: usize> GlobalAlloc for BumpAllocator<SIZE> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let align = layout.align();
+        let heap_start = heap_base();
 
         loop {
             let head = self.head.load(Ordering::Relaxed);
-            let aligned = (Self::HEAP_START + head + align - 1) & !(align - 1);
-            let new_head = aligned - Self::HEAP_START + size;
+            let aligned = (heap_start + head + align - 1) & !(align - 1);
+            let new_head = aligned - heap_start + size;
 
             if new_head > SIZE {
                 return core::ptr::null_mut();

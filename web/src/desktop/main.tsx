@@ -361,7 +361,7 @@ function App() {
         }
 
         // Initialize settings store with supervisor reference
-        // This enables time settings sync with time_service when it's running
+        // This enables time settings sync with time when it's running
         useSettingsStore.getState().initializeService(supervisor);
         console.log('[main] Settings store initialized with supervisor');
 

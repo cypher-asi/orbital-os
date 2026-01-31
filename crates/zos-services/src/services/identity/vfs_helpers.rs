@@ -258,6 +258,7 @@ impl IdentityService {
 
         match syscall::network_fetch_async(&request_json) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "IdentityService: network_fetch_async({} {}) -> request_id={}",
                     request.method.as_str(),

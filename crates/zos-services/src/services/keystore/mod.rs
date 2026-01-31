@@ -88,7 +88,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::manifests::KEYSTORE_SERVICE_MANIFEST;
+use crate::manifests::KEYSTORE_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_process::keystore_result;
@@ -247,6 +247,7 @@ impl KeystoreService {
 
         match syscall::keystore_read_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "KeystoreService: keystore_read_async({}) -> request_id={}",
                     key, request_id
@@ -279,6 +280,7 @@ impl KeystoreService {
 
         match syscall::keystore_write_async(key, value) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "KeystoreService: keystore_write_async({}, {} bytes) -> request_id={}",
                     key,
@@ -312,6 +314,7 @@ impl KeystoreService {
 
         match syscall::keystore_delete_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "KeystoreService: keystore_delete_async({}) -> request_id={}",
                     key, request_id
@@ -346,6 +349,7 @@ impl KeystoreService {
 
         match syscall::keystore_exists_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "KeystoreService: keystore_exists_async({}) -> request_id={}",
                     key, request_id
@@ -380,6 +384,7 @@ impl KeystoreService {
 
         match syscall::keystore_list_async(prefix) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "KeystoreService: keystore_list_async({}) -> request_id={}",
                     prefix, request_id
@@ -531,7 +536,7 @@ impl KeystoreService {
 
 impl ZeroApp for KeystoreService {
     fn manifest() -> &'static AppManifest {
-        &KEYSTORE_SERVICE_MANIFEST
+        &KEYSTORE_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {

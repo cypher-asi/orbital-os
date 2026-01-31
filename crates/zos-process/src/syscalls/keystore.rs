@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {
-    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> u32;
+    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> i64;
     fn zos_send_bytes(ptr: *const u8, len: u32);
 }
 
@@ -37,12 +37,12 @@ extern "C" {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn keystore_read_async(key: &str) -> Result<u32, u32> {
+pub fn keystore_read_async(key: &str) -> Result<i64, i64> {
     let key_bytes = key.as_bytes();
     unsafe {
         zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
         let result = zos_syscall(SYS_KEYSTORE_READ, key_bytes.len() as u32, 0, 0);
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -51,8 +51,8 @@ pub fn keystore_read_async(key: &str) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn keystore_read_async(_key: &str) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn keystore_read_async(_key: &str) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }
 
 /// Start async keystore write operation.
@@ -68,7 +68,7 @@ pub fn keystore_read_async(_key: &str) -> Result<u32, u32> {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn keystore_write_async(key: &str, value: &[u8]) -> Result<u32, u32> {
+pub fn keystore_write_async(key: &str, value: &[u8]) -> Result<i64, i64> {
     let key_bytes = key.as_bytes();
     // Data format: [key_len: u32, key: [u8], value: [u8]]
     let mut data = Vec::with_capacity(4 + key_bytes.len() + value.len());
@@ -84,7 +84,7 @@ pub fn keystore_write_async(key: &str, value: &[u8]) -> Result<u32, u32> {
             value.len() as u32,
             0,
         );
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -93,8 +93,8 @@ pub fn keystore_write_async(key: &str, value: &[u8]) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn keystore_write_async(_key: &str, _value: &[u8]) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn keystore_write_async(_key: &str, _value: &[u8]) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }
 
 /// Start async keystore delete operation.
@@ -109,12 +109,12 @@ pub fn keystore_write_async(_key: &str, _value: &[u8]) -> Result<u32, u32> {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn keystore_delete_async(key: &str) -> Result<u32, u32> {
+pub fn keystore_delete_async(key: &str) -> Result<i64, i64> {
     let key_bytes = key.as_bytes();
     unsafe {
         zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
         let result = zos_syscall(SYS_KEYSTORE_DELETE, key_bytes.len() as u32, 0, 0);
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -123,8 +123,8 @@ pub fn keystore_delete_async(key: &str) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn keystore_delete_async(_key: &str) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn keystore_delete_async(_key: &str) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }
 
 /// Start async keystore list operation.
@@ -140,12 +140,12 @@ pub fn keystore_delete_async(_key: &str) -> Result<u32, u32> {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn keystore_list_async(prefix: &str) -> Result<u32, u32> {
+pub fn keystore_list_async(prefix: &str) -> Result<i64, i64> {
     let prefix_bytes = prefix.as_bytes();
     unsafe {
         zos_send_bytes(prefix_bytes.as_ptr(), prefix_bytes.len() as u32);
         let result = zos_syscall(SYS_KEYSTORE_LIST, prefix_bytes.len() as u32, 0, 0);
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -154,8 +154,8 @@ pub fn keystore_list_async(prefix: &str) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn keystore_list_async(_prefix: &str) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn keystore_list_async(_prefix: &str) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }
 
 /// Start async keystore exists check.
@@ -171,12 +171,12 @@ pub fn keystore_list_async(_prefix: &str) -> Result<u32, u32> {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn keystore_exists_async(key: &str) -> Result<u32, u32> {
+pub fn keystore_exists_async(key: &str) -> Result<i64, i64> {
     let key_bytes = key.as_bytes();
     unsafe {
         zos_send_bytes(key_bytes.as_ptr(), key_bytes.len() as u32);
         let result = zos_syscall(SYS_KEYSTORE_EXISTS, key_bytes.len() as u32, 0, 0);
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -185,6 +185,6 @@ pub fn keystore_exists_async(key: &str) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn keystore_exists_async(_key: &str) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn keystore_exists_async(_key: &str) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }

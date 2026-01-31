@@ -268,11 +268,10 @@ impl super::Supervisor {
 
     /// Find a service process by name.
     ///
-    /// Looks up "{service_name}_service" in the process list.
+    /// Looks up the service by its exact name in the process list.
     pub(super) fn find_service_pid(&self, service_name: &str) -> Option<ProcessId> {
-        let expected_name = format!("{}_service", service_name);
         for (pid, proc) in self.system.list_processes() {
-            if proc.name == expected_name {
+            if proc.name == service_name {
                 return Some(pid);
             }
         }

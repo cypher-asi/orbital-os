@@ -139,7 +139,7 @@ function Build-Processes {
         $releaseDir = "$ProjectRoot\target\wasm32-unknown-unknown\release"
         Copy-Item "$releaseDir\zos_init.wasm" "$ProjectRoot\web\processes\init.wasm" -Force
         Copy-Item "$releaseDir\terminal.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\permission_service.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\permission.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\idle.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\memhog.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\sender.wasm" "$ProjectRoot\web\processes\" -Force
@@ -148,10 +148,10 @@ function Build-Processes {
         Copy-Item "$releaseDir\clock.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\calculator.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\settings.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\identity_service.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\vfs_service.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\time_service.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\keystore_service.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\identity.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\vfs.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\time.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\keystore.wasm" "$ProjectRoot\web\processes\" -Force
         
         Write-Host "Process binaries built successfully!" -ForegroundColor Green
     }
@@ -162,6 +162,10 @@ function Build-Processes {
 
 function Build-QemuProcesses {
     Write-Step "Building QEMU process WASM binaries (without shared memory)"
+    
+    # Use a separate target directory for QEMU builds to avoid conflicts with web builds
+    # Web builds use shared memory (atomics), QEMU builds don't (wasmi doesn't support threads)
+    $qemuTargetDir = "$ProjectRoot\target-qemu"
     
     $configPath = "$ProjectRoot\.cargo\config.toml"
     $configBackup = "$ProjectRoot\.cargo\config.toml.bak"
@@ -175,33 +179,51 @@ function Build-QemuProcesses {
             Move-Item $configPath $configBackup -Force
         }
         
-        # Build without shared memory using simple cargo (no build-std needed without atomics)
-        Write-Host "Building zos-init (no shared memory)..."
-        cargo +nightly build -p zos-init --target wasm32-unknown-unknown --release
+        # Memory settings for QEMU WASM processes:
+        # - Init needs 4MB to load large service binaries (identity is 1.1MB)
+        # - Services only need 1MB each (they don't load other WASM binaries)
+        # Total: 4MB (init) + 6×1MB (services) = 10MB linear memory (fits in 70MB kernel heap)
+        
+        $qemuConfigPath = "$ProjectRoot\.cargo\qemu-config.toml"
+        
+        # Init config: 6MB initial, 8MB max (loads large binaries sequentially)
+        # Boot loads: perm(282KB) + vfs(462KB) + keystore(369KB) + identity(1.17MB) + time(386KB) + terminal(45KB) = ~2.7MB
+        # Plus working memory and string formatting overhead
+        $initMemoryFlags = 'target.wasm32-unknown-unknown.rustflags = ["-C", "link-arg=--initial-memory=6291456", "-C", "link-arg=--max-memory=8388608", "-C", "link-arg=-zstack-size=65536"]'
+        $initMemoryFlags | Out-File -FilePath $qemuConfigPath -Encoding utf8
+        
+        # Build Init with larger memory (using separate target dir)
+        # --features skip-identity: Skip IdentityService in QEMU (wasm-bindgen shims incomplete)
+        Write-Host "Building zos-init (4MB initial memory for loading services)..."
+        cargo +nightly build -p zos-init --target wasm32-unknown-unknown --release --config $qemuConfigPath --target-dir $qemuTargetDir --features skip-identity
         if ($LASTEXITCODE -ne 0) { throw "zos-init build failed" }
         
+        # Service config: 1MB initial, 2MB max (services don't load binaries)
+        $serviceMemoryFlags = 'target.wasm32-unknown-unknown.rustflags = ["-C", "link-arg=--initial-memory=1048576", "-C", "link-arg=--max-memory=2097152", "-C", "link-arg=-zstack-size=32768"]'
+        $serviceMemoryFlags | Out-File -FilePath $qemuConfigPath -Encoding utf8
+        
         Write-Host "Building zos-system-procs (no shared memory)..."
-        cargo +nightly build -p zos-system-procs --target wasm32-unknown-unknown --release
+        cargo +nightly build -p zos-system-procs --target wasm32-unknown-unknown --release --config $qemuConfigPath --target-dir $qemuTargetDir
         if ($LASTEXITCODE -ne 0) { throw "zos-system-procs build failed" }
         
         Write-Host "Building zos-apps (no shared memory)..."
-        cargo +nightly build -p zos-apps --bins --target wasm32-unknown-unknown --release
+        cargo +nightly build -p zos-apps --bins --target wasm32-unknown-unknown --release --config $qemuConfigPath --target-dir $qemuTargetDir
         if ($LASTEXITCODE -ne 0) { throw "zos-apps build failed" }
         
         Write-Host "Building zos-services (no shared memory)..."
-        cargo +nightly build -p zos-services --bins --target wasm32-unknown-unknown --release
+        cargo +nightly build -p zos-services --bins --target wasm32-unknown-unknown --release --config $qemuConfigPath --target-dir $qemuTargetDir
         if ($LASTEXITCODE -ne 0) { throw "zos-services build failed" }
         
-        # Copy to qemu/processes
+        # Copy to qemu/processes from the QEMU-specific target directory
         Write-Host "Copying process binaries to qemu/processes..."
         if (-not (Test-Path "$ProjectRoot\qemu\processes")) {
             New-Item -ItemType Directory -Path "$ProjectRoot\qemu\processes" -Force | Out-Null
         }
         
-        $releaseDir = "$ProjectRoot\target\wasm32-unknown-unknown\release"
+        $releaseDir = "$qemuTargetDir\wasm32-unknown-unknown\release"
         Copy-Item "$releaseDir\zos_init.wasm" "$ProjectRoot\qemu\processes\init.wasm" -Force
         Copy-Item "$releaseDir\terminal.wasm" "$ProjectRoot\qemu\processes\" -Force
-        Copy-Item "$releaseDir\permission_service.wasm" "$ProjectRoot\qemu\processes\" -Force
+        Copy-Item "$releaseDir\permission.wasm" "$ProjectRoot\qemu\processes\" -Force
         Copy-Item "$releaseDir\idle.wasm" "$ProjectRoot\qemu\processes\" -Force
         Copy-Item "$releaseDir\memhog.wasm" "$ProjectRoot\qemu\processes\" -Force
         Copy-Item "$releaseDir\sender.wasm" "$ProjectRoot\qemu\processes\" -Force
@@ -210,14 +232,20 @@ function Build-QemuProcesses {
         Copy-Item "$releaseDir\clock.wasm" "$ProjectRoot\qemu\processes\" -Force
         Copy-Item "$releaseDir\calculator.wasm" "$ProjectRoot\qemu\processes\" -Force
         Copy-Item "$releaseDir\settings.wasm" "$ProjectRoot\qemu\processes\" -Force
-        Copy-Item "$releaseDir\identity_service.wasm" "$ProjectRoot\qemu\processes\" -Force
-        Copy-Item "$releaseDir\vfs_service.wasm" "$ProjectRoot\qemu\processes\" -Force
-        Copy-Item "$releaseDir\time_service.wasm" "$ProjectRoot\qemu\processes\" -Force
-        Copy-Item "$releaseDir\keystore_service.wasm" "$ProjectRoot\qemu\processes\" -Force
+        Copy-Item "$releaseDir\identity.wasm" "$ProjectRoot\qemu\processes\" -Force
+        Copy-Item "$releaseDir\vfs.wasm" "$ProjectRoot\qemu\processes\" -Force
+        Copy-Item "$releaseDir\time.wasm" "$ProjectRoot\qemu\processes\" -Force
+        Copy-Item "$releaseDir\keystore.wasm" "$ProjectRoot\qemu\processes\" -Force
         
         Write-Host "QEMU process binaries built successfully!" -ForegroundColor Green
     }
     finally {
+        # Clean up QEMU config file
+        $qemuConfigPath = "$ProjectRoot\.cargo\qemu-config.toml"
+        if (Test-Path $qemuConfigPath) {
+            Remove-Item $qemuConfigPath -Force
+        }
+        
         # Always restore the config
         if ($hasConfig -and (Test-Path $configBackup)) {
             Move-Item $configBackup $configPath -Force
@@ -231,6 +259,8 @@ function Clean-Build {
     Write-Step "Cleaning build artifacts"
     Push-Location $ProjectRoot
     cargo clean
+    # Also clean the separate QEMU target directory
+    Remove-Item -Recurse -Force "$ProjectRoot\target-qemu" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\web\pkg" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\web\processes" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\qemu\processes" -ErrorAction SilentlyContinue
@@ -408,7 +438,7 @@ function Run-Qemu {
     $qemuArgs = @(
         "-drive", "format=raw,file=$imagePath",
         "-drive", "file=$dataImage,if=virtio,format=raw",
-        "-serial", "stdio",
+        "-nographic",  # Combines -serial stdio with proper stdin routing on Windows
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
         "-no-reboot",
         "-no-shutdown"

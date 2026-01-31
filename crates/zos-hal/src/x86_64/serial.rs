@@ -45,11 +45,19 @@ fn enable_receive_interrupt() {
     }
 }
 
-/// Read a byte from the serial input buffer (non-blocking)
+/// Read a byte from serial input (non-blocking)
+///
+/// First checks the interrupt buffer, then polls the hardware directly.
+/// This ensures input works even if serial interrupts aren't routed via IOAPIC.
 ///
 /// Returns `Some(byte)` if data is available, `None` otherwise.
 pub fn read_byte() -> Option<u8> {
-    INPUT_BUFFER.lock().pop_front()
+    // First check interrupt buffer
+    if let Some(byte) = INPUT_BUFFER.lock().pop_front() {
+        return Some(byte);
+    }
+    // Fall back to direct polling if buffer is empty
+    receive_byte_raw()
 }
 
 /// Check if the serial port has data available to read

@@ -17,6 +17,9 @@ import {
   Globe,
   RotateCcw,
   UserCheck,
+  KeyRound,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
@@ -70,6 +73,7 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
 
   const { copy, isCopied } = useCopyToClipboard();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [showTokenExpanded, setShowTokenExpanded] = useState(false);
 
   // PanelDrill navigation (optional - allows component to work both inside and outside drill context)
   const panelDrill = usePanelDrillOptional();
@@ -111,6 +115,12 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
   const truncateId = (id: string) => {
     if (id.length <= 12) return id;
     return id.slice(0, 6) + '...' + id.slice(-4);
+  };
+
+  // Helper to truncate access token for preview
+  const truncateToken = (token: string) => {
+    if (token.length <= 24) return token;
+    return token.slice(0, 12) + '...' + token.slice(-8);
   };
 
   // Helper to format server endpoint
@@ -272,6 +282,45 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
                 </Label>
               ))}
             </div>
+          </div>
+
+          {/* Access Token - expandable */}
+          <div className={styles.infoItem}>
+            <div 
+              className={`${styles.infoLabel} ${styles.infoLabelClickable}`}
+              onClick={() => setShowTokenExpanded(!showTokenExpanded)}
+            >
+              <KeyRound size={12} />
+              <span>Access Token</span>
+              <span className={styles.expandToggle}>
+                {showTokenExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              </span>
+            </div>
+            {!showTokenExpanded ? (
+              <div className={styles.infoValueWithCopy}>
+                <code className={styles.infoValueCode}>{truncateToken(remoteAuthState.accessToken)}</code>
+                <Button
+                  variant={isCopied('token') ? 'primary' : 'ghost'}
+                  size="xs"
+                  onClick={() => copy(remoteAuthState.accessToken, 'token')}
+                  className={styles.copyButton}
+                >
+                  {isCopied('token') ? <Check size={12} /> : <Copy size={12} />}
+                </Button>
+              </div>
+            ) : (
+              <div className={styles.tokenExpanded}>
+                <code className={styles.tokenFull}>{remoteAuthState.accessToken}</code>
+                <Button
+                  variant={isCopied('token') ? 'primary' : 'ghost'}
+                  size="xs"
+                  onClick={() => copy(remoteAuthState.accessToken, 'token')}
+                  className={styles.copyButtonToken}
+                >
+                  {isCopied('token') ? <Check size={12} /> : <Copy size={12} />}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 

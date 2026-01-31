@@ -114,14 +114,14 @@ sequenceDiagram
     K->>I: spawn via HAL.spawn_process()
     I->>I: boot_sequence()
     
-    I->>K: SYS_LOAD_BINARY("permission_service")
+    I->>K: SYS_LOAD_BINARY("permission")
     K-->>I: binary bytes
-    I->>K: SYS_SPAWN_PROCESS("permission_service", binary)
+    I->>K: SYS_SPAWN_PROCESS("permission", binary)
     K->>PS: spawn PID 2
     
-    I->>K: SYS_LOAD_BINARY("vfs_service")
+    I->>K: SYS_LOAD_BINARY("vfs")
     K-->>I: binary bytes
-    I->>K: SYS_SPAWN_PROCESS("vfs_service", binary)
+    I->>K: SYS_SPAWN_PROCESS("vfs", binary)
     K->>VFS: spawn PID 3
     
     Note over I,TS: Similar for keystore (4), identity (5), time (6)
@@ -142,8 +142,8 @@ sequenceDiagram
     I->>I: boot_sequence()
     
     I->>I: SYS_LOAD_BINARY returns NOT_SUPPORTED
-    I->>S: debug("INIT:SPAWN:permission_service")
-    S->>S: fetch permission_service.wasm
+    I->>S: debug("INIT:SPAWN:permission")
+    S->>S: fetch permission.wasm
     S->>PS: spawn PID 2
     PS-->>I: MSG_REGISTER_SERVICE
     

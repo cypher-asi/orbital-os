@@ -355,14 +355,14 @@ These syscalls enable the pure microkernel spawn model on QEMU:
 ```rust
 // SYS_LOAD_BINARY (0x16)
 // Loads a WASM binary by name (returns NOT_SUPPORTED on browser WASM)
-match syscall::load_binary("vfs_service") {
+match syscall::load_binary("vfs") {
     Ok(binary) => { /* binary bytes available */ }
     Err(NOT_SUPPORTED) => { /* use Supervisor async flow */ }
 }
 
 // SYS_SPAWN_PROCESS (0x17)
 // Spawns a process from a binary (requires SYS_LOAD_BINARY first)
-let pid = syscall::spawn_process("vfs_service", &binary)?;
+let pid = syscall::spawn_process("vfs", &binary)?;
 ```
 
 | Syscall | WASM Platform | QEMU Platform |

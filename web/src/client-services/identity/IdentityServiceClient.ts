@@ -454,10 +454,11 @@ export class IdentityServiceClient {
    * Refresh the ZID access token using the stored refresh token.
    *
    * This calls the ZID server's refresh endpoint to get new tokens:
-   * 1. Identity service reads stored session from VFS (to get refresh_token)
-   * 2. POSTs to /v1/auth/refresh with refresh_token
-   * 3. Updates stored session with new tokens
-   * 4. Returns new tokens
+   * 1. Identity service reads stored session from VFS (for session_id, machine_id)
+   * 2. If refreshToken provided, uses it; otherwise uses token from VFS
+   * 3. POSTs to /v1/auth/refresh with refresh_token
+   * 4. Updates stored session with new tokens
+   * 5. Returns new tokens
    *
    * Use this when:
    * - Access token is about to expire (recommended: 5 min before expiry)
@@ -465,14 +466,20 @@ export class IdentityServiceClient {
    *
    * @param userId - User ID whose session should be refreshed
    * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @param refreshToken - Optional refresh token from frontend state (prevents race conditions)
    * @returns ZidTokens containing new access and refresh tokens
    * @throws {ZidInvalidRefreshTokenError} If refresh token is expired/invalid
    * @throws {ZidNetworkError} If network error occurs
    */
-  async refreshToken(userId: bigint | string, zidEndpoint: string): Promise<ZidTokens> {
+  async refreshToken(
+    userId: bigint | string,
+    zidEndpoint: string,
+    refreshToken?: string
+  ): Promise<ZidTokens> {
     const response = await this.request<ZidRefreshResponse>(MSG.ZID_REFRESH, {
       user_id: formatUserIdForRust(userId),
       zid_endpoint: zidEndpoint,
+      refresh_token: refreshToken ?? null,
     });
     return this.unwrapResult(response.result);
   }

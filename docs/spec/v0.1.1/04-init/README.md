@@ -144,7 +144,7 @@ impl Init {
     
     fn boot_sequence(&mut self) {
         // Spawn PermissionService (PID 2)
-        debug("INIT:SPAWN:permission_service");
+        debug("INIT:SPAWN:permission");
         
         // Terminal is spawned per-window by Desktop
         self.boot_complete = true;

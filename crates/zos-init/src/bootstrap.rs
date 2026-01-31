@@ -29,41 +29,93 @@ impl Init {
 
         // 1. Spawn PermissionService (PID 2) - the capability authority
         self.log("Spawning PermissionService (PID 2)...");
-        self.spawn_service("permission_service");
+        self.spawn_service("permission");
 
         // 2. Spawn VfsService (PID 3) - virtual filesystem service
         // NOTE: VFS must be spawned before IdentityService since identity needs VFS
         self.log("Spawning VfsService (PID 3)...");
-        self.spawn_service("vfs_service");
+        self.spawn_service("vfs");
 
         // 3. Spawn KeystoreService (PID 4) - secure key storage
         // NOTE: Keystore must be spawned before IdentityService since identity uses keystore
         // for all /keys/ path operations (Invariant 32)
         self.log("Spawning KeystoreService (PID 4)...");
-        self.spawn_service("keystore_service");
+        self.spawn_service("keystore");
 
         // 4. Spawn IdentityService (PID 5) - user identity and key management
-        self.log("Spawning IdentityService (PID 5)...");
-        self.spawn_service("identity_service");
+        #[cfg(not(feature = "skip-identity"))]
+        {
+            self.log("Spawning IdentityService (PID 5)...");
+            self.spawn_service("identity");
+        }
+        #[cfg(feature = "skip-identity")]
+        self.log("IdentityService skipped (QEMU mode)");
 
         // 5. Spawn TimeService (PID 6) - time settings management
         self.log("Spawning TimeService (PID 6)...");
-        self.spawn_service("time_service");
+        self.spawn_service("time");
 
-        // NOTE: Terminal is no longer auto-spawned here.
-        // Each terminal window is spawned by the Desktop component via launchTerminal(),
-        // which creates a process and links it to a window for proper lifecycle management.
-        // This enables process isolation (each window has its own terminal process).
+        // 6. Spawn Terminal (PID 7) - interactive terminal for QEMU mode only
+        // In QEMU mode, we need a terminal process running to receive serial input.
+        // In browser WASM mode, terminals are spawned per-window by Desktop.
+        // We detect QEMU mode at runtime by checking if load_binary succeeds.
+        self.try_spawn_qemu_terminal();
 
         self.boot_complete = true;
         self.log("Boot sequence complete");
         self.log("  PermissionService: handles capability requests");
         self.log("  VfsService: handles filesystem operations");
         self.log("  KeystoreService: handles secure key storage");
+        #[cfg(not(feature = "skip-identity"))]
         self.log("  IdentityService: handles identity and key management");
         self.log("  TimeService: handles time settings");
-        self.log("  Terminal: spawned per-window by Desktop");
         self.log("Init entering minimal idle state");
+    }
+
+    /// Try to spawn terminal for QEMU mode only.
+    ///
+    /// This uses runtime detection: if `load_binary("terminal")` succeeds, we're in
+    /// QEMU mode and spawn the terminal. If it returns NOT_SUPPORTED, we're in browser
+    /// mode where terminals are spawned per-window by Desktop, so we skip.
+    fn try_spawn_qemu_terminal(&mut self) {
+        // Try to load terminal binary - this only succeeds in QEMU mode
+        match syscall::load_binary("terminal") {
+            Ok(binary) => {
+                // QEMU mode: spawn terminal for interactive serial console
+                self.log(&format!("Spawning Terminal (PID 7) for QEMU console..."));
+                self.log(&format!("Loaded terminal ({} bytes)", binary.len()));
+
+                match syscall::spawn_process("terminal", &binary) {
+                    Ok(pid) => {
+                        self.log(&format!("Spawned terminal as PID {}", pid));
+
+                        // Setup endpoint and capability for terminal
+                        if let Ok((endpoint_id, slot)) = syscall::create_endpoint_for(pid) {
+                            self.log(&format!(
+                                "DEBUG: create_endpoint_for({}) returned endpoint={}, slot={}",
+                                pid, endpoint_id, slot
+                            ));
+                            self.service_cap_slots.insert(pid, slot);
+                            self.log(&format!(
+                                "Created endpoint {} for terminal (cap slot {})",
+                                endpoint_id, slot
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        self.log(&format!("Failed to spawn terminal: error {}", e));
+                    }
+                }
+            }
+            Err(e) if e == syscall_error::NOT_SUPPORTED => {
+                // Browser WASM mode: terminals are spawned per-window by Desktop
+                self.log("Terminal: will be spawned per-window by Desktop (browser mode)");
+            }
+            Err(e) => {
+                // QEMU mode but terminal binary not found
+                self.log(&format!("Failed to load terminal: error {}", e));
+            }
+        }
     }
 
     /// Spawn a service using the pure microkernel approach.
@@ -82,12 +134,24 @@ impl Init {
                         self.log(&format!("Spawned {} as PID {}", name, pid));
                         
                         // Setup endpoint and capability for the new process
-                        if let Ok((endpoint_id, slot)) = syscall::create_endpoint_for(pid) {
-                            self.service_cap_slots.insert(pid, slot);
-                            self.log(&format!(
-                                "Created endpoint {} for {} (cap slot {})",
-                                endpoint_id, name, slot
-                            ));
+                        match syscall::create_endpoint_for(pid) {
+                            Ok((endpoint_id, slot)) => {
+                                self.log(&format!(
+                                    "DEBUG: create_endpoint_for({}) returned eid={}, slot={}",
+                                    pid, endpoint_id, slot
+                                ));
+                                self.service_cap_slots.insert(pid, slot);
+                                self.log(&format!(
+                                    "Created endpoint {} for {} (cap slot {})",
+                                    endpoint_id, name, slot
+                                ));
+                            }
+                            Err(e) => {
+                                self.log(&format!(
+                                    "ERROR: create_endpoint_for({}) failed: {}",
+                                    pid, e
+                                ));
+                            }
                         }
                     }
                     Err(e) => {

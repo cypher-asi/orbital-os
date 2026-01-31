@@ -20,8 +20,17 @@
 
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
-// Initialize bump allocator with 1MB heap
-zos_allocator::init!(1024 * 1024);
+// Initialize bump allocator with 6MB heap
+// Must match the WASM initial-memory linker setting to avoid OOB errors.
+// Bump allocator never frees, so we need space for ALL binaries loaded during boot:
+// - permission: ~282KB load + ~282KB spawn payload = 564KB
+// - vfs: ~462KB load + ~462KB spawn payload = 924KB
+// - keystore: ~369KB load + ~369KB spawn payload = 738KB
+// - identity: ~1.17MB load + ~1.17MB spawn payload = 2.35MB (largest!)
+// - time: ~386KB load + ~386KB spawn payload = 772KB
+// - format strings and overhead: ~200KB
+// Total: ~5.5MB, bump allocator never frees so we need all this space
+zos_allocator::init!(6 * 1024 * 1024);
 
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
@@ -242,8 +251,14 @@ pub extern "C" fn _start() {
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    let msg = format!("init PANIC: {}", info.message());
-    syscall::debug(&msg);
+    // CRITICAL: Don't use format!() here - it allocates, which can fail
+    // and cause recursive panics leading to stack overflow
+    syscall::debug("init PANIC: ");
+    if let Some(location) = info.location() {
+        syscall::debug(location.file());
+        syscall::debug(":");
+        // Can't easily print line number without allocation
+    }
     syscall::exit(1);
 }
 

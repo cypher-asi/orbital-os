@@ -21,7 +21,7 @@ import styles from './DateTime.module.css';
  *
  * Architecture:
  * - Time source: Date.now() (avoids concurrent WASM borrow issues with supervisor)
- * - Format settings: settingsStore (synced with time_service)
+ * - Format settings: settingsStore (synced with time)
  * - Updates every second
  *
  * Note: We intentionally use Date.now() instead of supervisor.get_wallclock_ms()

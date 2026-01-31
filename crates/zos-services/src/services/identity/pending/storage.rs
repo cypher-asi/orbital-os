@@ -298,11 +298,15 @@ pub enum PendingStorageOp {
     // =========================================================================
     // ZID Token Refresh operations
     // =========================================================================
-    /// Read ZID session for token refresh (to get refresh_token)
+    /// Read ZID session for token refresh (to get refresh_token, session_id, machine_id)
+    /// If `refresh_token_override` is provided (from frontend), use it instead of VFS token
+    /// to prevent race conditions when VFS hasn't been updated yet.
     ReadZidSessionForRefresh {
         ctx: RequestContext,
         user_id: u128,
         zid_endpoint: String,
+        /// Optional refresh token from frontend - if Some, use instead of VFS session token
+        refresh_token_override: Option<String>,
     },
     /// Write refreshed ZID session (with new tokens)
     WriteRefreshedZidSession {

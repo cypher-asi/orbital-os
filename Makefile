@@ -28,7 +28,7 @@ build-processes:
 	mkdir -p web/processes
 	cp target/wasm32-unknown-unknown/release/zos_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/permission_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/idle.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/memhog.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/sender.wasm web/processes/
@@ -37,10 +37,10 @@ build-processes:
 	cp target/wasm32-unknown-unknown/release/clock.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/calculator.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/settings.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/identity_service.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/vfs_service.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/time_service.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/keystore_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/identity.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/vfs.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/time.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/keystore.wasm web/processes/
 	@echo "Process binaries ready!"
 
 # Clean build artifacts

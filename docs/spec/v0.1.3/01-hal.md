@@ -455,11 +455,11 @@ The `X86_64Hal` provides the full HAL implementation for QEMU and bare metal tar
 │  ┌───────────────────────────────────────────────────────────────────────┐ │
 │  │                       Embedded Binaries                                │ │
 │  │   • load_binary("init") → init.wasm                                   │ │
-│  │   • load_binary("permission_service") → permission_service.wasm       │ │
-│  │   • load_binary("vfs_service") → vfs_service.wasm                     │ │
-│  │   • load_binary("keystore_service") → keystore_service.wasm           │ │
-│  │   • load_binary("identity_service") → identity_service.wasm           │ │
-│  │   • load_binary("time_service") → time_service.wasm                   │ │
+│  │   • load_binary("permission") → permission.wasm                       │ │
+│  │   • load_binary("vfs") → vfs.wasm                                     │ │
+│  │   • load_binary("keystore") → keystore.wasm                           │ │
+│  │   • load_binary("identity") → identity.wasm                           │ │
+│  │   • load_binary("time") → time.wasm                                   │ │
 │  │   • load_binary("terminal") → terminal.wasm                           │ │
 │  │   • load_binary("settings") → settings.wasm                           │ │
 │  │   • load_binary("calculator") → calculator.wasm                       │ │
@@ -491,8 +491,8 @@ The `X86_64Hal` provides the full HAL implementation for QEMU and bare metal tar
 
 mod embedded_binaries {
     pub static INIT: &[u8] = include_bytes!("../../../../web/processes/init.wasm");
-    pub static PERMISSION_SERVICE: &[u8] = include_bytes!("../../../../web/processes/permission_service.wasm");
-    pub static VFS_SERVICE: &[u8] = include_bytes!("../../../../web/processes/vfs_service.wasm");
+    pub static PERMISSION: &[u8] = include_bytes!("../../../../web/processes/permission.wasm");
+    pub static VFS: &[u8] = include_bytes!("../../../../web/processes/vfs.wasm");
     // ... other services
 }
 
@@ -500,8 +500,8 @@ impl HAL for X86_64Hal {
     fn load_binary(&self, name: &str) -> Result<&'static [u8], HalError> {
         match name {
             "init" => Ok(embedded_binaries::INIT),
-            "permission_service" => Ok(embedded_binaries::PERMISSION_SERVICE),
-            "vfs_service" => Ok(embedded_binaries::VFS_SERVICE),
+            "permission" => Ok(embedded_binaries::PERMISSION),
+            "vfs" => Ok(embedded_binaries::VFS),
             // ... other services
             _ => Err(HalError::NotFound),
         }

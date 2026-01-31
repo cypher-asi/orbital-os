@@ -44,15 +44,15 @@ mod embedded_binaries {
     /// Init process - service registry and IPC router
     pub static INIT: &[u8] = include_bytes!("../../../../qemu/processes/init.wasm");
     /// PermissionService - capability authority
-    pub static PERMISSION_SERVICE: &[u8] = include_bytes!("../../../../qemu/processes/permission_service.wasm");
+    pub static PERMISSION: &[u8] = include_bytes!("../../../../qemu/processes/permission.wasm");
     /// VfsService - virtual filesystem
-    pub static VFS_SERVICE: &[u8] = include_bytes!("../../../../qemu/processes/vfs_service.wasm");
+    pub static VFS: &[u8] = include_bytes!("../../../../qemu/processes/vfs.wasm");
     /// KeystoreService - secure key storage
-    pub static KEYSTORE_SERVICE: &[u8] = include_bytes!("../../../../qemu/processes/keystore_service.wasm");
+    pub static KEYSTORE: &[u8] = include_bytes!("../../../../qemu/processes/keystore.wasm");
     /// IdentityService - user/session management
-    pub static IDENTITY_SERVICE: &[u8] = include_bytes!("../../../../qemu/processes/identity_service.wasm");
+    pub static IDENTITY: &[u8] = include_bytes!("../../../../qemu/processes/identity.wasm");
     /// TimeService - time settings
-    pub static TIME_SERVICE: &[u8] = include_bytes!("../../../../qemu/processes/time_service.wasm");
+    pub static TIME: &[u8] = include_bytes!("../../../../qemu/processes/time.wasm");
     /// Terminal - console application
     pub static TERMINAL: &[u8] = include_bytes!("../../../../qemu/processes/terminal.wasm");
     /// Settings - system settings application
@@ -73,6 +73,14 @@ use crate::{HalError, NumericProcessHandle, StorageRequestId, HAL};
 
 // Re-export WASM runtime types
 pub use wasm::{WasmRuntime, PendingSyscall};
+
+/// Global WASM runtime shared by all X86_64Hal instances.
+///
+/// This ensures that processes spawned via ANY HAL instance are visible to
+/// the scheduler running on ANY other HAL instance. Without this, creating
+/// multiple X86_64Hal instances (e.g., one for System and one global) would
+/// result in separate WasmRuntimes that don't share process state.
+static GLOBAL_WASM_RUNTIME: spin::Once<WasmRuntime> = spin::Once::new();
 
 /// Maximum pending storage requests
 const MAX_PENDING_STORAGE_REQUESTS: usize = 1000;
@@ -113,8 +121,6 @@ pub struct X86_64Hal {
     storage_requests: Mutex<BTreeMap<StorageRequestId, (u64, StorageRequestState)>>,
     /// Storage initialized flag
     storage_initialized: Mutex<bool>,
-    /// WASM runtime for process execution
-    wasm_runtime: spin::Once<WasmRuntime>,
     /// Pending IPC messages for processes: pid -> Vec<message_bytes>
     pending_ipc: Mutex<BTreeMap<u64, Vec<Vec<u8>>>>,
 }
@@ -129,14 +135,17 @@ impl X86_64Hal {
             next_storage_request_id: AtomicU32::new(1),
             storage_requests: Mutex::new(BTreeMap::new()),
             storage_initialized: Mutex::new(false),
-            wasm_runtime: spin::Once::new(),
             pending_ipc: Mutex::new(BTreeMap::new()),
         }
     }
     
-    /// Get or initialize the WASM runtime
-    pub fn wasm_runtime(&self) -> &WasmRuntime {
-        self.wasm_runtime.call_once(|| WasmRuntime::new())
+    /// Get or initialize the global WASM runtime
+    ///
+    /// The WASM runtime is shared globally across all X86_64Hal instances.
+    /// This ensures that processes spawned via any HAL instance are visible
+    /// to the scheduler running on any HAL instance.
+    pub fn wasm_runtime(&self) -> &'static WasmRuntime {
+        GLOBAL_WASM_RUNTIME.call_once(|| WasmRuntime::new())
     }
     
     /// Allocate a new storage request ID
@@ -164,15 +173,16 @@ impl X86_64Hal {
     ///
     /// This variant processes syscalls synchronously as they are made,
     /// ensuring the process doesn't continue until the syscall is complete.
+    /// Handler returns (i64, Vec<u8>) to support 64-bit packed return values.
     pub fn run_scheduler_with_handler<F>(&self, mut handler: F)
     where
-        F: FnMut(PendingSyscall) -> (u32, Vec<u8>),
+        F: FnMut(PendingSyscall) -> (i64, Vec<u8>),
     {
         self.wasm_runtime().run_all_processes_with_handler(&mut handler)
     }
     
-    /// Complete a syscall and resume the process
-    pub fn complete_syscall(&self, pid: u64, result: u32, data: &[u8]) {
+    /// Complete a syscall and resume the process (result is i64 for 64-bit return values)
+    pub fn complete_syscall(&self, pid: u64, result: i64, data: &[u8]) {
         self.wasm_runtime().complete_syscall(pid, result, data);
     }
 
@@ -585,11 +595,11 @@ impl HAL for X86_64Hal {
     fn load_binary(&self, name: &str) -> Result<&'static [u8], HalError> {
         match name {
             "init" => Ok(embedded_binaries::INIT),
-            "permission_service" => Ok(embedded_binaries::PERMISSION_SERVICE),
-            "vfs_service" => Ok(embedded_binaries::VFS_SERVICE),
-            "keystore_service" => Ok(embedded_binaries::KEYSTORE_SERVICE),
-            "identity_service" => Ok(embedded_binaries::IDENTITY_SERVICE),
-            "time_service" => Ok(embedded_binaries::TIME_SERVICE),
+            "permission" => Ok(embedded_binaries::PERMISSION),
+            "vfs" => Ok(embedded_binaries::VFS),
+            "keystore" => Ok(embedded_binaries::KEYSTORE),
+            "identity" => Ok(embedded_binaries::IDENTITY),
+            "time" => Ok(embedded_binaries::TIME),
             "terminal" => Ok(embedded_binaries::TERMINAL),
             "settings" => Ok(embedded_binaries::SETTINGS),
             "calculator" => Ok(embedded_binaries::CALCULATOR),

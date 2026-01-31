@@ -8,24 +8,28 @@ description = "System services for Zero OS - Identity, VFS, Time, Network, and P
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "identity_service"
-path = "src/bin/identity_service.rs"
+name = "identity"
+path = "src/bin/identity.rs"
 
 [[bin]]
-name = "vfs_service"
-path = "src/bin/vfs_service.rs"
+name = "vfs"
+path = "src/bin/vfs.rs"
 
 [[bin]]
-name = "time_service"
-path = "src/bin/time_service.rs"
+name = "time"
+path = "src/bin/time.rs"
 
 [[bin]]
-name = "network_service"
-path = "src/bin/network_service.rs"
+name = "network"
+path = "src/bin/network.rs"
 
 [[bin]]
-name = "permission_service"
-path = "src/bin/permission_service.rs"
+name = "permission"
+path = "src/bin/permission.rs"
+
+[[bin]]
+name = "keystore"
+path = "src/bin/keystore.rs"
 
 [dependencies]
 zos-apps = { path = "../zos-apps" }

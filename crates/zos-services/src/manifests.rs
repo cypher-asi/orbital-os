@@ -13,8 +13,8 @@
 use zos_apps::{AppManifest, CapabilityRequest, ObjectType, Permissions};
 
 /// Permission Service manifest (PID 2)
-pub static PERMISSION_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.permission_service",
+pub static PERMISSION_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.permission",
     name: "Permission Service",
     version: "1.0.0",
     description: "System capability authority service",
@@ -41,8 +41,8 @@ pub static PERMISSION_SERVICE_MANIFEST: AppManifest = AppManifest {
 };
 
 /// IdentityService manifest (PID 3)
-pub static IDENTITY_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.identity_service",
+pub static IDENTITY_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.identity",
     name: "Identity Service",
     version: "1.0.0",
     description: "User identity and cryptographic key management service",
@@ -69,8 +69,8 @@ pub static IDENTITY_SERVICE_MANIFEST: AppManifest = AppManifest {
 };
 
 /// VFS Service manifest (PID 4)
-pub static VFS_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.vfs_service",
+pub static VFS_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.vfs",
     name: "VFS Service",
     version: "1.0.0",
     description: "Virtual filesystem service for Zero OS",
@@ -97,8 +97,8 @@ pub static VFS_SERVICE_MANIFEST: AppManifest = AppManifest {
 };
 
 /// Time Service manifest (PID 5)
-pub static TIME_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.time_service",
+pub static TIME_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.time",
     name: "Time Service",
     version: "1.0.0",
     description: "Time settings management service for Zero OS",
@@ -119,8 +119,8 @@ pub static TIME_SERVICE_MANIFEST: AppManifest = AppManifest {
 };
 
 /// Network Service manifest (PID 8)
-pub static NETWORK_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.network_service",
+pub static NETWORK_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.network",
     name: "Network Service",
     version: "1.0.0",
     description: "HTTP request mediation service for Zero OS",
@@ -141,8 +141,8 @@ pub static NETWORK_SERVICE_MANIFEST: AppManifest = AppManifest {
 };
 
 /// Keystore Service manifest (PID 7)
-pub static KEYSTORE_SERVICE_MANIFEST: AppManifest = AppManifest {
-    id: "com.zero.keystore_service",
+pub static KEYSTORE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.keystore",
     name: "Keystore Service",
     version: "1.0.0",
     description: "Cryptographic key storage service for Zero OS",

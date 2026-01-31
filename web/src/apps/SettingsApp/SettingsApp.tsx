@@ -1,13 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   Panel,
-  Navigator,
-  type NavigatorItem,
+  Explorer,
+  type ExplorerNode,
   PanelDrill,
   type PanelDrillItem,
   ButtonPlus,
 } from '@cypher-asi/zui';
-import { Clock, User, Shield, Palette, Network } from 'lucide-react';
+import { Clock, User, Shield, Palette, Network, Brain, Cpu, Users } from 'lucide-react';
 import { GeneralPanel } from './panels/GeneralPanel';
 import { IdentitySettingsPanel } from './panels/IdentitySettingsPanel';
 import { PermissionsPanel } from './panels/PermissionsPanel';
@@ -42,20 +42,26 @@ const AREA_LABELS: Record<SettingsArea, string> = {
 /**
  * Settings App - System settings management
  *
- * Uses ZUI components: Panel, Navigator, PanelDrill
- * Layout: Split-pane with left navigation and right PanelDrill content
+ * Uses ZUI components: Panel, Explorer, PanelDrill
+ * Layout: Split-pane with left Explorer navigation and right PanelDrill content
+ *
+ * The Explorer sidebar shows hierarchical navigation with Identity having
+ * expandable sub-items (Neural Key, Machines, Linked Accounts).
  *
  * Time settings are managed via the global settingsStore which syncs with
- * the time_service WASM process for persistence.
+ * the time WASM process for persistence.
  */
 export function SettingsApp() {
   // Navigation state (local to this component)
   const [activeArea, setActiveArea] = useState<SettingsArea>('identity');
 
+  // Selected item in Explorer (can be area or sub-item like 'neural-key')
+  const [selectedExplorerId, setSelectedExplorerId] = useState<string>('identity');
+
   // Identity service client for loading preferences
   const { userId } = useIdentityServiceClient();
 
-  // Time settings from global store (synced with time_service)
+  // Time settings from global store (synced with time)
   const timeFormat24h = useSettingsStore(selectTimeFormat24h);
   const timezone = useSettingsStore(selectTimezone);
   const setTimeFormat24h = useSettingsStore((state) => state.setTimeFormat24h);
@@ -77,7 +83,9 @@ export function SettingsApp() {
   }, [userId]);
 
   // Use ref for pushPanel to avoid circular dependency in content creation
+  // This wrapper also updates Explorer selection when drilling to identity sub-panels
   const pushPanelRef = useRef<(item: PanelDrillItem) => void>(() => {});
+  const pushPanelWithSelectionRef = useRef<(item: PanelDrillItem) => void>(() => {});
 
   // Helper to create content for a given area
   // Called once when switching sections, not on every render
@@ -95,7 +103,8 @@ export function SettingsApp() {
           );
         case 'identity':
           // Use ref to avoid recreating when pushPanel changes
-          return <IdentitySettingsPanel onDrillDown={(item) => pushPanelRef.current(item)} />;
+          // pushPanelWithSelectionRef also updates Explorer selection for sub-panels
+          return <IdentitySettingsPanel onDrillDown={(item) => pushPanelWithSelectionRef.current(item)} />;
         case 'network':
           return <NetworkPanel rpcEndpoint={rpcEndpoint} onRpcEndpointChange={setRpcEndpoint} />;
         case 'permissions':
@@ -153,13 +162,18 @@ export function SettingsApp() {
     },
   ]);
 
-  // Navigation items
-  const navItems: NavigatorItem[] = useMemo(
+  // Explorer navigation data with nested Identity sub-items
+  const explorerData: ExplorerNode[] = useMemo(
     () => [
       {
         id: 'identity',
         label: 'Identity',
         icon: <User size={14} />,
+        children: [
+          { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
+          { id: 'machine-keys', label: 'Machines', icon: <Cpu size={14} /> },
+          { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
+        ],
       },
       {
         id: 'network',
@@ -201,6 +215,14 @@ export function SettingsApp() {
   // Keep ref in sync with pushPanel
   useEffect(() => {
     pushPanelRef.current = pushPanel;
+    // Wrapper that also updates Explorer selection for identity sub-panels
+    pushPanelWithSelectionRef.current = (item: PanelDrillItem) => {
+      // Update Explorer selection if this is an identity sub-panel
+      if (['neural-key', 'machine-keys', 'linked-accounts'].includes(item.id)) {
+        setSelectedExplorerId(item.id);
+      }
+      pushPanel(item);
+    };
   }, [pushPanel]);
 
   // Handle area selection from left menu - reset stack to new section
@@ -208,6 +230,7 @@ export function SettingsApp() {
     (id: string) => {
       const area = id as SettingsArea;
       setActiveArea(area);
+      setSelectedExplorerId(area); // Update Explorer selection
       // Reset stack to just the new section's root item
       setStack([
         {
@@ -220,10 +243,55 @@ export function SettingsApp() {
     [createContentForArea]
   );
 
+  // Handle Explorer selection - routes between area selection and sub-panel navigation
+  const handleExplorerSelect = useCallback(
+    (selectedIds: string[]) => {
+      const id = selectedIds[0];
+      if (!id) return;
+
+      // Sub-items under Identity - navigate to Identity area + push sub-panel
+      if (['neural-key', 'machine-keys', 'linked-accounts'].includes(id)) {
+        setActiveArea('identity');
+        setSelectedExplorerId(id); // Update Explorer selection to sub-item
+        const rootItem: PanelDrillItem = {
+          id: 'identity',
+          label: AREA_LABELS.identity,
+          content: createContentForArea('identity'),
+        };
+        const subPanelItem = createSubPanelItem(id as SettingsSubPanel);
+        if (subPanelItem) {
+          setStack([rootItem, subPanelItem]);
+        }
+        return;
+      }
+
+      // Top-level area selection
+      if (['identity', 'network', 'general', 'permissions', 'theme'].includes(id)) {
+        handleAreaSelect(id);
+      }
+    },
+    [handleAreaSelect, createContentForArea, createSubPanelItem]
+  );
+
   // Handle breadcrumb navigation - truncate stack to clicked index
-  const handleNavigate = useCallback((_id: string, index: number) => {
-    setStack((prev) => prev.slice(0, index + 1));
-  }, []);
+  const handleNavigate = useCallback(
+    (id: string, index: number) => {
+      setStack((prev) => {
+        const newStack = prev.slice(0, index + 1);
+        // Update Explorer selection based on where we navigated to
+        // If navigating to root (index 0), select the area; otherwise select the item
+        if (newStack.length > 0) {
+          const targetId = newStack[newStack.length - 1].id;
+          // If it's a top-level area, select it
+          if (['identity', 'network', 'general', 'permissions', 'theme'].includes(targetId)) {
+            setSelectedExplorerId(targetId);
+          }
+        }
+        return newStack;
+      });
+    },
+    []
+  );
 
   // Update root panel content when relevant state changes
   // This ensures panels see updated values after user interaction
@@ -253,6 +321,8 @@ export function SettingsApp() {
 
       const { area, subPanel } = pendingNavigation;
       setActiveArea(area);
+      // Update Explorer selection - use sub-panel if provided, otherwise area
+      setSelectedExplorerId(subPanel || area);
 
       // Build the stack - root panel + optional sub-panel
       const rootItem: PanelDrillItem = {
@@ -280,7 +350,18 @@ export function SettingsApp() {
     <Panel border="none" background="none" className={styles.container}>
       {/* Left Navigation Sidebar */}
       <div className={styles.sidebar}>
-        <Navigator items={navItems} value={activeArea} onChange={handleAreaSelect} />
+        <Explorer
+          key={selectedExplorerId} // Force re-mount when selection changes externally
+          data={explorerData}
+          onSelect={handleExplorerSelect}
+          defaultExpandedIds={['identity']}
+          defaultSelectedIds={[selectedExplorerId]}
+          enableDragDrop={false}
+          enableMultiSelect={false}
+          expandOnSelect={false}
+          compact={false}
+          chevronPosition="right"
+        />
       </div>
 
       {/* Right Content Area with PanelDrill */}

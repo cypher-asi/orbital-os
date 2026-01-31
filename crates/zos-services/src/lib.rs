@@ -36,8 +36,8 @@ pub use zos_apps::{init, kernel, permission, pm, storage, supervisor};
 
 // Re-export service manifests for convenience
 pub use manifests::{
-    IDENTITY_SERVICE_MANIFEST, NETWORK_SERVICE_MANIFEST, PERMISSION_SERVICE_MANIFEST,
-    TIME_SERVICE_MANIFEST, VFS_SERVICE_MANIFEST,
+    IDENTITY_MANIFEST, NETWORK_MANIFEST, PERMISSION_MANIFEST,
+    TIME_MANIFEST, VFS_MANIFEST, KEYSTORE_MANIFEST,
 };
 
 // Re-export service types for convenience

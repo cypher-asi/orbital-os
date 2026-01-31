@@ -11,12 +11,14 @@ use linked_list_allocator::LockedHeap;
 /// Needs to be large enough to:
 /// - Parse and instantiate WASM modules via wasmi (each ~2-3x binary size)
 /// - Allocate WASM value stacks (up to 768KB per process)
-/// - Allocate WASM linear memory (64KB+ per process)
-/// - Allocate process structures and IPC buffers
+/// - Allocate WASM linear memory (3MB per process × 6 processes = 18MB)
+/// - Allocate process structures and IPC buffers (~5MB for large binaries)
 /// - Run the kernel's data structures
 /// 
-/// 16MB to support running multiple WASM services during boot.
-pub const HEAP_SIZE: usize = 16 * 1024 * 1024;
+/// 48MB to support running multiple WASM services during boot.
+/// Services include: init, permission, vfs, keystore,
+/// identity (~1.1MB), and time.
+pub const HEAP_SIZE: usize = 48 * 1024 * 1024;
 
 /// The kernel heap allocator
 #[global_allocator]

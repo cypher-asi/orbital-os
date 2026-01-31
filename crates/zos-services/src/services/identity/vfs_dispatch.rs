@@ -536,6 +536,7 @@ impl IdentityService {
                 ctx,
                 user_id,
                 zid_endpoint,
+                refresh_token_override,
             } => match result {
                 Ok(data) => session::continue_zid_refresh_after_session_read(
                     self,
@@ -543,6 +544,7 @@ impl IdentityService {
                     user_id,
                     zid_endpoint,
                     &data,
+                    refresh_token_override,
                     ctx.cap_slots,
                 ),
                 Err(_) => response::send_zid_refresh_error(

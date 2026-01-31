@@ -77,6 +77,7 @@ export function refreshViews(
 
 /**
  * Make a syscall using SharedArrayBuffer + Atomics
+ * Returns bigint (i64) to match the WASM extern declaration
  */
 export function zos_syscall(
   state: WorkerState,
@@ -85,7 +86,7 @@ export function zos_syscall(
   arg0: number,
   arg1: number,
   arg2: number
-): number {
+): bigint {
   refreshViews(state, postMemoryUpdate);
   const view = state.mailboxView!;
 
@@ -107,13 +108,16 @@ export function zos_syscall(
     }
   }
 
-  // Read the result
+  // Read the result (as i64/BigInt to match WASM extern declaration)
+  // Note: Mailbox currently stores only 32-bit result. For full 64-bit support,
+  // we'd need to extend the mailbox format with RESULT_HIGH.
   const result = Atomics.load(view, MAILBOX_OFFSETS.RESULT);
 
   // Reset status to IDLE
   Atomics.store(view, MAILBOX_OFFSETS.STATUS, STATUS_IDLE);
 
-  return result;
+  // Return as BigInt to match the i64 return type expected by WASM
+  return BigInt(result);
 }
 
 /**

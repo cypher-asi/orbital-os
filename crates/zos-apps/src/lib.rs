@@ -99,8 +99,10 @@ macro_rules! app_main {
             runtime.set_app_id(manifest.id);
 
             // Setup endpoints from capability slots
-            // Slot 0 is typically the UI output endpoint
-            // Slot 1 is typically the input endpoint
+            // The supervisor creates two endpoints for each process:
+            // - Slot 0: UI output endpoint (for sending state updates)
+            // - Slot 1: Input endpoint (for receiving messages)
+            // This matches SERVICE_INPUT_SLOT constant in zos-supervisor.
             runtime.set_ui_endpoint(0);
             runtime.set_input_endpoint(1);
             

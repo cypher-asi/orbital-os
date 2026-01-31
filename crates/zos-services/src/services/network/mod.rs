@@ -80,7 +80,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::manifests::NETWORK_SERVICE_MANIFEST;
+use crate::manifests::NETWORK_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_network::result as net_result;
@@ -200,6 +200,7 @@ impl NetworkService {
         // Start async network fetch via syscall
         match syscall::network_fetch_async(request_json) {
             Ok(syscall_request_id) => {
+                let syscall_request_id = syscall_request_id as u32;
                 syscall::debug(&format!(
                     "NetworkService: network_fetch_async -> syscall_request_id={}",
                     syscall_request_id
@@ -344,7 +345,7 @@ impl NetworkService {
 
 impl ZeroApp for NetworkService {
     fn manifest() -> &'static AppManifest {
-        &NETWORK_SERVICE_MANIFEST
+        &NETWORK_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {

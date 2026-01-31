@@ -26,6 +26,9 @@
 //! 3. Process makes syscalls via host functions
 //! 4. `kill_process()` terminates the instance
 
+/// Enable verbose scheduler debug logging (set to false for clean output)
+const DEBUG_SCHEDULER: bool = false;
+
 pub mod host;
 pub mod process;
 
@@ -86,16 +89,19 @@ impl WasmRuntime {
         let mut config = wasmi::Config::default();
         config.consume_fuel(true);
         
-        // Increase stack limits to handle large operations
+        // Configure stack limits for WASM execution
         // StackLimits::new(initial_value_stack, maximum_value_stack, maximum_recursion_depth)
-        // NOTE: Values appear to be in stack ENTRIES (not bytes). Each entry is ~8 bytes.
+        // NOTE: Values are in stack ENTRIES (not bytes). Each entry is ~8 bytes.
         // Default is ~1024 initial, ~8192 max, 1024 recursion depth
-        // We use conservative increases to avoid OOM while preventing stack overflow
+        // 
+        // With multiple processes (6+), we need conservative limits to avoid OOM:
+        // - 32768 max entries = ~256KB per process
+        // - 6 processes = ~1.5MB total (vs 12MB before)
         config.set_stack_limits(
             wasmi::StackLimits::new(
-                4096,    // ~32KB initial value stack (in entries)
-                262144,  // ~2MB maximum value stack (in entries, 262144 * 8 = 2MB)
-                8192,    // 8192 maximum recursion depth
+                1024,    // ~8KB initial value stack (in entries)
+                32768,   // ~256KB maximum value stack (in entries, 32768 * 8 = 256KB)
+                1024,    // 1024 maximum recursion depth
             ).expect("Valid stack limits")
         );
         
@@ -185,10 +191,10 @@ impl WasmRuntime {
     
     /// Run a process until it yields, exhausts fuel, or makes a syscall
     ///
-    /// Returns (is_alive, has_pending_syscall)
-    fn run_process_internal(&self, process: &mut WasmProcess) -> (bool, bool) {
+    /// Returns (is_alive, has_pending_syscall, yielded)
+    fn run_process_internal(&self, process: &mut WasmProcess) -> (bool, bool, bool) {
         if process.state != ProcessState::Ready {
-            return (process.state != ProcessState::Terminated, false);
+            return (process.state != ProcessState::Terminated, false, false);
         }
         
         process.state = ProcessState::Running;
@@ -198,6 +204,9 @@ impl WasmRuntime {
         
         // Check if we have a resumable invocation (continuing from previous yield)
         if let Some(resumable) = process.resumable.take() {
+            // Check if we're resuming from zos_yield() which returns () not i32
+            let trapped_from_yield = process.store.data().trapped_from_yield;
+            
             // When resuming after a host function trap, we need to provide the return value
             // that the host function was supposed to return
             let return_value = if process.store.data().has_pending_result {
@@ -212,39 +221,50 @@ impl WasmRuntime {
                 0
             };
             
+            // Clear the trapped_from_yield flag
+            process.store.data_mut().trapped_from_yield = false;
+            
             // Log fuel before resume to track resource usage
             let fuel_before = process.store.get_fuel().unwrap_or(0);
-            serial::write_str(&alloc::format!(
-                "[wasm-rt] Process {} resuming with result={}, fuel={}\n", 
-                process.pid, return_value, fuel_before
-            ));
+            if DEBUG_SCHEDULER {
+                serial::write_str(&alloc::format!(
+                    "[wasm-rt] Process {} resuming with result={}, from_yield={}, fuel={}\n", 
+                    process.pid, return_value, trapped_from_yield, fuel_before
+                ));
+            }
             
             // Provide the return value as input when resuming
-            let result = resumable.resume(&mut process.store, &[wasmi::Val::I32(return_value as i32)]);
-            let (is_alive, has_pending) = self.handle_execution_result(process, result);
+            // zos_yield() returns () so we provide empty slice
+            // zos_syscall() returns i32 so we provide the result value
+            let result = if trapped_from_yield {
+                resumable.resume(&mut process.store, &[])
+            } else {
+                resumable.resume(&mut process.store, &[wasmi::Val::I32(return_value as i32)])
+            };
+            let (is_alive, has_pending, yielded) = self.handle_execution_result(process, result);
             
             // Check if process is waiting for a syscall
             if is_alive && process.store.data().waiting_for_syscall {
                 process.state = ProcessState::Blocked;
-                return (true, true);
+                return (true, true, yielded);
             }
             
-            return (is_alive, has_pending);
+            return (is_alive, has_pending, yielded);
         }
         
         // Start fresh - get _start function
         if let Some(start_func) = process.start_func.take() {
             // Use call_resumable to get a ResumableCall that we can continue later
             let result = start_func.call_resumable(&mut process.store, ());
-            let (is_alive, has_pending) = self.handle_execution_result(process, result);
+            let (is_alive, has_pending, yielded) = self.handle_execution_result(process, result);
             
             // Check if process is waiting for a syscall
             if is_alive && process.store.data().waiting_for_syscall {
                 process.state = ProcessState::Blocked;
-                return (true, true);
+                return (true, true, yielded);
             }
             
-            return (is_alive, has_pending);
+            return (is_alive, has_pending, yielded);
         }
         
         // Try to get _start from the instance (shouldn't normally happen)
@@ -253,19 +273,19 @@ impl WasmRuntime {
                 "[wasm-rt] WARNING: Process {} restarting from _start (resumable was None)\n", process.pid
             ));
             let result = start_func.call_resumable(&mut process.store, ());
-            let (is_alive, has_pending) = self.handle_execution_result(process, result);
+            let (is_alive, has_pending, yielded) = self.handle_execution_result(process, result);
             
             // Check if process is waiting for a syscall
             if is_alive && process.store.data().waiting_for_syscall {
                 process.state = ProcessState::Blocked;
-                return (true, true);
+                return (true, true, yielded);
             }
             
-            return (is_alive, has_pending);
+            return (is_alive, has_pending, yielded);
         }
         
         // No way to run this process
-        (process.state != ProcessState::Terminated, false)
+        (process.state != ProcessState::Terminated, false, false)
     }
     
     /// Run a process until it yields or makes a syscall (public API)
@@ -274,27 +294,29 @@ impl WasmRuntime {
     pub fn run_process(&self, pid: u64) -> Result<bool, HalError> {
         let mut processes = self.processes.lock();
         let process = processes.get_mut(&pid).ok_or(HalError::ProcessNotFound)?;
-        let (is_alive, _has_pending) = self.run_process_internal(process);
+        let (is_alive, _has_pending, _yielded) = self.run_process_internal(process);
         Ok(is_alive)
     }
     
     /// Handle the result of a WASM execution (call or resume)
     /// 
-    /// Returns: (is_alive, has_pending_syscall)
+    /// Returns: (is_alive, has_pending_syscall, yielded)
     fn handle_execution_result(
         &self,
         process: &mut WasmProcess,
         result: Result<wasmi::TypedResumableCall<()>, wasmi::Error>,
-    ) -> (bool, bool) {
+    ) -> (bool, bool, bool) {
         // Debug: Log what result we received
         let result_type = match &result {
             Ok(wasmi::TypedResumableCall::Finished(_)) => "Finished",
             Ok(wasmi::TypedResumableCall::Resumable(_)) => "Resumable",
             Err(_) => "Err",
         };
-        serial::write_str(&alloc::format!(
-            "[wasm-rt] Process {} handle_execution_result: {}\n", process.pid, result_type
-        ));
+        if DEBUG_SCHEDULER {
+            serial::write_str(&alloc::format!(
+                "[wasm-rt] Process {} handle_execution_result: {}\n", process.pid, result_type
+            ));
+        }
         
         match result {
             Ok(wasmi::TypedResumableCall::Finished(_)) => {
@@ -304,7 +326,7 @@ impl WasmRuntime {
                 serial::write_str(&alloc::format!(
                     "[wasm-rt] Process {} exited normally\n", process.pid
                 ));
-                (false, false)
+                (false, false, false)
             }
             Ok(wasmi::TypedResumableCall::Resumable(invocation)) => {
                 // Process ran out of fuel - can be resumed
@@ -321,10 +343,12 @@ impl WasmRuntime {
                 let has_pending = process.store.data().pending_syscall.is_some();
                 
                 // Debug: log resumable stored
-                serial::write_str(&alloc::format!(
-                    "[wasm-rt] Process {} Resumable stored, has_pending={}, yielded={}\n", 
-                    process.pid, has_pending, yielded
-                ));
+                if DEBUG_SCHEDULER {
+                    serial::write_str(&alloc::format!(
+                        "[wasm-rt] Process {} Resumable stored, has_pending={}, yielded={}\n", 
+                        process.pid, has_pending, yielded
+                    ));
+                }
                 
                 // Set state based on whether syscall is pending
                 if has_pending {
@@ -333,7 +357,7 @@ impl WasmRuntime {
                     process.state = ProcessState::Ready;
                 }
                 
-                (true, has_pending)
+                (true, has_pending, yielded)
             }
             Err(e) => {
                 let trap_str = alloc::format!("{:?}", e);
@@ -344,10 +368,12 @@ impl WasmRuntime {
                     let has_pending = process.store.data().pending_syscall.is_some();
                     let yielded = process.store.data().yielded;
                     
-                    serial::write_str(&alloc::format!(
-                        "[wasm-rt] Process {} fuel exhausted as Err (has_pending={}, yielded={})\n", 
-                        process.pid, has_pending, yielded
-                    ));
+                    if DEBUG_SCHEDULER {
+                        serial::write_str(&alloc::format!(
+                            "[wasm-rt] Process {} fuel exhausted as Err (has_pending={}, yielded={})\n", 
+                            process.pid, has_pending, yielded
+                        ));
+                    }
                     
                     // Clear any pending state
                     process.store.data_mut().pending_syscall = None;
@@ -355,14 +381,14 @@ impl WasmRuntime {
                     
                     // Terminate - we cannot resume without a Resumable
                     process.state = ProcessState::Terminated;
-                    (false, false)
+                    (false, false, false)
                 } else {
                     serial::write_str(&alloc::format!(
                         "[wasm-rt] Process {} trapped: {:?}\n", process.pid, e
                     ));
                     process.state = ProcessState::Terminated;
                     process.resumable = None;
-                    (false, false)
+                    (false, false, false)
                 }
             }
         }
@@ -438,7 +464,7 @@ impl WasmRuntime {
                 None => continue,
             };
             
-            let (_is_alive, has_pending) = self.run_process_internal(process);
+            let (_is_alive, has_pending, _yielded) = self.run_process_internal(process);
             
             // Collect pending syscall if any
             if has_pending {
@@ -462,40 +488,63 @@ impl WasmRuntime {
     /// This variant processes syscalls immediately as they are made,
     /// allowing the process to continue with the result without waiting
     /// for the next scheduler tick.
+    ///
+    /// Runs multiple rounds to ensure newly spawned processes get scheduled.
+    /// Each round refreshes the PID list to include processes spawned during
+    /// the previous round.
     pub fn run_all_processes_with_handler<F>(&self, handler: &mut F)
     where
-        F: FnMut(PendingSyscall) -> (u32, Vec<u8>),
+        F: FnMut(PendingSyscall) -> (i64, Vec<u8>),
     {
-        // Get list of PIDs to run
-        let pids: Vec<u64> = {
-            self.processes
-                .lock()
-                .iter()
-                .filter(|(_, p)| p.state == ProcessState::Ready)
-                .map(|(pid, _)| *pid)
-                .collect()
-        };
+        const MAX_ROUNDS: usize = 10;
         
-        // Run each ready process with synchronous syscall handling
-        for pid in pids {
-            self.run_process_with_handler(pid, handler);
+        for round in 0..MAX_ROUNDS {
+            // Refresh PID list each round to include newly spawned processes
+            let pids: Vec<u64> = {
+                self.processes
+                    .lock()
+                    .iter()
+                    .filter(|(_, p)| p.state == ProcessState::Ready)
+                    .map(|(pid, _)| *pid)
+                    .collect()
+            };
+            
+            if pids.is_empty() {
+                // No ready processes - done for this tick
+                break;
+            }
+            
+            if round > 0 {
+                if DEBUG_SCHEDULER {
+                    serial::write_str(&alloc::format!(
+                        "[wasm-rt] Scheduler round {}: {} ready processes (PIDs: {:?})\n",
+                        round, pids.len(), pids
+                    ));
+                }
+            }
+            
+            // Run each ready process with synchronous syscall handling
+            for pid in pids {
+                self.run_process_with_handler(pid, handler);
+            }
         }
     }
     
     /// Run a single process with synchronous syscall handling
     ///
     /// Runs the process in a loop, processing syscalls immediately as they
-    /// are made, until the process yields naturally or terminates.
+    /// are made, until the process yields explicitly or terminates.
+    /// When a process yields, we return early to give other processes a turn.
     fn run_process_with_handler<F>(&self, pid: u64, handler: &mut F)
     where
-        F: FnMut(PendingSyscall) -> (u32, Vec<u8>),
+        F: FnMut(PendingSyscall) -> (i64, Vec<u8>),
     {
         const MAX_SYSCALLS_PER_PROCESS: usize = 100; // Safety limit
         let mut syscall_count = 0;
         
         loop {
             // Run one timeslice
-            let (is_alive, has_pending) = {
+            let (is_alive, has_pending, yielded) = {
                 let mut processes = self.processes.lock();
                 let process = match processes.get_mut(&pid) {
                     Some(p) => p,
@@ -505,6 +554,13 @@ impl WasmRuntime {
             };
             
             if !is_alive {
+                return;
+            }
+            
+            // If process explicitly yielded, give other processes a turn
+            // This is critical for cooperative scheduling - even if there's a
+            // pending syscall, we should respect the yield and come back later
+            if yielded {
                 return;
             }
             
@@ -541,14 +597,14 @@ impl WasmRuntime {
                     self.complete_syscall(pid, result, &data);
                 }
             } else {
-                // No pending syscall - process yielded naturally
+                // No pending syscall and no yield - process is done for now
                 return;
             }
         }
     }
     
-    /// Complete a syscall for a process
-    pub fn complete_syscall(&self, pid: u64, result: u32, data: &[u8]) {
+    /// Complete a syscall for a process (result is i64 to support packed 64-bit returns)
+    pub fn complete_syscall(&self, pid: u64, result: i64, data: &[u8]) {
         if let Some(process) = self.processes.lock().get_mut(&pid) {
             // Store result in host state for the process to retrieve
             process.store.data_mut().set_syscall_result(result, data);

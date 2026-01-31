@@ -26,8 +26,8 @@ pub mod storage;
 #[cfg(target_arch = "wasm32")]
 extern "C" {
     /// Make a syscall to the kernel
-    /// Returns a handle that can be used to retrieve the result
-    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> u32;
+    /// Returns i64 to support 64-bit packed return values (e.g., slot|endpoint_id)
+    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> i64;
 
     /// Send bytes to the kernel (for syscall data)
     fn zos_send_bytes(ptr: *const u8, len: u32);
@@ -174,7 +174,7 @@ pub fn kill(target_pid: u32) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -197,7 +197,7 @@ pub fn send(endpoint_slot: u32, tag: u32, data: &[u8]) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -353,7 +353,7 @@ pub fn send_with_caps(
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -415,7 +415,7 @@ pub fn reply(caller_pid: u32, tag: u32, data: &[u8]) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -444,9 +444,9 @@ pub fn cap_grant(from_slot: u32, to_pid: u32, perms: Permissions) -> Result<u32,
     unsafe {
         let result = zos_syscall(SYS_CAP_GRANT, from_slot, to_pid, perms.to_byte() as u32);
         if result & 0x80000000 == 0 {
-            Ok(result)
+            Ok(result as u32)
         } else {
-            Err(result & 0x7FFFFFFF)
+            Err((result & 0x7FFFFFFF) as u32)
         }
     }
 }
@@ -471,7 +471,7 @@ pub fn cap_revoke(slot: u32) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -500,7 +500,7 @@ pub fn cap_revoke_from(target_pid: u32, slot: u32) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -525,7 +525,7 @@ pub fn cap_delete(slot: u32) -> Result<(), u32> {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            Err(result as u32)
         }
     }
 }
@@ -595,9 +595,9 @@ pub fn cap_derive(slot: u32, new_perms: Permissions) -> Result<u32, u32> {
     unsafe {
         let result = zos_syscall(SYS_CAP_DERIVE, slot, new_perms.to_byte() as u32, 0);
         if result & 0x80000000 == 0 {
-            Ok(result)
+            Ok(result as u32)
         } else {
-            Err(result & 0x7FFFFFFF)
+            Err((result & 0x7FFFFFFF) as u32)
         }
     }
 }
@@ -718,7 +718,7 @@ pub fn create_endpoint_for(_target_pid: u32) -> Result<(u64, u32), u32> {
 /// - **WASM**: Returns `NotSupported` error (use Supervisor async flow instead)
 ///
 /// # Arguments
-/// - `name`: Binary name (e.g., "permission_service", "vfs_service")
+/// - `name`: Binary name (e.g., "permission", "vfs", "identity")
 ///
 /// # Returns
 /// - `Ok(Vec<u8>)`: Binary data

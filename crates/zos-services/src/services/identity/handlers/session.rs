@@ -1428,7 +1428,8 @@ pub fn handle_zid_refresh(service: &mut IdentityService, msg: &Message) -> Resul
         );
     }
 
-    // Read stored ZID session to get refresh_token
+    // Read stored ZID session (need session_id and machine_id even if refresh_token is provided)
+    // The refresh_token_override will be used instead of VFS token to prevent race conditions
     let session_path = ZidSession::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
     service.start_vfs_read(
@@ -1437,22 +1438,28 @@ pub fn handle_zid_refresh(service: &mut IdentityService, msg: &Message) -> Resul
             ctx,
             user_id: request.user_id,
             zid_endpoint: request.zid_endpoint,
+            refresh_token_override: request.refresh_token,
         },
     )
 }
 
 /// Continue ZID refresh after reading stored session.
+///
+/// If `refresh_token_override` is provided (from frontend), use it instead of the
+/// VFS session's refresh_token. This prevents race conditions where the frontend
+/// has a newer token that hasn't been persisted to VFS yet.
 pub fn continue_zid_refresh_after_session_read(
     service: &mut IdentityService,
     client_pid: u32,
     user_id: u128,
     zid_endpoint: String,
     data: &[u8],
+    refresh_token_override: Option<String>,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
 
-    // Parse stored session to get refresh_token
+    // Parse stored session to get session_id, machine_id, and fallback refresh_token
     let session: ZidSession = match serde_json::from_slice(data) {
         Ok(s) => s,
         Err(e) => {
@@ -1465,18 +1472,21 @@ pub fn continue_zid_refresh_after_session_read(
         }
     };
 
-    if session.refresh_token.is_empty() {
+    // Use override token if provided (from frontend), otherwise use VFS session token
+    let refresh_token = refresh_token_override.unwrap_or_else(|| session.refresh_token.clone());
+
+    if refresh_token.is_empty() {
         return response::send_zid_refresh_error(
             ctx.client_pid,
             &ctx.cap_slots,
-            ZidError::InvalidRequest("No refresh token in session".into()),
+            ZidError::InvalidRequest("No refresh token available".into()),
         );
     }
 
     // Build refresh request body (ZID requires refresh_token, session_id, machine_id)
     let refresh_body = format!(
         r#"{{"refresh_token":"{}","session_id":"{}","machine_id":"{}"}}"#,
-        session.refresh_token, session.session_id, session.machine_id
+        refresh_token, session.session_id, session.machine_id
     );
 
     syscall::debug(&format!(
@@ -1491,16 +1501,39 @@ pub fn continue_zid_refresh_after_session_read(
     .with_json_body(refresh_body.into_bytes())
     .with_timeout(10_000);
 
+    // Pass session_id and machine_id through - refresh response may not include them
+    let stored_session_id = session.session_id.clone();
+    let stored_machine_id = session.machine_id.clone();
+
     service.start_network_fetch(
         &refresh_request,
         PendingNetworkOp::SubmitZidRefresh {
             ctx,
             user_id,
             zid_endpoint,
-            session_id: session.session_id,
+            session_id: stored_session_id,
+            machine_id: stored_machine_id,
             login_type: session.login_type,
         },
     )
+}
+
+/// Partial tokens from ZID refresh response.
+/// The refresh endpoint may not return session_id and machine_id since they don't change.
+/// Note: login_type is intentionally not parsed here - we preserve it from the original session.
+#[derive(Clone, Debug, serde::Deserialize)]
+struct RefreshTokensPartial {
+    pub access_token: String,
+    pub refresh_token: String,
+    /// Session ID - may be omitted in refresh response
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Machine ID - may be omitted in refresh response
+    #[serde(default)]
+    pub machine_id: Option<String>,
+    pub expires_at: String,
+    #[serde(default)]
+    pub warning: Option<String>,
 }
 
 /// Continue ZID refresh after receiving new tokens from server.
@@ -1509,14 +1542,16 @@ pub fn continue_zid_refresh_after_network(
     client_pid: u32,
     user_id: u128,
     zid_endpoint: String,
+    stored_session_id: String,
+    stored_machine_id: String,
     login_type: zos_identity::ipc::LoginType,
     refresh_response: zos_network::HttpSuccess,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
 
-    // Parse new tokens from response
-    let tokens: ZidTokens = match serde_json::from_slice(&refresh_response.body) {
+    // Parse new tokens from response (session_id and machine_id may be omitted)
+    let partial_tokens: RefreshTokensPartial = match serde_json::from_slice(&refresh_response.body) {
         Ok(t) => t,
         Err(e) => {
             syscall::debug(&format!("IdentityService: Failed to parse refresh response: {}", e));
@@ -1528,14 +1563,25 @@ pub fn continue_zid_refresh_after_network(
         }
     };
 
+    // Use session_id/machine_id from response if provided, otherwise use stored values
+    let session_id = partial_tokens.session_id.unwrap_or(stored_session_id);
+    let machine_id = partial_tokens.machine_id.unwrap_or(stored_machine_id);
+
+    // Build full tokens struct for response
+    let tokens = ZidTokens {
+        access_token: partial_tokens.access_token.clone(),
+        refresh_token: partial_tokens.refresh_token.clone(),
+        session_id: session_id.clone(),
+        machine_id: machine_id.clone(),
+        expires_at: partial_tokens.expires_at.clone(),
+        login_type, // Preserve from original session
+        warning: partial_tokens.warning,
+    };
+
     syscall::debug(&format!(
         "IdentityService: Token refresh successful, new expiry: {}",
         tokens.expires_at
     ));
-
-    // Preserve login_type from original session
-    let mut tokens = tokens;
-    tokens.login_type = login_type;
 
     // Build updated session
     let now = syscall::get_wallclock();
@@ -1543,8 +1589,8 @@ pub fn continue_zid_refresh_after_network(
         zid_endpoint: zid_endpoint.clone(),
         access_token: tokens.access_token.clone(),
         refresh_token: tokens.refresh_token.clone(),
-        session_id: tokens.session_id.clone(),
-        machine_id: tokens.machine_id.clone(),
+        session_id,
+        machine_id,
         login_type: tokens.login_type,
         expires_at: super::super::utils::parse_rfc3339_to_millis(&tokens.expires_at),
         created_at: now,

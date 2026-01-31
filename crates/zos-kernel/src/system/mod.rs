@@ -355,6 +355,68 @@ impl<H: HAL> System<H> {
     // IPC Operations
     // ========================================================================
 
+    /// Inject a message to Init's endpoint (for hardware input delivery).
+    ///
+    /// This is used by the kernel main loop to deliver hardware events (serial input)
+    /// to Init. The message appears to come from PID 0 (kernel/supervisor), which
+    /// is how the kernel identifies itself as the hardware boundary.
+    ///
+    /// # Architecture
+    ///
+    /// In QEMU mode, the kernel main loop acts as the "thin hardware boundary"
+    /// (equivalent to the JS supervisor in WASM mode). Hardware input flows:
+    ///
+    /// ```text
+    /// QEMU Serial → Kernel → inject_to_init(MSG_SUPERVISOR_CONSOLE_INPUT) → Init → Terminal
+    /// ```
+    ///
+    /// This maintains Invariant 1: all authority flows through Axiom, since Init
+    /// uses capability-checked IPC to forward to the terminal.
+    pub fn inject_to_init(&mut self, tag: u32, data: &[u8]) -> Result<(), KernelError> {
+        let timestamp = self.uptime_nanos();
+
+        // Init is always PID 1
+        let init_pid = ProcessId(1);
+
+        // Find Init's first endpoint (the main message endpoint)
+        // Init's endpoint is created during boot and is the first endpoint owned by PID 1
+        let init_endpoint = self
+            .kernel
+            .list_endpoints()
+            .into_iter()
+            .find(|e| e.owner == init_pid)
+            .map(|e| e.id)
+            .ok_or(KernelError::EndpointNotFound)?;
+
+        // Create message from kernel (PID 0)
+        let message = Message {
+            from: ProcessId(0), // Kernel/supervisor identity
+            tag,
+            data: data.to_vec(),
+            transferred_caps: alloc::vec![],
+        };
+
+        // Queue directly to Init's endpoint (bypasses capability check since kernel is the authority)
+        let endpoint = self
+            .kernel
+            .get_endpoint_mut(init_endpoint)
+            .ok_or(KernelError::EndpointNotFound)?;
+        endpoint.pending_messages.push_back(message);
+
+        // Log the injection to CommitLog for audit trail
+        self.axiom.append_internal_commit(
+            CommitType::MessageSent {
+                from_pid: 0,
+                to_endpoint: init_endpoint.0,
+                tag,
+                size: data.len(),
+            },
+            timestamp,
+        );
+
+        Ok(())
+    }
+
     /// Send IPC message and log the mutation.
     pub fn ipc_send(
         &mut self,

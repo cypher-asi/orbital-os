@@ -105,6 +105,10 @@ pub enum NetworkHandlerResult {
         client_pid: u32,
         user_id: u128,
         zid_endpoint: String,
+        /// Session ID from the stored session (refresh response may not include it)
+        session_id: String,
+        /// Machine ID from the stored session (refresh response may not include it)
+        machine_id: String,
         login_type: zos_identity::ipc::LoginType,
         refresh_response: HttpSuccess,
         cap_slots: Vec<u32>,
@@ -633,6 +637,8 @@ pub fn handle_zid_refresh_result(
     client_pid: u32,
     user_id: u128,
     zid_endpoint: String,
+    session_id: String,
+    machine_id: String,
     login_type: zos_identity::ipc::LoginType,
     cap_slots: Vec<u32>,
     http_response: HttpResponse,
@@ -644,13 +650,19 @@ pub fn handle_zid_refresh_result(
                 client_pid,
                 user_id,
                 zid_endpoint,
+                session_id,
+                machine_id,
                 login_type,
                 refresh_response: success,
                 cap_slots,
             }
         }
-        Ok(success) if success.status == 401 => {
-            syscall::debug("IdentityService: Refresh token expired or invalid");
+        Ok(success) if success.status == 401 || success.status == 403 => {
+            // 401 = token expired/invalid, 403 = token reuse detected or revoked
+            syscall::debug(&format!(
+                "IdentityService: Refresh token expired, invalid, or reused (status {})",
+                success.status
+            ));
             NetworkHandlerResult::Done(response::send_zid_refresh_error(
                 client_pid,
                 &cap_slots,
@@ -761,6 +773,17 @@ pub fn parse_zid_error_response(body: &[u8], status: u16) -> ZidError {
             let code = obj.get("code").and_then(|v| v.as_str()).unwrap_or("");
             let message = obj.get("message").and_then(|v| v.as_str()).unwrap_or("");
 
+            // Detect token reuse errors - these should be treated as InvalidRefreshToken
+            // even if the server incorrectly returns 500 instead of 401/403
+            if code == "TOKEN_REUSE" 
+                || code == "REFRESH_TOKEN_REUSE"
+                || message.contains("reuse detected")
+                || message.contains("token reuse")
+                || message.contains("already consumed")
+            {
+                return ZidError::InvalidRefreshToken;
+            }
+
             return match code {
                 "NOT_FOUND" if message.contains("Machine not found") => {
                     ZidError::MachineNotRegistered(message.into())
@@ -773,12 +796,21 @@ pub fn parse_zid_error_response(body: &[u8], status: u16) -> ZidError {
 
         // Handle string error: { "error": "error_code" }
         if let Some(error_code) = outer.error.as_str() {
+            // Detect token reuse in string error format
+            if error_code.contains("token_reuse") 
+                || error_code.contains("reuse_detected")
+                || error_code.contains("already_consumed")
+            {
+                return ZidError::InvalidRefreshToken;
+            }
+
             return match error_code {
                 "machine_not_found" => {
                     ZidError::MachineNotRegistered("Machine not registered with ZID server".into())
                 }
                 "authentication_failed" => ZidError::AuthenticationFailed,
                 "invalid_challenge" => ZidError::InvalidChallenge,
+                "invalid_refresh_token" | "refresh_token_expired" => ZidError::InvalidRefreshToken,
                 _ => ZidError::ServerError(error_code.into()),
             };
         }

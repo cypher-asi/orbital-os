@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // workers/types.ts
+  // src/workers/types.ts
   var STATUS_IDLE = 0;
   var STATUS_PENDING = 1;
   var MAILBOX_OFFSETS = {
@@ -29,7 +29,7 @@
     };
   }
 
-  // workers/mailbox.ts
+  // src/workers/mailbox.ts
   function refreshViews(state2, postMemoryUpdate2) {
     if (state2.wasmMemory && state2.mailboxView && state2.mailboxView.buffer !== state2.wasmMemory.buffer) {
       console.log(
@@ -85,7 +85,7 @@
     }
     const result = Atomics.load(view, MAILBOX_OFFSETS.RESULT);
     Atomics.store(view, MAILBOX_OFFSETS.STATUS, STATUS_IDLE);
-    return result;
+    return BigInt(result);
   }
   function zos_send_bytes(state2, postMemoryUpdate2, ptr, len) {
     refreshViews(state2, postMemoryUpdate2);
@@ -128,7 +128,7 @@
     return Atomics.load(state2.mailboxView, MAILBOX_OFFSETS.PID);
   }
 
-  // workers/heap.ts
+  // src/workers/heap.ts
   var WasmBindgenHeap = class _WasmBindgenHeap {
     heap;
     heapNext;
@@ -180,7 +180,7 @@
     }
   };
 
-  // workers/crypto.ts
+  // src/workers/crypto.ts
   function getRandomValues(memory, ptr, len, workerId, pid) {
     console.log(
       `[worker:${workerId}:${pid}] __wbindgen_get_random_values called: ptr=${ptr}, len=${len}`
@@ -226,7 +226,7 @@
     }
   }
 
-  // workers/wasm-bindgen-shims.ts
+  // src/workers/wasm-bindgen-shims.ts
   function decodeWasmString(memory, ptr, len) {
     if (!memory) return "";
     const sharedView = new Uint8Array(memory.buffer, ptr, len);
@@ -650,7 +650,7 @@
     };
   }
 
-  // workers/worker.ts
+  // src/workers/worker.ts
   var WORKER_MEMORY_ID = Math.floor(performance.timeOrigin);
   var state = createWorkerState(WORKER_MEMORY_ID);
   function postMemoryUpdate() {

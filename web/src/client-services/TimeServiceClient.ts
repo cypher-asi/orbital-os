@@ -2,7 +2,7 @@
  * Time Service IPC Client
  *
  * This TypeScript client provides a clean API for interacting with the
- * time_service WASM process to manage time display settings.
+ * time WASM process to manage time display settings.
  *
  * Architecture:
  * - Client constructs JSON IPC messages with proper message tags
@@ -14,7 +14,7 @@ import { PendingRequestQueue } from '../shared/ipc';
 import type { MinimalSupervisor } from '../shared/types';
 
 // =============================================================================
-// Message Tags (mirrors time_service.rs time_msg module)
+// Message Tags (mirrors time.rs time_msg module)
 // =============================================================================
 
 /** IPC message tags for time service requests/responses */

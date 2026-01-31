@@ -37,7 +37,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::manifests::PERMISSION_SERVICE_MANIFEST;
+use crate::manifests::PERMISSION_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 
@@ -426,7 +426,7 @@ impl PermissionService {
 
 impl ZeroApp for PermissionService {
     fn manifest() -> &'static AppManifest {
-        &PERMISSION_SERVICE_MANIFEST
+        &PERMISSION_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {

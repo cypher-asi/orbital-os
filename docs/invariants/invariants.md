@@ -652,8 +652,8 @@ The following are known violations in the current codebase that must be fixed to
 | ~~`kernel.deliver_supervisor_ipc()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Method removed; routes via Init~~ |
 | ~~Kernel owns Axiom~~ | `zos-kernel/src/kernel.rs` | 1, 9 | **FIXED** | ~~System struct separates Axiom and KernelCore~~ |
 | ~~Direct `kernel.kill_process()`~~ | `zos-supervisor/src/supervisor/mod.rs` | 13, 16 | **FIXED** | ~~All kills route via `MSG_SUPERVISOR_KILL_PROCESS` (Init PID 1 exception documented)~~ |
-| ~~`identity_service` direct storage syscalls~~ | `zos-apps/src/bin/identity_service/service.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
-| ~~`time_service` direct storage syscalls~~ | `zos-apps/src/bin/time_service.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
+| ~~`identity` direct storage syscalls~~ | `zos-services/src/bin/identity.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
+| ~~`time` direct storage syscalls~~ | `zos-services/src/bin/time.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
 
 ### Architectural Changes
 
@@ -674,9 +674,9 @@ The `System` struct is the canonical entry point for all kernel operations.
 
 3. **`kernel.deliver_supervisor_ipc()`**: Method removed. IPC delivery now routes through Init via `MSG_SUPERVISOR_IPC_DELIVERY (0x2003)`.
 
-4. **`time_service` direct storage syscalls**: Now uses VFS IPC via `vfs_async::send_read_request()` and `vfs_async::send_write_request()` per Invariant 31.
+4. **`time` direct storage syscalls**: Now uses VFS IPC via `vfs_async::send_read_request()` and `vfs_async::send_write_request()` per Invariant 31.
 
-5. **`identity_service` direct storage syscalls**: Now uses VFS IPC via the `start_vfs_*` helper methods (`start_vfs_read`, `start_vfs_write`, `start_vfs_exists`, `start_vfs_mkdir`, `start_vfs_readdir`, `start_vfs_delete`) per Invariant 31. All handlers have been refactored to use VFS IPC instead of direct storage syscalls.
+5. **`identity` direct storage syscalls**: Now uses VFS IPC via the `start_vfs_*` helper methods (`start_vfs_read`, `start_vfs_write`, `start_vfs_exists`, `start_vfs_mkdir`, `start_vfs_readdir`, `start_vfs_delete`) per Invariant 31. All handlers have been refactored to use VFS IPC instead of direct storage syscalls.
 
 ### Init (PID 1) Exception
 

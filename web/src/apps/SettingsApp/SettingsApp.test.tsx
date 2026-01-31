@@ -5,6 +5,23 @@ import { SettingsApp } from './SettingsApp';
 // Track panel drill stack for testing
 let mockPanelStack: Array<{ id: string; label: string; content: React.ReactNode }> = [];
 
+// Helper to flatten Explorer nodes for rendering
+interface ExplorerNodeFlat {
+  id: string;
+  label: string;
+  children?: ExplorerNodeFlat[];
+}
+
+function flattenNodes(nodes: ExplorerNodeFlat[], result: ExplorerNodeFlat[] = []): ExplorerNodeFlat[] {
+  for (const node of nodes) {
+    result.push(node);
+    if (node.children) {
+      flattenNodes(node.children, result);
+    }
+  }
+  return result;
+}
+
 // Mock @cypher-asi/zui components
 vi.mock('@cypher-asi/zui', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,15 +31,18 @@ vi.mock('@cypher-asi/zui', () => ({
     </div>
   ),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Navigator: ({ items, value, onChange }: Record<string, any>) => (
-    <nav data-testid="navigator" data-value={value}>
-      {items.map((item: { id: string; label: string }) => (
-        <button key={item.id} onClick={() => onChange(item.id)} data-testid={`nav-${item.id}`}>
-          {item.label}
-        </button>
-      ))}
-    </nav>
-  ),
+  Explorer: ({ data, onSelect, defaultSelectedIds }: Record<string, any>) => {
+    const allNodes = flattenNodes(data);
+    return (
+      <nav data-testid="explorer" data-value={defaultSelectedIds?.[0]}>
+        {allNodes.map((node: { id: string; label: string }) => (
+          <button key={node.id} onClick={() => onSelect([node.id])} data-testid={`nav-${node.id}`}>
+            {node.label}
+          </button>
+        ))}
+      </nav>
+    );
+  },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   PanelDrill: ({ stack, onBack }: Record<string, any>) => {
     // Track the stack for assertions
@@ -54,6 +74,9 @@ vi.mock('lucide-react', () => ({
   Shield: () => <span data-testid="shield-icon">Shield</span>,
   Palette: () => <span data-testid="palette-icon">Palette</span>,
   Network: () => <span data-testid="network-icon">Network</span>,
+  Brain: () => <span data-testid="brain-icon">Brain</span>,
+  Cpu: () => <span data-testid="cpu-icon">Cpu</span>,
+  Users: () => <span data-testid="users-icon">Users</span>,
 }));
 
 // Mock panel components
@@ -111,7 +134,7 @@ vi.mock('./panels/GenerateMachineKeyPanel', () => ({
 vi.mock('./SettingsApp.module.css', () => ({
   default: {
     container: 'container',
-    navigator: 'navigator',
+    sidebar: 'sidebar',
     content: 'content',
     panelDrill: 'panelDrill',
   },
@@ -128,14 +151,31 @@ const mockStore = {
   setRpcEndpoint: vi.fn(),
   setPendingNavigation: vi.fn(),
   clearPendingNavigation: vi.fn(),
+  loadIdentityPreferences: vi.fn(),
+  getState: () => mockStore,
 };
 
 vi.mock('../../stores', () => ({
-  useSettingsStore: (selector: (state: typeof mockStore) => unknown) => selector(mockStore),
+  useSettingsStore: (selector: (state: typeof mockStore) => unknown) => {
+    if (typeof selector === 'function') {
+      return selector(mockStore);
+    }
+    return mockStore;
+  },
   selectTimeFormat24h: (state: typeof mockStore) => state.timeFormat24h,
   selectTimezone: (state: typeof mockStore) => state.timezone,
   selectRpcEndpoint: (state: typeof mockStore) => state.rpcEndpoint,
   selectPendingNavigation: (state: typeof mockStore) => state.pendingNavigation,
+  useIdentityStore: () => ({ currentUser: null }),
+  selectCurrentUser: () => null,
+}));
+
+// Mock the identity service client hook
+vi.mock('../../desktop/hooks/useIdentityServiceClient', () => ({
+  useIdentityServiceClient: () => ({
+    userId: null,
+    client: null,
+  }),
 }));
 
 // Mock context
@@ -156,24 +196,31 @@ describe('SettingsApp', () => {
   describe('Rendering', () => {
     it('renders the settings container', () => {
       render(<SettingsApp />);
-      expect(screen.getByTestId('panel')).toBeDefined();
+      // There are multiple Panel components (container and content)
+      expect(screen.getAllByTestId('panel').length).toBeGreaterThan(0);
     });
 
-    it('renders the navigator with all areas', () => {
+    it('renders the explorer with all areas and sub-items', () => {
       render(<SettingsApp />);
 
+      // Top-level areas
       expect(screen.getByTestId('nav-general')).toBeDefined();
       expect(screen.getByTestId('nav-identity')).toBeDefined();
       expect(screen.getByTestId('nav-network')).toBeDefined();
       expect(screen.getByTestId('nav-permissions')).toBeDefined();
       expect(screen.getByTestId('nav-theme')).toBeDefined();
+
+      // Identity sub-items
+      expect(screen.getByTestId('nav-neural-key')).toBeDefined();
+      expect(screen.getByTestId('nav-machine-keys')).toBeDefined();
+      expect(screen.getByTestId('nav-linked-accounts')).toBeDefined();
     });
 
     it('starts with identity area selected', () => {
       render(<SettingsApp />);
 
-      const navigator = screen.getByTestId('navigator');
-      expect(navigator.getAttribute('data-value')).toBe('identity');
+      const explorer = screen.getByTestId('explorer');
+      expect(explorer.getAttribute('data-value')).toBe('identity');
     });
 
     it('renders the PanelDrill component', () => {
@@ -225,6 +272,42 @@ describe('SettingsApp', () => {
       });
 
       expect(screen.getByTestId('network-panel')).toBeDefined();
+    });
+
+    it('drills directly to neural key panel from explorer', async () => {
+      render(<SettingsApp />);
+
+      const neuralKeyNav = screen.getByTestId('nav-neural-key');
+      await act(async () => {
+        fireEvent.click(neuralKeyNav);
+      });
+
+      expect(screen.getByTestId('neural-key-panel')).toBeDefined();
+      expect(screen.getByTestId('panel-label').textContent).toBe('Neural Key');
+    });
+
+    it('drills directly to machine keys panel from explorer', async () => {
+      render(<SettingsApp />);
+
+      const machineKeysNav = screen.getByTestId('nav-machine-keys');
+      await act(async () => {
+        fireEvent.click(machineKeysNav);
+      });
+
+      expect(screen.getByTestId('machine-keys-panel')).toBeDefined();
+      expect(screen.getByTestId('panel-label').textContent).toBe('Machine Keys');
+    });
+
+    it('drills directly to linked accounts panel from explorer', async () => {
+      render(<SettingsApp />);
+
+      const linkedAccountsNav = screen.getByTestId('nav-linked-accounts');
+      await act(async () => {
+        fireEvent.click(linkedAccountsNav);
+      });
+
+      expect(screen.getByTestId('linked-accounts-panel')).toBeDefined();
+      expect(screen.getByTestId('panel-label').textContent).toBe('Linked Accounts');
     });
   });
 

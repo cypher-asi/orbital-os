@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+/target-qemu/
 **/target/
 
 # IDE and editor

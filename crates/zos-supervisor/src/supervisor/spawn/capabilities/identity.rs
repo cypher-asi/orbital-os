@@ -20,9 +20,9 @@ impl Supervisor {
         target_pid: ProcessId,
         target_name: &str,
     ) {
-        // Don't grant identity capability to identity_service itself
+        // Don't grant identity capability to identity itself
         // (a service doesn't need to send IPC to itself)
-        if target_name == "identity_service" {
+        if target_name == "identity" {
             return;
         }
 
@@ -57,7 +57,7 @@ impl Supervisor {
 
     /// Grant Identity Service endpoint capabilities to existing processes
     ///
-    /// Called when identity_service spawns to grant its endpoint capability
+    /// Called when identity spawns to grant its endpoint capability
     /// to all existing processes that may need identity operations.
     pub(in crate::supervisor) fn grant_identity_capabilities_to_existing_processes(
         &mut self,
@@ -69,12 +69,12 @@ impl Supervisor {
             .list_processes()
             .into_iter()
             .filter(|(pid, proc)| {
-                // Grant to all processes except init, supervisor, and identity_service itself
-                // Also exclude vfs_service since it doesn't need identity access
+                // Grant to all processes except init, supervisor, and identity itself
+                // Also exclude vfs since it doesn't need identity access
                 pid.0 > 1
                     && *pid != identity_pid
-                    && proc.name != "identity_service"
-                    && proc.name != "vfs_service"
+                    && proc.name != "identity"
+                    && proc.name != "vfs"
             })
             .map(|(pid, proc)| (pid, proc.name.clone()))
             .collect();
@@ -109,7 +109,7 @@ impl Supervisor {
     /// Find the Identity service process ID (internal helper)
     pub(in crate::supervisor) fn find_identity_service_pid_internal(&self) -> Option<ProcessId> {
         for (pid, proc) in self.system.list_processes() {
-            if proc.name == "identity_service" {
+            if proc.name == "identity" {
                 return Some(pid);
             }
         }
@@ -123,7 +123,7 @@ impl Supervisor {
     /// Init is notified via MSG_SERVICE_CAP_GRANTED so it can track the
     /// PID -> capability slot mapping.
     ///
-    /// This is called when identity_service, vfs_service, and time_service spawn.
+    /// This is called when identity, vfs, and time spawn.
     pub(in crate::supervisor) fn grant_init_capability_to_service(
         &mut self,
         service_name: &str,

@@ -79,7 +79,7 @@ When init starts (PID 1):
 
 1. Creates its service registry
 2. Spawns core services:
-   - `permission_service` (PID 2) - capability authority
+   - `permission` (PID 2) - capability authority
 3. Enters idle loop handling service messages
 
 Note: Terminal processes are spawned on-demand by the Desktop component, not during boot.

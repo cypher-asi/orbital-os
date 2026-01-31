@@ -37,7 +37,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::manifests::TIME_SERVICE_MANIFEST;
+use crate::manifests::TIME_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, ControlFlow, Message, ZeroApp};
 use zos_vfs::async_client;
@@ -627,7 +627,7 @@ impl TimeService {
 
 impl ZeroApp for TimeService {
     fn manifest() -> &'static zos_apps::AppManifest {
-        &TIME_SERVICE_MANIFEST
+        &TIME_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {

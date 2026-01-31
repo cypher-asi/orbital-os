@@ -94,18 +94,13 @@ fn run_kernel_main_loop(
             break;
         }
 
-        // Log progress periodically
-        if iteration % 1000 == 0 {
-            serial_println!(
-                "[kernel] Main loop iteration {}, syscalls: {}, uptime: {} ms",
-                iteration,
-                syscall_count,
-                (hal.now_nanos() - start_time) / 1_000_000
-            );
-        }
+        // Log progress periodically (disabled for clean output)
+        // if iteration % 5000 == 0 {
+        //     serial_println!("[kernel] Loop {}, syscalls: {}", iteration, syscall_count);
+        // }
 
-        // Poll for serial input and route to terminal process
-        route_serial_input_to_terminal(system);
+        // Poll for serial input and route through Init to terminal
+        route_serial_input_to_init(system);
 
         // Run processes with synchronous syscall handling
         // This ensures syscalls are processed immediately before the process continues
@@ -126,16 +121,22 @@ fn run_kernel_main_loop(
                         serial_println!("{}", text);
                     }
                 }
-                return (0, alloc::vec::Vec::new());
+                return (0i64, alloc::vec::Vec::new());
             }
 
-            // Debug output for other syscalls (throttled)
-            if syscall_count <= 100 || syscall_count % 100 == 0 {
+            // Debug IPC syscalls - only log actual sends (not idle recv polling)
+            if syscall_num == 0x40 {
                 serial_println!(
-                    "[kernel] Syscall 0x{:02x} from PID {} (data: {} bytes)",
-                    syscall_num,
-                    syscall.pid,
-                    syscall.data.len()
+                    "[kernel] SYS_SEND: from PID {}, slot={}, tag=0x{:x}, data={} bytes",
+                    syscall.pid, syscall.args[0], syscall.args[1], syscall.data.len()
+                );
+            }
+            
+            // Debug create_endpoint_for syscall (0x15)
+            if syscall_num == 0x15 {
+                serial_println!(
+                    "[kernel] SYS_CREATE_ENDPOINT_FOR: from PID {}, target={}",
+                    syscall.pid, syscall.args[0]
                 );
             }
 
@@ -144,34 +145,67 @@ fn run_kernel_main_loop(
             let (result, _rich_result, response_data) =
                 system.process_syscall(sender, syscall_num, args, &syscall.data);
 
-            (result as u32, response_data)
+            // Debug IPC results - only log sends and successful receives
+            if syscall_num == 0x40 {
+                serial_println!("[kernel] SYS_SEND result: {}", result);
+            }
+            if syscall_num == 0x41 && result > 0 {
+                serial_println!("[kernel] SYS_RECV: PID {} got message, {} bytes", syscall.pid, response_data.len());
+            }
+            
+            // Debug create_endpoint_for result
+            if syscall_num == 0x15 && result >= 0 {
+                let init_slot = (result >> 32) as u32;
+                let endpoint_id = result as u32;
+                serial_println!("[kernel] Created endpoint {} for target, Init's cap at slot {}", endpoint_id, init_slot);
+            }
+
+            (result, response_data)
         });
 
-        // Small yield to prevent busy-spinning
-        x86_64::instructions::hlt();
+        // Note: removed hlt() to ensure continuous polling for serial input
+        // This uses more CPU but ensures responsive input handling
     }
 }
 
-/// Route serial input to terminal process via HAL message queue
+/// Route serial input to terminal via Init (MSG_SUPERVISOR_CONSOLE_INPUT).
 ///
-/// Reads bytes from the serial input buffer and sends them as messages
-/// to the terminal process if it's running.
-fn route_serial_input_to_terminal(system: &mut System<X86_64Hal>) {
+/// Per Invariant 1 (All Authority Flows Through Axiom), console input from hardware
+/// must route through Init using `MSG_SUPERVISOR_CONSOLE_INPUT (0x2001)`. Init then
+/// forwards to the terminal via capability-checked IPC.
+///
+/// This is the QEMU equivalent of how the JS supervisor routes input in WASM mode.
+///
+/// Data flow:
+/// ```text
+/// QEMU Serial → Kernel (here) → Init (MSG_SUPERVISOR_CONSOLE_INPUT) → Terminal (MSG_CONSOLE_INPUT)
+/// ```
+fn route_serial_input_to_init(system: &mut System<X86_64Hal>) {
     use zos_hal::x86_64::serial;
-    use zos_hal::NumericProcessHandle;
-    
+
+    // MSG_SUPERVISOR_CONSOLE_INPUT tag (from zos-ipc)
+    const MSG_SUPERVISOR_CONSOLE_INPUT: u32 = 0x2001;
+
+    // Terminal's input endpoint slot (standard slot 1 for input)
+    const TERMINAL_INPUT_ENDPOINT_SLOT: u32 = 1;
+
     // Read all available bytes from serial input
     while let Some(byte) = serial::read_byte() {
         // Find terminal process
         if let Some(terminal_pid) = find_terminal_pid(system) {
-            // Create console input message: [msg_type: u8, byte: u8]
-            // Message type 0x03 = console input
-            let msg_data = alloc::vec![0x03, byte];
-            
-            // Send to the terminal process via HAL
-            let handle = NumericProcessHandle::new(terminal_pid.0);
-            if let Err(_e) = system.hal().send_to_process(&handle, &msg_data) {
-                // Silently ignore errors - terminal might not be ready yet
+            // Build MSG_SUPERVISOR_CONSOLE_INPUT payload:
+            // [target_pid: u32, endpoint_slot: u32, data_len: u16, data: [u8]]
+            let mut payload = alloc::vec::Vec::with_capacity(11);
+            payload.extend_from_slice(&(terminal_pid.0 as u32).to_le_bytes()); // target_pid
+            payload.extend_from_slice(&TERMINAL_INPUT_ENDPOINT_SLOT.to_le_bytes()); // endpoint_slot
+            payload.extend_from_slice(&1u16.to_le_bytes()); // data_len = 1
+            payload.push(byte); // data (single byte)
+
+            // Inject to Init's endpoint via kernel
+            if let Err(e) = system.inject_to_init(MSG_SUPERVISOR_CONSOLE_INPUT, &payload) {
+                // If injection fails, fall back to echo for debugging
+                serial_println!("[kernel] Failed to inject console input to Init: {:?}", e);
+                serial::write_byte(byte);
             }
         }
         // If no terminal, just echo the character back to serial for debugging
@@ -459,8 +493,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let init_pid = system.register_process("init");
     serial_println!("  Registered 'init' process: PID {}", init_pid.0);
 
-    let vfs_pid = system.register_process("vfs_service");
-    serial_println!("  Registered 'vfs_service': PID {}", vfs_pid.0);
+    let vfs_pid = system.register_process("vfs");
+    serial_println!("  Registered 'vfs': PID {}", vfs_pid.0);
 
     let test_pid = system.register_process("test_app");
     serial_println!("  Registered 'test_app': PID {}", test_pid.0);

@@ -82,7 +82,7 @@ impl Supervisor {
                 "[supervisor] find_keystore_service_pid: checking PID {} name='{}'",
                 pid.0, proc.name
             ));
-            if proc.name == "keystore_service" {
+            if proc.name == "keystore" {
                 log(&format!(
                     "[supervisor] find_keystore_service_pid: FOUND at PID {}",
                     pid.0

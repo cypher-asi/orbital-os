@@ -147,8 +147,10 @@ pub enum PendingNetworkOp {
         ctx: RequestContext,
         user_id: u128,
         zid_endpoint: String,
-        /// Session ID from the stored session
+        /// Session ID from the stored session (refresh response may not include it)
         session_id: String,
+        /// Machine ID from the stored session (refresh response may not include it)
+        machine_id: String,
         /// Login type from the original session (to preserve through refresh)
         login_type: zos_identity::ipc::LoginType,
     },

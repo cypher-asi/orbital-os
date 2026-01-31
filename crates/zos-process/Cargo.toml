@@ -8,6 +8,12 @@ description = "Process-side syscall library for Zero OS"
 [features]
 default = []
 std = []
+# Enable custom getrandom for QEMU (uses SYS_RANDOM syscall)
+custom-getrandom = ["getrandom/custom"]
 
 [dependencies]
 zos-ipc.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# getrandom with custom backend for kernel syscall-based randomness
+getrandom = { version = "0.2", optional = true, default-features = false }

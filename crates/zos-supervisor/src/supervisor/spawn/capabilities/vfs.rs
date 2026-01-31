@@ -55,8 +55,8 @@ impl Supervisor {
             .list_processes()
             .into_iter()
             .filter(|(pid, proc)| {
-                // Grant to all processes except init, supervisor, and vfs_service itself
-                pid.0 > 1 && *pid != vfs_pid && proc.name != "vfs_service"
+                // Grant to all processes except init, supervisor, and vfs itself
+                pid.0 > 1 && *pid != vfs_pid && proc.name != "vfs"
             })
             .map(|(pid, proc)| (pid, proc.name.clone()))
             .collect();
@@ -96,7 +96,7 @@ impl Supervisor {
     /// Find the VFS service process ID
     pub(in crate::supervisor) fn find_vfs_service_pid(&self) -> Option<ProcessId> {
         for (pid, proc) in self.system.list_processes() {
-            if proc.name == "vfs_service" {
+            if proc.name == "vfs" {
                 return Some(pid);
             }
         }

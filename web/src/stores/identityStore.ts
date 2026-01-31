@@ -232,17 +232,31 @@ export const useIdentityStore = create<IdentityStoreState>()(
         name: 'zero-identity-store',
         partialize: (state) => ({
           users: state.users,
-          // Don't persist currentUser/currentSession - should be re-authenticated
+          // Persist currentUser to preserve the derived user ID after neural key generation
+          // This is critical: the user ID is derived from the neural key and stored keys
+          // are indexed by user ID. If we don't persist this, we'll look for keys at the
+          // wrong path after refresh.
+          currentUser: state.currentUser,
+          // Don't persist currentSession - should be re-authenticated
         }),
-        // Custom merge to ensure currentUser/currentSession always get defaults
-        // Prevents stale localStorage entries from overwriting with null
-        merge: (persisted, current) => ({
-          ...current,
-          ...(persisted as Partial<IdentityStoreState>),
-          // Always restore defaults for user/session if not in persisted data
-          currentUser: MOCK_USER,
-          currentSession: MOCK_SESSION,
-        }),
+        // Custom merge to restore persisted user while ensuring sensible defaults
+        merge: (persisted, current) => {
+          const persistedState = persisted as Partial<IdentityStoreState>;
+          return {
+            ...current,
+            ...persistedState,
+            // Restore persisted user if available, otherwise use default mock user
+            // This preserves the derived user ID from neural key generation
+            currentUser: persistedState.currentUser ?? MOCK_USER,
+            // Always create a fresh session on load (user should re-authenticate)
+            currentSession: persistedState.currentUser
+              ? {
+                  ...MOCK_SESSION,
+                  userId: persistedState.currentUser.id,
+                }
+              : MOCK_SESSION,
+          };
+        },
       }
     )
   )

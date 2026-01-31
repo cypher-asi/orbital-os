@@ -21,6 +21,10 @@ extern crate alloc;
 pub mod syscalls;
 pub mod types;
 
+// Custom getrandom implementation for QEMU (uses SYS_RANDOM syscall)
+#[cfg(all(target_arch = "wasm32", feature = "custom-getrandom"))]
+pub mod random;
+
 // ============================================================================
 // Re-exports for Convenience
 // ============================================================================

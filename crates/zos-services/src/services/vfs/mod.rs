@@ -88,7 +88,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::manifests::VFS_SERVICE_MANIFEST;
+use crate::manifests::VFS_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_process::MSG_STORAGE_RESULT;
@@ -553,6 +553,7 @@ impl VfsService {
 
         match syscall::storage_read_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "VfsService: storage_read_async({}) -> request_id={}",
                     key, request_id
@@ -585,6 +586,7 @@ impl VfsService {
 
         match syscall::storage_write_async(key, value) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "VfsService: storage_write_async({}, {} bytes) -> request_id={}",
                     key,
@@ -618,6 +620,7 @@ impl VfsService {
 
         match syscall::storage_delete_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "VfsService: storage_delete_async({}) -> request_id={}",
                     key, request_id
@@ -649,6 +652,7 @@ impl VfsService {
 
         match syscall::storage_list_async(prefix) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "VfsService: storage_list_async({}) -> request_id={}",
                     prefix, request_id
@@ -680,6 +684,7 @@ impl VfsService {
 
         match syscall::storage_exists_async(key) {
             Ok(request_id) => {
+                let request_id = request_id as u32;
                 syscall::debug(&format!(
                     "VfsService: storage_exists_async({}) -> request_id={}",
                     key, request_id
@@ -920,7 +925,7 @@ impl VfsService {
 
 impl ZeroApp for VfsService {
     fn manifest() -> &'static AppManifest {
-        &VFS_SERVICE_MANIFEST
+        &VFS_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {

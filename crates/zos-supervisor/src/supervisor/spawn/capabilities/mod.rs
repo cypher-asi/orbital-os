@@ -40,7 +40,7 @@ impl Supervisor {
 
             // Grant supervisor (PID 0) capability to Init's endpoint for IPC
             self.grant_supervisor_capability_to_init(process_pid);
-        } else if name == "permission_service" {
+        } else if name == "permission" {
             // Grant supervisor (PID 0) capability to PS's endpoint for IPC
             self.grant_supervisor_capability_to_ps(process_pid);
         } else if self.init_spawned {
@@ -93,10 +93,10 @@ impl Supervisor {
             // This enables proper capability-mediated IPC for identity operations
             self.grant_identity_capability_to_process(process_pid, name);
 
-            // If this is identity_service and Keystore service is running,
+            // If this is identity and Keystore service is running,
             // grant keystore capability to Identity
             // This enables Identity to use keystore IPC for /keys/ paths (Invariant 32)
-            if name == "identity_service" {
+            if name == "identity" {
                 log(&format!(
                     "[supervisor] Identity service spawned (PID {}), looking for keystore service...",
                     process_pid.0
@@ -119,20 +119,20 @@ impl Supervisor {
             self.grant_terminal_capabilities(process_pid);
         }
 
-        // When vfs_service is spawned, grant its endpoint to processes that need VFS access
+        // When vfs is spawned, grant its endpoint to processes that need VFS access
         // and grant Init (PID 1) capability to deliver IPC messages to VFS
-        if name == "vfs_service" {
+        if name == "vfs" {
             log(&format!(
                 "AGENT_LOG:spawn_caps:vfs_spawned:pid={}:init_spawned={}:will_grant",
                 process_pid.0, self.init_spawned
             ));
             self.grant_vfs_capabilities_to_existing_processes(process_pid);
-            self.grant_init_capability_to_service("vfs_service", process_pid);
+            self.grant_init_capability_to_service("vfs", process_pid);
         }
 
-        // When identity_service is spawned, grant its endpoint to processes that need identity access
+        // When identity is spawned, grant its endpoint to processes that need identity access
         // and grant Init (PID 1) capability to deliver IPC messages to Identity
-        if name == "identity_service" {
+        if name == "identity" {
             // #region agent log - hypothesis B,E
             log(&format!(
                 "AGENT_LOG:spawn_caps:identity_spawned:pid={}:will_grant",
@@ -141,23 +141,23 @@ impl Supervisor {
             // #endregion
 
             self.grant_identity_capabilities_to_existing_processes(process_pid);
-            self.grant_init_capability_to_service("identity_service", process_pid);
+            self.grant_init_capability_to_service("identity", process_pid);
         }
 
-        // When time_service is spawned, grant Init (PID 1) capability to deliver IPC messages
-        if name == "time_service" {
-            self.grant_init_capability_to_service("time_service", process_pid);
+        // When time is spawned, grant Init (PID 1) capability to deliver IPC messages
+        if name == "time" {
+            self.grant_init_capability_to_service("time", process_pid);
         }
 
-        // When keystore_service is spawned, grant its endpoint to Identity service
+        // When keystore is spawned, grant its endpoint to Identity service
         // and grant Init (PID 1) capability to deliver IPC messages
-        if name == "keystore_service" {
+        if name == "keystore" {
             log(&format!(
                 "[supervisor] Keystore service spawned (PID {}), setting up capabilities",
                 process_pid.0
             ));
             self.grant_keystore_capability_to_identity(process_pid);
-            self.grant_init_capability_to_service("keystore_service", process_pid);
+            self.grant_init_capability_to_service("keystore", process_pid);
         }
     }
 

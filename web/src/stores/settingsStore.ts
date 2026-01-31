@@ -2,7 +2,7 @@
  * Settings Store - Centralized state for system settings.
  *
  * Manages time format, timezone, and other system preferences.
- * Syncs with TimeServiceClient for persistence via the time_service WASM process.
+ * Syncs with TimeServiceClient for persistence via the time WASM process.
  * Falls back to localStorage when service is unavailable.
  */
 
@@ -154,15 +154,16 @@ export const useSettingsStore = create<SettingsStoreState>()(
 
         // Set default key scheme in VFS
         setDefaultKeyScheme: async (userId: bigint, scheme: KeyScheme) => {
+          const prevScheme = get().defaultKeyScheme;
+          // Optimistic update - always set in store state for UI
+          set({ defaultKeyScheme: scheme });
+
           const client = get()._identityClient;
           if (!client) {
-            console.log('[SettingsStore] No identity client available');
+            // No client to persist, but UI state is updated
+            console.log('[SettingsStore] No identity client available, default key scheme set in memory only:', scheme);
             return;
           }
-
-          const prevScheme = get().defaultKeyScheme;
-          // Optimistic update
-          set({ defaultKeyScheme: scheme });
 
           try {
             await client.setDefaultKeyScheme(userId, scheme);
@@ -177,15 +178,16 @@ export const useSettingsStore = create<SettingsStoreState>()(
 
         // Set default machine key in VFS
         setDefaultMachineKey: async (userId: bigint, machineId: string) => {
+          const prevMachineId = get().defaultMachineId;
+          // Optimistic update - always set in store state for UI
+          set({ defaultMachineId: machineId });
+
           const client = get()._identityClient;
           if (!client) {
-            console.log('[SettingsStore] No identity client available');
+            // No client to persist, but UI state is updated
+            console.log('[SettingsStore] No identity client available, default machine key set in memory only:', machineId);
             return;
           }
-
-          const prevMachineId = get().defaultMachineId;
-          // Optimistic update
-          set({ defaultMachineId: machineId });
 
           try {
             await client.setDefaultMachineKey(userId, machineId);

@@ -76,26 +76,51 @@ pub(in crate::system) fn execute_register_process<H: HAL>(
 /// Execute create endpoint for another process syscall (0x15).
 ///
 /// Creates an endpoint for a target process. Only init (PID 1) can call this.
-/// Returns packed (slot << 32 | endpoint_id) or -1 on error.
+/// The endpoint owner gets a capability, AND Init also gets a capability so it
+/// can send messages to the process.
+///
+/// Returns packed (init_slot << 32 | endpoint_id) or -1 on error.
+/// NOTE: Returns Init's slot, not the owner's slot!
 pub(in crate::system) fn execute_create_endpoint_for<H: HAL>(
     core: &mut KernelCore<H>,
     sender: ProcessId,
     args: [u32; 4],
     timestamp: u64,
 ) -> (i64, Vec<CommitType>) {
+    use crate::{Capability, ObjectType, Permissions};
+    
     // Only init can create endpoints for other processes
     if sender.0 != 1 {
         return (-1, Vec::new());
     }
 
     let target_pid = ProcessId(args[0] as u64);
-    let (result, commits) = core.create_endpoint(target_pid, timestamp);
-    let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
+    let (result, mut commits) = core.create_endpoint(target_pid, timestamp);
+    let mut commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
 
     match result {
-        Ok((eid, slot)) => {
-            // Pack endpoint ID and slot into a single i64
-            let packed = ((slot as i64) << 32) | (eid.0 as i64 & 0xFFFFFFFF);
+        Ok((eid, _owner_slot)) => {
+            // Also grant a capability to Init so it can send to this endpoint
+            let init_pid = ProcessId(1);
+            let cap = Capability {
+                id: core.next_cap_id(),
+                object_type: ObjectType::Endpoint,
+                object_id: eid.0,
+                permissions: Permissions::full(),
+                generation: 0,
+                expires_at: 0, // Never expires
+            };
+            
+            // Insert into Init's capability space
+            let init_slot = match core.cap_spaces.get_mut(&init_pid) {
+                Some(cspace) => cspace.insert(cap),
+                None => return (-1, commit_types),
+            };
+            
+            // Debug is logged via the returned data - check kernel boot output
+            
+            // Pack endpoint ID and Init's slot into a single i64
+            let packed = ((init_slot as i64) << 32) | (eid.0 as i64 & 0xFFFFFFFF);
             (packed, commit_types)
         }
         Err(_) => (-1, commit_types),

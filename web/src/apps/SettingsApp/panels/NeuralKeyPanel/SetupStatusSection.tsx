@@ -1,7 +1,3 @@
-import { useMemo } from 'react';
-import {
-  Text,
-} from '@cypher-asi/zui';
 import {
   ShieldCheck,
   RefreshCw,
@@ -153,6 +149,7 @@ export function SetupStatusSection({
           )}
         </div>
       </div>
+
     </div>
   );
 }

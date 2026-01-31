@@ -54,16 +54,39 @@ impl Init {
             target_pid, endpoint_slot, data_len
         ));
 
-        // Forward to target process
-        // Note: Init needs a capability to the target's endpoint.
-        // For now, we use the debug channel to signal the supervisor
-        // to do the actual delivery. This will be replaced once Init
-        // has proper endpoint capabilities granted during spawn.
-        let data_hex: String = input_data.iter().map(|b| format!("{:02x}", b)).collect();
-        syscall::debug(&format!(
-            "INIT:CONSOLE_INPUT:{}:{}:{}",
-            target_pid, endpoint_slot, data_hex
+        // Forward to target process using capability-checked IPC.
+        // Init has a capability to the target's input endpoint stored in service_cap_slots.
+        // The capability was granted during spawn via spawn_service().
+        
+        // Debug: show all service cap slots
+        self.log(&format!(
+            "DEBUG: service_cap_slots = {:?}",
+            self.service_cap_slots.iter().map(|(k,v)| (*k, *v)).collect::<Vec<_>>()
         ));
+        
+        if let Some(cap_slot) = self.service_cap_slots.get(&target_pid).copied() {
+            // Forward console input using MSG_CONSOLE_INPUT tag (0x0002)
+            // The terminal expects input data directly in the message payload.
+            match syscall::send(cap_slot, zos_process::MSG_CONSOLE_INPUT, input_data) {
+                Ok(()) => {
+                    self.log(&format!(
+                        "Console input forwarded to PID {} via cap slot {}",
+                        target_pid, cap_slot
+                    ));
+                }
+                Err(e) => {
+                    self.log(&format!(
+                        "Failed to forward console input to PID {}: error {}",
+                        target_pid, e
+                    ));
+                }
+            }
+        } else {
+            self.log(&format!(
+                "No capability for terminal PID {} - cannot forward console input",
+                target_pid
+            ));
+        }
     }
 
     /// Handle supervisor request to kill a process.

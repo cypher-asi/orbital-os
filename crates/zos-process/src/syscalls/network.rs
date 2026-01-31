@@ -12,7 +12,7 @@ use crate::SYS_NETWORK_FETCH;
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {
-    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> u32;
+    fn zos_syscall(syscall_num: u32, arg1: u32, arg2: u32, arg3: u32) -> i64;
     fn zos_send_bytes(ptr: *const u8, len: u32);
 }
 
@@ -32,11 +32,11 @@ extern "C" {
 /// - `Ok(request_id)`: Request ID to match with result
 /// - `Err(code)`: Failed to start operation
 #[cfg(target_arch = "wasm32")]
-pub fn network_fetch_async(request_json: &[u8]) -> Result<u32, u32> {
+pub fn network_fetch_async(request_json: &[u8]) -> Result<i64, i64> {
     unsafe {
         zos_send_bytes(request_json.as_ptr(), request_json.len() as u32);
         let result = zos_syscall(SYS_NETWORK_FETCH, request_json.len() as u32, 0, 0);
-        if result as i32 >= 0 {
+        if result >= 0 {
             Ok(result)
         } else {
             Err(result)
@@ -45,6 +45,6 @@ pub fn network_fetch_async(request_json: &[u8]) -> Result<u32, u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn network_fetch_async(_request_json: &[u8]) -> Result<u32, u32> {
-    Err(error::E_NOSYS)
+pub fn network_fetch_async(_request_json: &[u8]) -> Result<i64, i64> {
+    Err(error::E_NOSYS as i64)
 }

@@ -308,7 +308,7 @@ build-processes:
 	mkdir -p web/processes
 	cp target/wasm32-unknown-unknown/release/Zero_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/permission_service.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission.wasm web/processes/
 	# ... other processes ...
 ```
 

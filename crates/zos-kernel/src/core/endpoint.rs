@@ -96,6 +96,11 @@ impl<H: HAL> KernelCore<H> {
         self.endpoints.get(&id)
     }
 
+    /// Get mutable endpoint by ID (for kernel-internal message injection)
+    pub fn get_endpoint_mut(&mut self, id: EndpointId) -> Option<&mut Endpoint> {
+        self.endpoints.get_mut(&id)
+    }
+
     /// Get detailed endpoint info including metrics
     pub fn get_endpoint_detail(&self, id: EndpointId) -> Option<EndpointDetail> {
         let ep = self.endpoints.get(&id)?;

@@ -123,15 +123,52 @@ impl TerminalApp {
         Ok(())
     }
 
-    /// Handle raw console input (from supervisor fallback path)
-    fn handle_raw_input(&mut self, text: &str, ctx: &AppContext) -> Result<(), AppError> {
-        let line = text.trim();
-        if !line.is_empty() {
-            self.history.push(line.to_string());
-            self.history_index = self.history.len();
-            self.execute_command(line);
+    /// Handle raw console input byte-by-byte (from kernel serial input)
+    fn handle_raw_input(&mut self, data: &[u8], ctx: &AppContext) -> Result<(), AppError> {
+        for &byte in data {
+            match byte {
+                // Enter (CR or LF) - execute command
+                0x0D | 0x0A => {
+                    self.print("\n");
+                    let line = core::mem::take(&mut self.input_buffer);
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        self.history.push(line.to_string());
+                        self.history_index = self.history.len();
+                        self.execute_command(line);
+                    }
+                    self.print(Self::PROMPT);
+                }
+                // Backspace (DEL or BS)
+                0x7F | 0x08 => {
+                    if !self.input_buffer.is_empty() {
+                        self.input_buffer.pop();
+                        // Erase character on screen: backspace, space, backspace
+                        self.print("\x08 \x08");
+                    }
+                }
+                // Ctrl+C - interrupt
+                0x03 => {
+                    self.input_buffer.clear();
+                    self.println("^C");
+                    self.print(Self::PROMPT);
+                }
+                // Ctrl+L - clear screen
+                0x0C => {
+                    self.input_buffer.clear();
+                    self.print("\x1B[2J\x1B[H");
+                    self.print(Self::PROMPT);
+                }
+                // Printable ASCII characters
+                0x20..=0x7E => {
+                    self.input_buffer.push(byte as char);
+                    // Echo the character
+                    self.print(&format!("{}", byte as char));
+                }
+                // Ignore other control characters
+                _ => {}
+            }
         }
-        self.print(Self::PROMPT);
         self.flush_output(ctx)
     }
 
@@ -365,6 +402,9 @@ impl ZeroApp for TerminalApp {
     }
 
     fn on_message(&mut self, ctx: &AppContext, msg: Message) -> Result<(), AppError> {
+        // Debug: log all received messages
+        syscall::debug(&format!("Terminal received msg: tag=0x{:x}, len={}", msg.tag, msg.data.len()));
+        
         // Handle app protocol input
         if msg.tag == tags::MSG_APP_INPUT {
             if let Ok(input) = TerminalInput::from_bytes(&msg.data) {
@@ -372,11 +412,10 @@ impl ZeroApp for TerminalApp {
             }
         }
 
-        // Handle raw console input (from supervisor fallback)
+        // Handle raw console input bytes (from kernel serial input)
         if msg.tag == MSG_CONSOLE_INPUT {
-            if let Ok(text) = core::str::from_utf8(&msg.data) {
-                return self.handle_raw_input(text, ctx);
-            }
+            syscall::debug(&format!("Terminal: MSG_CONSOLE_INPUT data={:?}", &msg.data));
+            return self.handle_raw_input(&msg.data, ctx);
         }
 
         // Handle capability revocation notification

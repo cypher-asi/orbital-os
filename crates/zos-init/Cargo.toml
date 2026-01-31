@@ -10,6 +10,8 @@ crate-type = ["cdylib"]
 
 [features]
 default = []
+# Skip IdentityService for QEMU (wasm-bindgen shims not fully implemented)
+skip-identity = []
 
 [dependencies]
 zos-allocator.workspace = true

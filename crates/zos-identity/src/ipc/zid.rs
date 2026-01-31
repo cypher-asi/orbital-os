@@ -261,6 +261,10 @@ pub struct ZidRefreshRequest {
     pub user_id: UserId,
     /// ZID API endpoint
     pub zid_endpoint: String,
+    /// Optional refresh token from frontend (if provided, use instead of reading from VFS).
+    /// This prevents race conditions when multiple refresh attempts occur before VFS is updated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
 }
 
 /// ZID token refresh response.

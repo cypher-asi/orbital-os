@@ -153,11 +153,11 @@ export interface Supervisor {
    * Send an IPC message to a named service.
    *
    * This is a generic method that:
-   * 1. Finds the service by name (e.g., "identity" -> "identity_service")
+   * 1. Finds the service by name (e.g., "identity", "vfs", "time")
    * 2. Delivers the message to the service's input endpoint (slot 1)
    * 3. Returns a request_id for tracking the response
    *
-   * @param serviceName - Service name without "_service" suffix (e.g., "identity", "vfs")
+   * @param serviceName - Service name (e.g., "identity", "vfs", "time")
    * @param tag - Request message tag (e.g., 0x7054 for MSG_GENERATE_NEURAL_KEY)
    * @param data - JSON request data as a string
    * @returns On success: request_id string (e.g., "00007055"); On error: "error:..." string

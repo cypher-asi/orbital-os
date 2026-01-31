@@ -486,7 +486,7 @@ pub trait HAL: Send + Sync + 'static {
     /// - **WASM**: Returns `NotSupported` (Supervisor handles async fetch from network)
     ///
     /// # Arguments
-    /// * `name` - Binary name (e.g., "permission_service", "vfs_service")
+    /// * `name` - Binary name (e.g., "permission", "vfs", "identity")
     ///
     /// # Returns
     /// * `Ok(&'static [u8])` - Binary data (zero-copy for embedded binaries)

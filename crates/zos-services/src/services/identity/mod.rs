@@ -88,7 +88,7 @@ mod tests;
 
 use alloc::collections::BTreeMap;
 
-use crate::manifests::IDENTITY_SERVICE_MANIFEST;
+use crate::manifests::IDENTITY_MANIFEST;
 use pending::{PendingKeystoreOp, PendingNetworkOp, PendingStorageOp};
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
@@ -119,7 +119,7 @@ pub struct IdentityService {
 
 impl ZeroApp for IdentityService {
     fn manifest() -> &'static AppManifest {
-        &IDENTITY_SERVICE_MANIFEST
+        &IDENTITY_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {
@@ -137,7 +137,7 @@ impl ZeroApp for IdentityService {
                 "IdentityService: Registering with init, endpoint_slot={:?}",
                 ctx.input_endpoint
             ));
-            let name = b"identity_service";
+            let name = b"identity";
             // Input endpoint is always slot 1 for services
             let endpoint_slot: u64 = ctx.input_endpoint.unwrap_or(1) as u64;
             let mut data = alloc::vec::Vec::with_capacity(1 + name.len() + 8);
